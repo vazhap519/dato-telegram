@@ -28,7 +28,11 @@ async def root():
 # 🔐 LOGIN PAGE
 @app.get("/login")
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(
+    request=request,
+    name="login.html",
+    context={}
+)
 
 
 # 🔐 LOGIN LOGIC
@@ -42,10 +46,13 @@ async def login(request: Request, username: str = Form(...), password: str = For
         user = result.fetchone()
 
     if not user or not verify_password(password, user.password):
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "error": "Wrong credentials"
-        })
+       return templates.TemplateResponse(
+    request=request,
+    name="login.html",
+    context={
+        "error": "Wrong credentials"
+    }
+)
 
     token = create_token({"user": username})
 
