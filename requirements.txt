@@ -9,3 +9,4 @@ passlib[bcrypt]
 python-jose
 aiohttp
 python-multipart
+aiosqlite
