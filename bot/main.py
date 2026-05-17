@@ -37,54 +37,69 @@
 # if __name__ == "__main__":
 #     main()
 
-import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
-from aiogram.filters import CommandStart
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from dotenv import load_dotenv
+# import os
+# from aiogram import Bot, Dispatcher, types
+# from aiogram.types import Message
+# from aiogram.filters import CommandStart
+# from aiogram.utils.keyboard import InlineKeyboardBuilder
+# from dotenv import load_dotenv
 
-from db.queries import add_user, get_settings
+# from db.queries import add_user, get_settings
+
+# load_dotenv()
+
+# BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# bot = Bot(token=BOT_TOKEN)
+# dp = Dispatcher()
+
+
+# @dp.message(CommandStart())
+# async def start_handler(message: Message):
+#     await add_user(message.from_user.id)
+
+#     settings = await get_settings()
+
+#     if settings:
+#         kb = InlineKeyboardBuilder()
+#         kb.button(text=settings.btn1_text, url=settings.btn1_url)
+#         kb.button(text=settings.btn2_text, url=settings.btn2_url)
+
+#         await message.answer_video(
+#             settings.video_url,
+#             caption=f"{settings.text1}\n\n{settings.text2}",
+#             reply_markup=kb.as_markup()
+#         )
+#     else:
+#         await message.answer("No settings found")
+
+
+# async def main():
+#     await dp.start_polling(bot)
+
+
+# if __name__ == "__main__":
+#     import asyncio
+#     asyncio.run(main())
+
+import asyncio
+from aiogram import Bot, Dispatcher
+from dotenv import load_dotenv
+import os
+
+from bot.handlers import start_handler
+from aiogram.filters import CommandStart
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
 
-
-@dp.message(CommandStart())
-async def start_handler(message: Message):
-    await add_user(message.from_user.id)
-
-    settings = await get_settings()
-
-    if settings:
-        kb = InlineKeyboardBuilder()
-        kb.button(text=settings.btn1_text, url=settings.btn1_url)
-        kb.button(text=settings.btn2_text, url=settings.btn2_url)
-
-        await message.answer_video(
-            settings.video_url,
-            caption=f"{settings.text1}\n\n{settings.text2}",
-            reply_markup=kb.as_markup()
-        )
-    else:
-        await message.answer("No settings found")
-
-
-from db.database import engine
-from db.models import Base
-
+dp.message.register(start_handler, CommandStart())
 
 async def main():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
+    print("🤖 Bot started...")
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

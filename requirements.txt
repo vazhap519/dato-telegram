@@ -1,6 +1,6 @@
 aiogram
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
 asyncpg
 jinja2
@@ -9,4 +9,7 @@ passlib[bcrypt]
 python-jose
 aiohttp
 python-multipart
-aiosqlite
+websockets
+psycopg2-binary
+bcrypt
+greenlet
