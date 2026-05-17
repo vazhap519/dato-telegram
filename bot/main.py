@@ -74,7 +74,14 @@ async def start_handler(message: Message):
         await message.answer("No settings found")
 
 
+from db.database import engine
+from db.models import Base
+
+
 async def main():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     await dp.start_polling(bot)
 
 
