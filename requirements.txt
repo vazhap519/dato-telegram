@@ -1,0 +1,11 @@
+aiogram
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+jinja2
+python-dotenv
+passlib[bcrypt]
+python-jose
+aiohttp
+python-multipart
