@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-gray-900 text-white min-h-screen">
+
+<div class="max-w-5xl mx-auto p-6">
+
+    <!-- HEADER -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">📊 Dashboard</h1>
+        <div class="bg-gray-800 px-4 py-2 rounded-lg">
+            Users: <span id="count" class="font-bold text-green-400">{{ count }}</span>
+        </div>
+    </div>
+
+    <!-- SETTINGS CARD -->
+    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
+        <h2 class="text-xl font-semibold mb-4">⚙️ Bot Settings</h2>
+
+        <form method="post" action="/update" class="grid gap-4">
+
+            <input name="video_url"
+                placeholder="Video URL"
+                value="{{ settings.video_url if settings else '' }}"
+                class="p-2 rounded bg-gray-700">
+
+            <input name="text1"
+                placeholder="Text 1"
+                value="{{ settings.text1 if settings else '' }}"
+                class="p-2 rounded bg-gray-700">
+
+            <input name="text2"
+                placeholder="Text 2"
+                value="{{ settings.text2 if settings else '' }}"
+                class="p-2 rounded bg-gray-700">
+
+            <div class="grid grid-cols-2 gap-4">
+                <input name="btn1_text"
+                    placeholder="Button 1 Text"
+                    value="{{ settings.btn1_text if settings else '' }}"
+                    class="p-2 rounded bg-gray-700">
+
+                <input name="btn1_url"
+                    placeholder="Button 1 URL"
+                    value="{{ settings.btn1_url if settings else '' }}"
+                    class="p-2 rounded bg-gray-700">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <input name="btn2_text"
+                    placeholder="Button 2 Text"
+                    value="{{ settings.btn2_text if settings else '' }}"
+                    class="p-2 rounded bg-gray-700">
+
+                <input name="btn2_url"
+                    placeholder="Button 2 URL"
+                    value="{{ settings.btn2_url if settings else '' }}"
+                    class="p-2 rounded bg-gray-700">
+            </div>
+
+            <button class="bg-blue-500 hover:bg-blue-600 p-2 rounded font-semibold">
+                💾 Save Settings
+            </button>
+
+        </form>
+    </div>
+
+    <!-- LIVE EVENTS -->
+    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
+        <h2 class="text-xl font-semibold mb-4">📡 Live Users</h2>
+
+        <ul id="events" class="space-y-2 text-sm"></ul>
+    </div>
+
+    <!-- CHANGE PASSWORD -->
+    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
+        <h2 class="text-xl font-semibold mb-4">🔐 Change Credentials</h2>
+
+        <form method="post" action="/change-credentials" class="grid gap-4">
+
+            <input name="new_username"
+                placeholder="New Username"
+                class="p-2 rounded bg-gray-700">
+
+            <input name="new_password"
+                type="password"
+                placeholder="New Password"
+                class="p-2 rounded bg-gray-700">
+
+            <button class="bg-red-500 hover:bg-red-600 p-2 rounded font-semibold">
+                Change Credentials
+            </button>
+
+        </form>
+    </div>
+
+</div>
+
+<script>
+const ws = new WebSocket("ws://" + location.host + "/ws");
+
+ws.onmessage = function(e) {
+    let li = document.createElement("li");
+    li.className = "bg-gray-700 p-2 rounded";
+    li.textContent = e.data;
+
+    document.getElementById("events").prepend(li);
+
+    let count = document.getElementById("count");
+    count.textContent = parseInt(count.textContent) + 1;
+}
+</script>
+
+</body>
+</html>
