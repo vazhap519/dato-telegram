@@ -2,11 +2,13 @@ from passlib.context import CryptContext
 from jose import jwt
 import os
 
-SECRET = os.getenv("SECRET_KEY")
+SECRET = os.getenv("SECRET_KEY", "supersecret")
+
 pwd = CryptContext(
-    schemes=["bcrypt", "pbkdf2_sha256"],
+    schemes=["pbkdf2_sha256"],  # 🔥 სტაბილური
     deprecated="auto"
 )
+
 def hash_password(p):
     return pwd.hash(p)
 
