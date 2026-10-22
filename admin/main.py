@@ -416,7 +416,9 @@ async def subscriptions_renew(
         new_expiry = await extend_community_access(telegram_id, days, reason, user["user"])
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
-    return RedirectResponse(f"/subscriptions/users/{telegram_id}?renewed=1",status_code=303)
+    from .renewal_notice import notify_renewal
+    notice = await notify_renewal(telegram_id, new_expiry, user["user"])
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?renewed=1&notice={notice}",status_code=303)
 
 
 @app.post("/subscriptions/grant/expiry")
