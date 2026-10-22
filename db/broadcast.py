@@ -150,7 +150,11 @@ async def claim_recipient():
                       )
                       ELSE FALSE END
                 """), {"trigger": trigger, "uid": row.telegram_id})).scalar_one()
-                opted_out = opted_out or not still_eligible
+                active_rule = (await session.execute(text("""
+                    SELECT COALESCE((SELECT enabled FROM reminder_rules
+                    WHERE trigger=:trigger), FALSE)
+                """), {"trigger": trigger})).scalar_one()
+                opted_out = opted_out or not still_eligible or not active_rule
             body = body.replace("{first_name}", first_name or "друг")
             return row.broadcast_id, row.telegram_id, body, opted_out, button_text, button_url
 
