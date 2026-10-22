@@ -9,6 +9,23 @@
 <div class="bg-gray-800 rounded-xl p-4">Истекают за 7 дней<div class="text-2xl font-semibold">{{ summary.expiring }}</div></div>
 </section>
 <p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Учтённые права в базе пока <strong>не предоставляют и не отзывают доступ автоматически</strong> в Telegram и на сайте. Нажатие кнопки оплаты не считается платежом. Сведения Tribute будут подключены отдельно.</p>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<h2 class="font-semibold text-xl">🔐 Telegram-группа · тестовый режим</h2>
+<p class="text-sm text-gray-400">Бот проверяет права администратора и право приглашать людей. Приглашения отправляются только вручную пользователям с назначенным доступом. Автоматического исключения нет.</p>
+{% if tg_group.chat_id %}
+<p class="text-green-300 text-sm">Подключена: <strong>{{ tg_group.chat_title }}</strong> · ID: <code>{{ tg_group.chat_id }}</code></p>
+{% else %}
+<p class="text-amber-300 text-sm">Группа пока не подключена.</p>
+{% endif %}
+<form method="post" action="/subscriptions/group" class="flex flex-wrap gap-2 items-end">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label class="text-sm flex-1 min-w-48">Telegram Chat ID супергруппы
+<input type="number" name="chat_id" required placeholder="-100..." value="{{ tg_group.chat_id or '' }}" class="mt-1 w-full bg-gray-700 p-3 rounded">
+</label>
+<button class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-3">Проверить и подключить</button>
+</form>
+<p class="text-xs text-gray-400">Чтобы узнать ID группы, можно переслать сообщение из супергруппы в бота для просмотра ID либо использовать административные инструменты Telegram. Добавьте нашего бота администратором с правом приглашать пользователей. До проверки ничего не изменится.</p>
+</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Тарифы</h2>
 <p class="text-gray-400 text-sm">В боте показываются только активные тарифы с ценой и HTTPS-ссылкой оплаты. Переход по ссылке не подтверждает оплату.</p>
 <form action="/subscriptions/plan/create" method="post" class="bg-gray-700 rounded-xl p-4 grid gap-3 mb-5">
