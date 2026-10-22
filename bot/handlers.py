@@ -85,7 +85,7 @@ async def upload_video_note_handler(message: types.Message):
 def plan_button_label(plan):
     price = f"{plan['price_amount']:.2f}".rstrip("0").rstrip(".")
     term = "навсегда" if plan["is_lifetime"] else f"{plan['duration_days']} дней"
-    return f"{plan['name']} · {price} {plan['currency']} · {term}"
+    return f"{plan['name'][:30]} · {price} {plan['currency']} · {term}"[:64]
 
 
 async def subscription_click_handler(query: types.CallbackQuery):
@@ -103,6 +103,12 @@ async def subscription_click_handler(query: types.CallbackQuery):
         [InlineKeyboardButton(text=plan_button_label(plan), callback_data=f"choose_plan:{plan['id']}")]
         for plan in plans
     ])
+    if query.message:
+        try:
+            await query.message.edit_text("Выберите срок участия в сообществе:", reply_markup=keyboard)
+            return
+        except TelegramBadRequest:
+            pass
     await query.bot.send_message(
         query.from_user.id,
         "Выберите срок участия в сообществе:",
@@ -128,11 +134,11 @@ async def choose_plan_handler(query: types.CallbackQuery):
         [InlineKeyboardButton(text="↩️ Выбрать другой тариф", callback_data="subscription_click")]
     ])
     text = (
-        f"Вы выбрали: {plan['name']}\\n"
-        f"Стоимость: {plan['price_amount']} {plan['currency']}\\n"
-        f"Срок: {'Бессрочно' if plan['is_lifetime'] else str(plan['duration_days']) + ' дней'}\\n\\n"
+        f"Вы выбрали: {plan['name']}\n"
+        f"Стоимость: {plan['price_amount']} {plan['currency']}\n"
+        f"Срок: {'Бессрочно' if plan['is_lifetime'] else str(plan['duration_days']) + ' дней'}\n\n"
         "Нажмите кнопку ниже для перехода на страницу оплаты. "
-        "Доступ будет активирован только после подтверждения платежа."
+        "Автоматическое подтверждение платежа пока не подключено. Переход к оплате не активирует доступ."
     )
     # Edit instead of sending a new message to avoid duplicates on repeated taps.
     if query.message:
