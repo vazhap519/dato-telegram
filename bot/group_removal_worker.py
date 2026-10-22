@@ -4,7 +4,8 @@ import logging
 
 from aiogram.enums import ChatMemberStatus
 from db.group_access import (
-    eligible_removal_tests, finish_group_removal, group_settings, has_group_access
+    eligible_removal_tests, finish_group_removal, group_settings, has_group_access,
+    rearm_renewed_removal_tests
 )
 
 logger=logging.getLogger(__name__)
@@ -13,6 +14,7 @@ logger=logging.getLogger(__name__)
 async def group_removal_test_worker(bot):
     while True:
         try:
+            await rearm_renewed_removal_tests()
             group=await group_settings()
             for target in await eligible_removal_tests():
                 uid=target["telegram_id"]
