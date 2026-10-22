@@ -24,7 +24,7 @@
 {% if recent_invites %}
 <h3 class="text-sm font-semibold">Последние приглашения</h3>
 {% for i in recent_invites %}
-<p class="text-xs text-gray-400">{{ i.created_at.strftime('%d.%m.%Y %H:%M') }} UTC · {{ i.status }} · истекает {{ i.expires_at.strftime('%d.%m.%Y %H:%M') }} UTC</p>
+<p class="text-xs text-gray-400">{{ i.created_at|tbilisi_time }} (Тбилиси) · {{ i.status }} · истекает {{ i.expires_at|tbilisi_time }} (Тбилиси)</p>
 {% endfor %}{% endif %}
 </section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3">
@@ -47,7 +47,7 @@
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="text-xl font-semibold">Выбор тарифа в боте</h2>
 {% if selection %}
 <p>Выбран: <strong>{{ selection.plan_name }}</strong></p>
-<p class="text-sm text-gray-400">Последний выбор: {{ selection.selected_at.strftime('%d.%m.%Y %H:%M') }} UTC · Всего выборов: {{ selection.selection_count }}</p>
+<p class="text-sm text-gray-400">Последний выбор: {{ selection.selected_at|tbilisi_time }} (Тбилиси) · Всего выборов: {{ selection.selection_count }}</p>
 {% else %}<p class="text-gray-400 text-sm">Пользователь пока не выбрал тариф.</p>{% endif %}
 <p class="text-xs text-gray-500">Выбор тарифа — не подтверждение оплаты.</p></section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4"><h2 class="text-xl font-semibold">Назначить доступ</h2>
@@ -62,20 +62,20 @@
 <section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="text-xl font-semibold">Доступ в сообщество</h2>
 {% for g in grants %}<div class="bg-gray-700 p-4 rounded-xl grid md:grid-cols-[1fr_auto] gap-3 items-center">
 <div><div class="font-semibold">{{ {'lifetime':'Постоянный','temporary':'Временный','gift':'Подарочный','trial':'Пробный'}.get(g.grant_type,g.grant_type) }}</div>
-<div class="text-sm text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+g.ends_at.strftime('%d.%m.%Y %H:%M')+' UTC' if g.ends_at else 'Без срока') }}</div><div class="text-xs text-gray-400">Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}{% if not g.revoked_at and g.ends_at and g.grant_type != 'lifetime' %}
+<div class="text-sm text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+(g.ends_at|tbilisi_time)+' (Тбилиси)' if g.ends_at else 'Без срока') }}</div><div class="text-xs text-gray-400">Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}{% if not g.revoked_at and g.ends_at and g.grant_type != 'lifetime' %}
 <form method="post" action="/subscriptions/grant/expiry" class="flex flex-wrap items-end gap-2 mt-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
 <input type="hidden" name="grant_id" value="{{ g.id }}">
 <input type="hidden" name="confirm" value="CHANGE_EXPIRY">
-<label class="text-sm">Новый срок (Тбилиси)<input type="datetime-local" name="end_at" required value="{{ g.ends_at.astimezone(tbilisi_tz).strftime('%Y-%m-%dT%H:%M') }}" class="block bg-gray-800 rounded p-2 mt-1"></label>
+<label class="text-sm">Новый срок (Тбилиси)<input type="datetime-local" name="end_at" required value="{{ g.ends_at|tbilisi_time('%Y-%m-%dT%H:%M') }}" class="block bg-gray-800 rounded p-2 mt-1"></label>
 <button class="bg-indigo-600 px-3 py-2 rounded" onclick="return confirm('Изменить дату и время окончания доступа?')">Сохранить время</button>
 </form>
 {% endif %}</div></div>
 {% if not g.revoked_at %}<form method="post" action="/subscriptions/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="grant_id" value="{{ g.id }}"><input type="hidden" name="confirm" value="REVOKE"><button onclick="return confirm('Отозвать это право? Операция фиксируется в журнале.')" class="px-4 py-2 rounded bg-red-700">Отозвать</button></form>{% endif %}
 </div>{% else %}<p class="text-gray-400">Назначенных прав пока нет.</p>{% endfor %}</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Учётные подписки</h2><p class="text-gray-400 text-sm">Платёжный модуль ещё не подключён.</p>
-{% for s in subscriptions %}<div class="p-3 border-t border-gray-700 text-sm">{{ s.plan_name or 'Тариф не указан' }} · {{ s.status }} · {{ s.provider }} · {{ s.paid_until.strftime('%d.%m.%Y') if s.paid_until else 'без подтверждённого периода' }}</div>{% else %}<p class="text-gray-400">Подписок пока нет.</p>{% endfor %}</section>
+{% for s in subscriptions %}<div class="p-3 border-t border-gray-700 text-sm">{{ s.plan_name or 'Тариф не указан' }} · {{ s.status }} · {{ s.provider }} · {{ s.paid_until|tbilisi_time('%d.%m.%Y %H:%M') if s.paid_until else 'без подтверждённого периода' }}</div>{% else %}<p class="text-gray-400">Подписок пока нет.</p>{% endfor %}</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Журнал изменений</h2>
-{% for a in audit %}<div class="border-t border-gray-700 py-3 text-sm"><div class="font-medium">{{ a.action }} · {{ a.created_at.strftime('%d.%m.%Y %H:%M') }} UTC</div><div class="text-gray-400">Администратор: {{ a.actor }}</div><div class="break-all text-xs text-gray-500">{{ a.details }}</div></div>{% else %}<p class="text-gray-400">История пуста.</p>{% endfor %}</section>
+{% for a in audit %}<div class="border-t border-gray-700 py-3 text-sm"><div class="font-medium">{{ a.action }} · {{ a.created_at|tbilisi_time }} (Тбилиси)</div><div class="text-gray-400">Администратор: {{ a.actor }}</div><div class="break-all text-xs text-gray-500">{{ a.details }}</div></div>{% else %}<p class="text-gray-400">История пуста.</p>{% endfor %}</section>
 </main><script>document.getElementById('grant-type').addEventListener('change',function(){const d=document.getElementById('end-date');d.disabled=this.value==='lifetime';if(d.disabled)d.value='';});</script></body></html>
