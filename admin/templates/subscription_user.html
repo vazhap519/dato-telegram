@@ -27,6 +27,23 @@
 <p class="text-xs text-gray-400">{{ i.created_at.strftime('%d.%m.%Y %H:%M') }} UTC · {{ i.status }} · истекает {{ i.expires_at.strftime('%d.%m.%Y %H:%M') }} UTC</p>
 {% endfor %}{% endif %}
 </section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<h2 class="text-xl font-semibold">🧪 Тест исключения из группы</h2>
+<p class="text-sm text-gray-400">Только для этого Telegram ID. Проверка каждые 30 секунд. Бот исключит участника, только если у него не останется действующего доступа. По умолчанию выключено.</p>
+{% if removal_test %}
+<p>Режим: {{ 'Включён' if removal_test.enabled else 'Выключен' }} · Результат: {{ removal_test.status }}</p>
+{% if removal_test.last_error %}<p class="text-red-300 text-sm">{{ removal_test.last_error }}</p>{% endif %}
+{% else %}<p class="text-amber-300">Тест выключен.</p>{% endif %}
+{% if tg_group.chat_id %}
+<form method="post" action="/subscriptions/removal-test" class="space-y-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="confirm" value="REMOVAL_TEST">
+<label class="flex items-center gap-2"><input type="checkbox" name="enabled" value="true" {{ 'checked' if removal_test and removal_test.enabled else '' }}> Включить тест для этого аккаунта</label>
+<button class="bg-amber-700 rounded px-4 py-2" onclick="return confirm('Включить или отключить тест исключения для данного Telegram ID?')">Сохранить режим</button>
+</form>
+{% endif %}
+</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="text-xl font-semibold">Выбор тарифа в боте</h2>
 {% if selection %}
 <p>Выбран: <strong>{{ selection.plan_name }}</strong></p>
@@ -45,7 +62,16 @@
 <section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="text-xl font-semibold">Доступ в сообщество</h2>
 {% for g in grants %}<div class="bg-gray-700 p-4 rounded-xl grid md:grid-cols-[1fr_auto] gap-3 items-center">
 <div><div class="font-semibold">{{ {'lifetime':'Постоянный','temporary':'Временный','gift':'Подарочный','trial':'Пробный'}.get(g.grant_type,g.grant_type) }}</div>
-<div class="text-sm text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+g.ends_at.strftime('%d.%m.%Y %H:%M')+' UTC' if g.ends_at else 'Без срока') }}</div><div class="text-xs text-gray-400">Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}</div></div>
+<div class="text-sm text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+g.ends_at.strftime('%d.%m.%Y %H:%M')+' UTC' if g.ends_at else 'Без срока') }}</div><div class="text-xs text-gray-400">Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}{% if not g.revoked_at and g.ends_at and g.grant_type != 'lifetime' %}
+<form method="post" action="/subscriptions/grant/expiry" class="flex flex-wrap items-end gap-2 mt-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="grant_id" value="{{ g.id }}">
+<input type="hidden" name="confirm" value="CHANGE_EXPIRY">
+<label class="text-sm">Новый срок (Тбилиси)<input type="datetime-local" name="end_at" required value="{{ g.ends_at.astimezone(tbilisi_tz).strftime('%Y-%m-%dT%H:%M') }}" class="block bg-gray-800 rounded p-2 mt-1"></label>
+<button class="bg-indigo-600 px-3 py-2 rounded" onclick="return confirm('Изменить дату и время окончания доступа?')">Сохранить время</button>
+</form>
+{% endif %}</div></div>
 {% if not g.revoked_at %}<form method="post" action="/subscriptions/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="grant_id" value="{{ g.id }}"><input type="hidden" name="confirm" value="REVOKE"><button onclick="return confirm('Отозвать это право? Операция фиксируется в журнале.')" class="px-4 py-2 rounded bg-red-700">Отозвать</button></form>{% endif %}
 </div>{% else %}<p class="text-gray-400">Назначенных прав пока нет.</p>{% endfor %}</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Учётные подписки</h2><p class="text-gray-400 text-sm">Платёжный модуль ещё не подключён.</p>
