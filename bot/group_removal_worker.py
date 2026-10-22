@@ -100,7 +100,7 @@ async def group_removal_test_worker(bot):
                     raise
                 except Exception:
                     logger.exception("Removal failed for uid=%s", uid)
-                    await finish_group_removal(uid, "error", "Ошибка проверки или удаления")
+                    await finish_group_removal(uid, "error", str(exc)[:300])
         except asyncio.CancelledError:
             raise
         except Exception:
