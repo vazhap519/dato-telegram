@@ -397,6 +397,25 @@ async def subscription_user_page(
     can_invite = bool(await has_group_access(telegram_id))
     removal_test = await group_removal_test(telegram_id)
     removal_diagnostics = await member_removal_diagnostics(telegram_id, tg_group.get('chat_id'))
+    # Read-only Telegram check: distinguish missing membership from bot API issues.
+    removal_diagnostics["telegram_status"] = "не проверен"
+    if tg_group.get("chat_id"):
+        from aiogram import Bot
+        try:
+            async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+                me = await telegram.get_me()
+                bot_member = await telegram.get_chat_member(tg_group["chat_id"], me.id)
+                target_member = await telegram.get_chat_member(tg_group["chat_id"], telegram_id)
+                removal_diagnostics["telegram_status"] = str(target_member.status)
+                removal_diagnostics["bot_can_ban"] = (
+                    str(bot_member.status) == "creator" or (
+                        str(bot_member.status) == "administrator"
+                        and bool(getattr(bot_member, "can_restrict_members", False))
+                    )
+                )
+        except Exception as exc:
+            removal_diagnostics["telegram_status"] = "Ошибка Telegram: " + str(exc)[:200]
+
     from zoneinfo import ZoneInfo
     tbilisi_tz = ZoneInfo("Asia/Tbilisi")
     return templates.TemplateResponse(
