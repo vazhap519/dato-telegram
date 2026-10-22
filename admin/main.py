@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
-from db.automation import initialize_automation, templates, upsert_template, rules, set_rule, TRIGGERS
+from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
 from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats, create_upload_code, list_onboarding_users
 from .auth import (
@@ -292,7 +292,7 @@ async def broadcast_page(request: Request, user=Depends(get_current_user)):
         context={
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "counts": counts, "campaigns": campaigns, "preview": None,
-            "templates": await templates(), "rules": await rules(), "triggers": TRIGGERS,
+            "templates": await list_message_templates(), "rules": await rules(), "triggers": TRIGGERS,
         }, headers={"Cache-Control": "no-store"}
     )
 
@@ -321,7 +321,7 @@ async def preview_broadcast(
         context={
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "counts": counts, "campaigns": await list_broadcasts(),
-            "templates": await templates(), "rules": await rules(), "triggers": TRIGGERS,
+            "templates": await list_message_templates(), "rules": await rules(), "triggers": TRIGGERS,
             "preview": {"body": body.strip(), "audience": audience,
                         "recipients": counts[audience], "button_text": button_text, "button_url": button_url},
         }, headers={"Cache-Control": "no-store"}
