@@ -3,7 +3,7 @@ from aiogram import types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 
-from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note
+from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ async def accept_offer_handler(query: types.CallbackQuery):
     buttons = None
     if subscription_url.startswith(("https://", "http://")):
         buttons = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оформить подписку", url=subscription_url)]
+            [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")]
         ])
     await query.bot.send_message(query.from_user.id, subscription_text, reply_markup=buttons)
 
@@ -83,3 +83,23 @@ async def upload_video_note_handler(message: types.Message):
         await message.answer("✅ Видеокружочек сохранён! Проверьте /start и обновите страницу админ-панели.")
     else:
         await message.answer("Для загрузки видеокружочка сначала создайте код в админ-панели и отправьте /upload КОД.")
+
+async def subscription_click_handler(query: types.CallbackQuery):
+    if not query.from_user:
+        return
+    settings = await get_flow_settings()
+    url = (settings.get("subscription_url") or "").strip() if settings else ""
+    if not url.startswith(("https://", "http://")):
+        await query.answer("Ссылка на подписку пока не настроена.", show_alert=True)
+        return
+    if not await record_subscription_click(query.from_user.id):
+        await query.answer("Сначала необходимо принять условия публичной оферты.", show_alert=True)
+        return
+    await query.answer("Ссылка отправлена")
+    await query.bot.send_message(
+        query.from_user.id,
+        "Перейдите по кнопке ниже, чтобы оформить подписку:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Перейти к оплате", url=url)]
+        ])
+    )
