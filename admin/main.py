@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
@@ -45,6 +46,7 @@ async def setup_onboarding():
     await initialize_flow()
     await initialize_broadcasts()
     await initialize_automation()
+    await initialize_subscriptions()
 
 
 # Protection against cross-origin admin requests
@@ -58,6 +60,9 @@ async def protect_admin_forms(request: Request, call_next):
         "/broadcast/send",
         "/broadcast/template",
         "/broadcast/rule",
+        "/subscriptions/grant",
+        "/subscriptions/revoke",
+        "/subscriptions/plan",
         "/change-credentials",
     }
 
@@ -281,6 +286,100 @@ async def users_page(
         },
         headers={"Cache-Control": "no-store"}
     )
+
+
+
+# Independent subscription registry. Phase 1: administrative records only,
+# intentionally no payment creation, invitation, or group member removal.
+@app.get("/subscriptions")
+async def subscriptions_page(
+    request: Request, search: str = "", page: int = 1,
+    user=Depends(get_current_user),
+):
+    from urllib.parse import urlencode
+    summary, plans = await subscriptions_overview()
+    users, total = await subscription_people(search, page)
+    page = max(1, min(page, 100000))
+    return templates.TemplateResponse(
+        request=request, name="subscriptions.html",
+        context={
+            "summary": summary, "plans": plans, "users": users,
+            "total": total, "search": search, "page": page,
+            "pages": max(1, (total+29)//30),
+            "next_url": "/subscriptions?" + urlencode({"search":search,"page":page+1}),
+            "prev_url": "/subscriptions?" + urlencode({"search":search,"page":page-1}),
+            "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
+        }, headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.get("/subscriptions/users/{telegram_id}")
+async def subscription_user_page(
+    telegram_id: int, request: Request, user=Depends(get_current_user)
+):
+    data = await subscription_person(telegram_id)
+    if data is None: raise HTTPException(404, detail="Пользователь не найден")
+    participant, grants, subs, audit = data
+    return templates.TemplateResponse(
+        request=request, name="subscription_user.html",
+        context={
+            "participant":participant, "grants":grants,
+            "subscriptions":subs, "audit":audit,
+            "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
+        }, headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.post("/subscriptions/grant")
+async def subscriptions_grant(
+    telegram_id: int = Form(...), resource: str = Form(...),
+    grant_type: str = Form(...), end_date: str = Form(""),
+    reason: str = Form(""), confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    if confirm != "GRANT": raise HTTPException(400, detail="Подтвердите изменение доступа")
+    expires = None
+    if grant_type != "lifetime":
+        try:
+            dt=datetime.strptime(end_date,"%Y-%m-%d")
+            expires=dt.replace(hour=23, minute=59, second=59,
+                               tzinfo=ZoneInfo("Asia/Tbilisi")).astimezone(timezone.utc)
+        except ValueError: raise HTTPException(400, detail="Укажите дату окончания")
+    try:
+        await grant_access(telegram_id,resource,grant_type,expires,reason,user["user"])
+    except ValueError as exc: raise HTTPException(400, detail=str(exc))
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}",status_code=303)
+
+
+@app.post("/subscriptions/revoke")
+async def subscriptions_revoke(
+    telegram_id: int = Form(...), grant_id: int = Form(...),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    if confirm != "REVOKE": raise HTTPException(400,detail="Подтвердите отзыв")
+    try: await revoke_grant(telegram_id,grant_id,user["user"])
+    except ValueError as exc: raise HTTPException(400, detail=str(exc))
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}",status_code=303)
+
+
+@app.post("/subscriptions/plan")
+async def subscriptions_plan(
+    plan_id: int = Form(...), price: str = Form(""),
+    active: bool = Form(False),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    from decimal import Decimal, InvalidOperation
+    try:
+        amount=Decimal(price) if price.strip() else None
+        if amount is not None and amount.as_tuple().exponent < -2:
+            raise InvalidOperation()
+        await update_plan(plan_id,amount,active)
+    except (InvalidOperation,ValueError):
+        raise HTTPException(400, detail="Цена должна быть неотрицательным числом с точностью до 2 знаков")
+    return RedirectResponse("/subscriptions",status_code=303)
 
 
 @app.get("/broadcast")
