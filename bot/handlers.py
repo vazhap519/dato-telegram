@@ -115,4 +115,9 @@ async def broadcast_optout_handler(query: types.CallbackQuery):
 async def broadcast_optin_handler(message: types.Message):
     if message.from_user and message.chat.type == 'private':
         await opt_in(message.from_user.id)
-        await message.answer('✅ Информационные рассылки включены. Чтобы отключить их, используйте кнопку в следующем сообщении рассылки.')
+        await message.answer('✅ Информационные рассылки включены. Чтобы отключить необязательные сообщения, отправьте /stopnotifications.')
+
+async def broadcast_stop_handler(message: types.Message):
+    if message.from_user and message.chat.type == 'private':
+        await opt_out(message.from_user.id)
+        await message.answer('Необязательные рассылки и напоминания отключены. Для включения отправьте /notifications.')
