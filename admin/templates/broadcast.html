@@ -21,6 +21,7 @@
   <h2 class="text-xl font-semibold">Новая рассылка</h2>
   <p class="text-sm text-gray-400">Сообщения отправляются только пользователям, которые взаимодействовали с ботом и не отписались. Не используйте для нежелательной рекламы.</p>
   <form method="post" action="/broadcast/preview" class="space-y-4">
+    <p class="text-xs text-gray-400">Переменная {first_name} подставит имя пользователя при отправке.</p>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="block">Получатели
       <select name="audience" class="mt-1 block w-full bg-gray-700 rounded-lg p-3">
@@ -45,11 +46,47 @@
     <input type="hidden" name="audience" value="{{ preview.audience }}">
     <textarea name="body" class="hidden">{{ preview.body }}</textarea>
     <input type="hidden" name="confirm" value="SEND">
+    <label class="block text-sm">Отложить до (необязательно; время Тбилиси)
+      <input type="datetime-local" name="schedule_at" class="block mt-2 rounded bg-gray-700 p-3">
+    </label>
     <p class="text-amber-300 text-sm">После подтверждения рассылка попадёт в очередь. Отмены в этой версии нет.</p>
     <button class="bg-amber-600 hover:bg-amber-500 px-5 py-3 rounded-lg font-semibold">Подтвердить отправку</button>
   </form>
 </section>
 {% endif %}
+<section class="bg-gray-800 p-5 rounded-xl space-y-4">
+  <h2 class="text-xl font-semibold">Библиотека шаблонов</h2>
+  <p class="text-sm text-gray-400">Редактируй тексты здесь; затем скопируй нужный шаблон в форму рассылки выше. Сохранение само по себе ничего не отправляет.</p>
+  <form method="post" action="/broadcast/template" class="grid gap-2 border border-gray-700 rounded-xl p-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="title" required maxlength="120" placeholder="Название нового шаблона" class="p-2 bg-gray-700 rounded">
+    <textarea name="body" required rows="3" maxlength="4000" placeholder="Текст нового шаблона" class="p-2 bg-gray-700 rounded"></textarea>
+    <button class="bg-blue-600 rounded px-4 py-2 justify-self-start">Добавить шаблон</button>
+  </form>
+  {% for template in templates %}
+  <form method="post" action="/broadcast/template" class="grid gap-2 border border-gray-700 rounded-xl p-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="template_id" value="{{ template.id }}">
+    <input name="title" required maxlength="120" class="p-2 bg-gray-700 rounded font-semibold" value="{{ template.title }}">
+    <textarea name="body" required rows="3" maxlength="4000" class="p-2 bg-gray-700 rounded">{{ template.body }}</textarea>
+    <button class="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded justify-self-start">Сохранить шаблон</button>
+  </form>
+  {% endfor %}
+</section>
+<section class="bg-gray-800 p-5 rounded-xl space-y-4">
+  <h2 class="text-xl font-semibold">Автоматические напоминания</h2>
+  <p class="text-sm text-gray-400">Сценарии по умолчанию выключены. Они работают только для событий, произошедших после включения, и не связаны с практикумами. Отписавшимся сообщения не отправляются.</p>
+  {% for rule in rules %}
+  <form method="post" action="/broadcast/rule" class="grid gap-2 border border-gray-700 rounded-xl p-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="trigger" value="{{ rule.trigger }}">
+    <strong>{{ triggers[rule.trigger] }}</strong>
+    <textarea name="body" rows="3" required maxlength="4000" class="p-2 bg-gray-700 rounded">{{ rule.body }}</textarea>
+    <label class="flex items-center gap-2"><input type="checkbox" name="enabled" value="true" {{ 'checked' if rule.enabled else '' }}> Включён</label>
+    <button class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded justify-self-start">Сохранить сценарий</button>
+  </form>
+  {% endfor %}
+</section>
 <section class="bg-gray-800 p-5 rounded-xl space-y-4">
  <div class="flex flex-wrap justify-between gap-2 items-center">
  <h2 class="text-xl font-semibold">История рассылок</h2>
