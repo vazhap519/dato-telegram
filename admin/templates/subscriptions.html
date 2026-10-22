@@ -17,11 +17,11 @@
 <div class="bg-gray-700 rounded-lg p-3">Истекли за 30 дней<div class="font-semibold text-2xl">{{ expiry_summary.expired }}</div></div>
 </div>
 <div class="overflow-x-auto">
-<table class="w-full text-sm text-left"><thead class="text-gray-400"><tr><th class="py-2">Участник</th><th>Окончание (UTC)</th><th>Статус</th><th></th></tr></thead><tbody>
+<table class="w-full text-sm text-left"><thead class="text-gray-400"><tr><th class="py-2">Участник</th><th>Окончание (Тбилиси)</th><th>Статус</th><th></th></tr></thead><tbody>
 {% for e in expiry_people %}
 <tr class="border-t border-gray-700">
 <td class="py-2">{{ e.first_name or e.username or e.telegram_id }}</td>
-<td>{{ e.last_expires.strftime('%d.%m.%Y %H:%M') }}</td>
+<td>{{ e.last_expires|tbilisi_time }}</td>
 <td class="{{ 'text-red-300' if e.access_status == 'expired' else 'text-amber-300' }}">{{ 'Истёк' if e.access_status == 'expired' else 'Скоро истечёт' }}</td>
 <td><a class="text-blue-300 underline" href="/subscriptions/users/{{ e.telegram_id }}">Карточка →</a></td></tr>
 {% else %}<tr><td colspan="4" class="py-4 text-gray-400">Сроки доступа ближайших участников не истекают.</td></tr>{% endfor %}
