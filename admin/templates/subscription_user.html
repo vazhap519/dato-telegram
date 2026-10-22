@@ -12,8 +12,10 @@
 <p class="rounded-lg bg-red-900/40 p-3 text-sm text-red-300">Доступ отозван, но операция в Telegram завершилась ошибкой. Проверьте журнал службы бота и статус участника в группе.</p>
 {% elif request.query_params.get('revoke_result') == 'admin' %}
 <p class="rounded-lg bg-gray-800 p-3 text-sm text-amber-300">Доступ отозван, но администраторы Telegram-группы защищены от исключения.</p>
+{% elif request.query_params.get('revoke_result') == 'links_revoked' %}
+<p class="rounded-lg bg-green-900/40 p-3 text-sm text-green-300">Доступ отозван. Неиспользованные приглашения аннулированы. Вступление по прежним ссылкам больше не разрешено.</p>
 {% elif request.query_params.get('revoke_result') == 'already_out' %}
-<p class="rounded-lg bg-green-900/40 p-3 text-sm text-green-300">Доступ отозван. Участник уже отсутствует в группе.</p>
+<p class="rounded-lg bg-green-900/40 p-3 text-sm text-green-300">Доступ отозван. Участник отсутствует в группе, ранее выданные приглашения аннулированы.</p>
 {% elif request.query_params.get('revoke_result') == 'no_group' %}
 <p class="rounded-lg bg-gray-800 p-3 text-sm text-amber-300">Доступ отозван. Telegram-группа не подключена.</p>
 {% endif %}
