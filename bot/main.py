@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 
 from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler
 from db.flow import initialize_flow
+from db.broadcast import initialize_broadcasts
+from bot.broadcast_worker import broadcast_worker
+from bot.handlers import broadcast_optout_handler, broadcast_optin_handler
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -19,10 +22,21 @@ dp.message.register(upload_command_handler, Command('upload'))
 dp.message.register(upload_video_note_handler, F.video_note)
 dp.callback_query.register(accept_offer_handler, F.data == "accept_offer")
 dp.callback_query.register(subscription_click_handler, F.data == "subscription_click")
+dp.callback_query.register(broadcast_optout_handler, F.data == "broadcast_optout")
+dp.message.register(broadcast_optin_handler, Command("notifications"))
 
 async def main():
     await initialize_flow()
-    await dp.start_polling(bot)
+    await initialize_broadcasts()
+    task = asyncio.create_task(broadcast_worker(bot))
+    try:
+        await dp.start_polling(bot)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 if __name__ == "__main__":
     asyncio.run(main())
