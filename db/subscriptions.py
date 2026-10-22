@@ -357,6 +357,11 @@ async def change_grant_expiry(telegram_id, grant_id, expires_at, actor):
                 raise ValueError("Право доступа не найдено или отозвано")
             if row["grant_type"] == "lifetime":
                 raise ValueError("У постоянного доступа нельзя менять срок")
+            start=(await s.execute(text("""
+                SELECT starts_at FROM access_grants WHERE id=:gid
+            """), {"gid":grant_id})).scalar_one()
+            if expires_at <= start:
+                raise ValueError("Время окончания должно быть позже момента выдачи доступа")
             await s.execute(text("""
                 UPDATE access_grants SET ends_at=:expiry
                 WHERE id=:gid AND telegram_id=:uid
