@@ -307,3 +307,36 @@ async def select_payment_plan(telegram_id, plan_id):
                     selection_count=subscription_plan_selections.selection_count+1
             """), {"uid":telegram_id,"plan":plan_id})
             return dict(plan)
+
+
+async def subscription_snapshot(telegram_id):
+    """Read-only user dashboard. Selection never implies a settled payment."""
+    async with SessionLocal() as s:
+        grant = (await s.execute(text("""
+          SELECT grant_type, ends_at
+          FROM access_grants
+          WHERE telegram_id=:uid AND resource='community'
+            AND revoked_at IS NULL AND starts_at<=NOW()
+            AND (ends_at IS NULL OR ends_at>NOW())
+          ORDER BY (ends_at IS NULL) DESC, ends_at DESC NULLS FIRST, id DESC
+          LIMIT 1
+        """), {"uid":telegram_id})).mappings().first()
+        sub = (await s.execute(text("""
+          SELECT p.name plan_name,s.paid_until,s.status,s.renews_automatically
+          FROM subscriptions s
+          LEFT JOIN subscription_plans p ON p.id=s.plan_id
+          WHERE s.telegram_id=:uid AND s.status='active'
+            AND s.paid_until>NOW()
+          ORDER BY s.paid_until DESC, s.id DESC LIMIT 1
+        """), {"uid":telegram_id})).mappings().first()
+        choice = (await s.execute(text("""
+          SELECT p.name plan_name,p.price_amount,p.currency,x.selected_at
+          FROM subscription_plan_selections x
+          JOIN subscription_plans p ON p.id=x.plan_id
+          WHERE x.telegram_id=:uid
+        """), {"uid":telegram_id})).mappings().first()
+        return {
+          "grant":dict(grant) if grant else None,
+          "subscription":dict(sub) if sub else None,
+          "selection":dict(choice) if choice else None,
+        }
