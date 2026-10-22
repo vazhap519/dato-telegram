@@ -291,3 +291,37 @@ async def rearm_renewed_removal_tests():
                     )
                   )
             """))
+
+
+async def issued_invites_for_user(telegram_id,chat_id):
+    async with SessionLocal() as session:
+        rows=(await session.execute(text("""
+            SELECT id,invite_link FROM telegram_group_invites
+            WHERE telegram_id=:uid AND chat_id=:chat
+              AND status='issued' AND expires_at>NOW()
+        """),{"uid":telegram_id,"chat":chat_id})).mappings().all()
+        return [dict(x) for x in rows]
+
+
+async def invalidate_issued_invites(telegram_id,chat_id):
+    """Prevent old direct links from being treated as authorized."""
+    async with SessionLocal() as session:
+        async with session.begin():
+            rows=(await session.execute(text("""
+                UPDATE telegram_group_invites SET status='revoked'
+                WHERE telegram_id=:uid AND chat_id=:chat AND status='issued'
+                RETURNING invite_link
+            """),{"uid":telegram_id,"chat":chat_id})).scalars().all()
+            return list(rows)
+
+
+async def direct_invite_owner(chat_id,invite_link):
+    """Find exact owner and current validity, even after a link was revoked."""
+    async with SessionLocal() as session:
+        row=(await session.execute(text("""
+            SELECT telegram_id,status,expires_at>NOW() AS in_time
+            FROM telegram_group_invites
+            WHERE chat_id=:chat AND invite_link=:link
+            ORDER BY id DESC LIMIT 1
+        """),{"chat":chat_id,"link":invite_link})).mappings().first()
+        return dict(row) if row else None
