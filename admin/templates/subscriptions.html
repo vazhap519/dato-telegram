@@ -1,0 +1,33 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Подписки</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 text-white"><main class="max-w-6xl mx-auto p-5 md:p-8 space-y-7">
+<header class="flex items-center justify-between gap-3"><div><h1 class="text-3xl font-bold">💳 Подписки</h1><p class="text-sm text-gray-400">Собственный реестр — платёжная интеграция пока не подключена</p></div><a class="bg-gray-700 rounded px-4 py-2" href="/dashboard">← Админка</a></header>
+<section class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+<div class="bg-gray-800 rounded-xl p-4">Пользователи<div class="text-2xl font-semibold">{{ summary.users_total }}</div></div>
+<div class="bg-gray-800 rounded-xl p-4">Доступ к сообществу<div class="text-2xl font-semibold">{{ summary.community_access }}</div></div>
+<div class="bg-gray-800 rounded-xl p-4">Постоянные права<div class="text-2xl font-semibold">{{ summary.lifetime_access }}</div></div>
+<div class="bg-gray-800 rounded-xl p-4">Учтённые платные<div class="text-2xl font-semibold">{{ summary.recorded_active }}</div></div>
+<div class="bg-gray-800 rounded-xl p-4">Истекают за 7 дней<div class="text-2xl font-semibold">{{ summary.expiring }}</div></div>
+</section>
+<p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Учтённые права в базе пока <strong>не предоставляют и не отзывают доступ автоматически</strong> в Telegram и на сайте. Нажатие кнопки оплаты не считается платежом. Сведения Tribute будут подключены отдельно.</p>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Тарифы</h2>
+<p class="text-gray-400 text-sm">Стартовые тарифы — черновики. Цены не публикуются и не списываются.</p>
+<div class="grid md:grid-cols-2 gap-3">
+{% for p in plans %}
+<form action="/subscriptions/plan" method="post" class="bg-gray-700 rounded-xl p-4 space-y-2">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="plan_id" value="{{ p.id }}">
+<div class="font-semibold">{{ p.name }} <span class="text-gray-400 text-xs">({{ p.code }})</span></div>
+<div class="text-sm text-gray-300">{{ 'Без срока' if p.is_lifetime else ((p.duration_days|string)+' дней') }}</div>
+<label class="block text-sm">Цена, {{ p.currency }} (необязательно)<input type="number" min="0" max="1000000" step="0.01" name="price" class="w-full rounded bg-gray-800 p-2 mt-1" value="{{ p.price_amount if p.price_amount is not none else '' }}"></label>
+<label class="flex gap-2 items-center text-sm"><input type="checkbox" name="active" value="true" {{ 'checked' if p.is_active else '' }}> Активен в реестре</label>
+<button class="bg-indigo-600 px-4 py-2 rounded">Сохранить тариф</button>
+</form>
+{% endfor %}</div></section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Участники</h2>
+<form class="flex gap-2" method="get"><input name="search" value="{{ search }}" class="min-w-0 flex-1 bg-gray-700 rounded px-3 py-2" placeholder="Поиск по Telegram ID, имени, @username"><button class="bg-blue-600 rounded px-4 py-2">Найти</button></form>
+<p class="text-sm text-gray-400">Найдено: {{ total }}</p><div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Участник</th><th>ID</th><th>Доступ к сообществу</th><th>Постоянный доступ</th><th></th></tr></thead><tbody>
+{% for u in users %}<tr class="border-t border-gray-700"><td class="py-3">{{ ([u.first_name,u.last_name]|select|join(' ')) or (u.username or 'Имя не указано') }}</td><td class="font-mono">{{ u.telegram_id }}</td><td>{{ 'Есть учтённые права' if u.community_grants else 'Нет' }}</td><td>{{ 'Есть' if u.lifetime_grants else 'Нет' }}</td><td><a class="text-blue-300 underline" href="/subscriptions/users/{{ u.telegram_id }}">Карточка →</a></td></tr>
+{% else %}<tr><td colspan="5" class="p-5 text-gray-400">Пользователи не найдены</td></tr>{% endfor %}
+</tbody></table></div>
+<nav class="flex justify-between items-center text-sm">
+<div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}">Далее →</a>{% endif %}</div></nav>
+</section></main></body></html>
