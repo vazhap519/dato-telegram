@@ -445,6 +445,7 @@ async def subscriptions_send_invite(
     from aiogram import Bot
     from aiogram.exceptions import TelegramAPIError
     from bot.group_handlers import INVITE_PREFIX
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     if not await has_group_access(telegram_id):
         raise HTTPException(400, detail="Сначала назначьте действующий доступ в карточке участника")
     if await subscription_person(telegram_id) is None:
@@ -479,12 +480,9 @@ async def subscriptions_send_invite(
                 "🔐 Вам предоставлен доступ в «Круг Души». "
                 "Нажмите кнопку ниже и отправьте заявку на вступление. "
                 "Ссылка действует 1 час.",
-                reply_markup={
-                    "inline_keyboard": [[{
-                        "text": "🚪 Вступить в сообщество",
-                        "url": invite.invite_link
-                    }]]
-                }
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="🚪 Вступить в сообщество", url=invite.invite_link)
+                ]])
             )
         except TelegramAPIError:
             raise HTTPException(502, detail="Не удалось отправить приглашение в Telegram. Пользователь должен сначала открыть бота.")
