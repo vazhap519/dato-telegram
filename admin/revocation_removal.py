@@ -9,7 +9,7 @@ from sqlalchemy import text
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
 from db.database import SessionLocal
-from db.group_access import group_settings, has_group_access, group_removal_test, finish_group_removal
+from db.group_access import group_settings, has_group_access, group_removal_test, finish_group_removal, invalidate_issued_invites
 from db.subscription_automation import mark_managed_removed
 
 logger = logging.getLogger(__name__)
@@ -35,12 +35,20 @@ async def remove_after_revoke(telegram_id: int) -> str:
             SELECT 1 FROM subscriptions WHERE telegram_id=:uid
               AND status='active' AND paid_until IS NULL
         """), {"uid":telegram_id})).first())
-    if not (test_enabled or managed):
-        return "not_managed"
     if future or perpetual or await has_group_access(telegram_id):
         return "other_access"
+    # First invalidate invitations in our database, then revoke on Telegram.
+    # This applies even before a person has joined the group.
+    links = await invalidate_issued_invites(telegram_id, chat_id)
     try:
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            for link in links:
+                try:
+                    await bot.revoke_chat_invite_link(chat_id, link)
+                except Exception:
+                    logger.exception("Cannot revoke outstanding invite uid=%s", telegram_id)
+            if not (test_enabled or managed):
+                return "links_revoked"
             member = await bot.get_chat_member(chat_id, telegram_id)
             if member.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
                 return "admin"
