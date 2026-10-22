@@ -4,7 +4,8 @@ from db.database import engine, SessionLocal
 
 TRIGGERS = {
     "no_offer_24h": "24 часа после /start, оферта не принята",
-    "no_click_24h": "24 часа после принятия оферты, подписка не открыта",
+    "no_click_24h": "24 часа после принятия оферты, ссылка на оплату не открыта",
+    "clicked_24h": "24 часа после нажатия на оформление подписки",
 }
 DEFAULT_TEMPLATES = [
     ("Напоминание об оферте", "Здравствуйте, {first_name}! Если хотите продолжить оформление участия, ознакомьтесь с условиями в боте: /start."),
@@ -53,13 +54,30 @@ async def initialize_automation():
                 SELECT :name, :body WHERE NOT EXISTS
                     (SELECT 1 FROM message_templates WHERE title=:name)
             """), {"name": name, "body": body})
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS automation_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        # Enable the three rules once. Subsequent admin choices are not overwritten.
+        migrated = (await conn.execute(text("""
+            INSERT INTO automation_migrations(name) VALUES ('three_stage_reminders_v1')
+            ON CONFLICT DO NOTHING RETURNING name
+        """))).first() is not None
+        if migrated:
+            await conn.execute(text("""
+                UPDATE reminder_rules SET enabled=TRUE, enabled_at=NOW()
+                WHERE trigger IN ('no_offer_24h', 'no_click_24h')
+            """))
         for trigger, body in (
-            ("no_offer_24h", "Здравствуйте, {first_name}! Напоминаю, что вы можете ознакомиться с публичной офертой, отправив /start."),
-            ("no_click_24h", "Здравствуйте, {first_name}! Если хотите продолжить оформление участия, кнопка подписки доступна в сообщении бота."),
+            ("no_offer_24h", "Здравствуйте, {first_name}! Спасибо, что заглянули! В нашем сообществе можно продолжить знакомство с материалами и общение. Если интересно — начните с оферты в сообщении бота (/start)."),
+            ("no_click_24h", "Здравствуйте, {first_name}! Вы уже ознакомились с условиями. Если хотите присоединиться к сообществу, вернитесь к сообщению бота с кнопкой оформления подписки."),
+            ("clicked_24h", "Здравствуйте, {first_name}! Вы интересовались подпиской на сообщество. Если оплата ещё не завершена, вы можете вернуться по ссылке, полученной от бота. Если уже оплатили — спасибо, это сообщение можно пропустить."),
         ):
             await conn.execute(text("""
                 INSERT INTO reminder_rules (trigger, enabled, body)
-                VALUES (:trigger, FALSE, :body)
+                VALUES (:trigger, TRUE, :body)
                 ON CONFLICT (trigger) DO NOTHING
             """), {"trigger": trigger, "body": body})
 
@@ -133,6 +151,11 @@ async def enqueue_reminders():
                                            AND a.accepted_at <= NOW() - INTERVAL '24 hours'
                                            AND a.accepted_at >= r.enabled_at)
                              AND NOT EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id))
+                            OR
+                            (:trigger='clicked_24h'
+                             AND EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id
+                                         AND c.clicked_at >= r.enabled_at
+                                         AND c.clicked_at <= NOW() - INTERVAL '24 hours'))
                           )
                         ORDER BY u.telegram_id LIMIT 100
                     ), marked AS (
