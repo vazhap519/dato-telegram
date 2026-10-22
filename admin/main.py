@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.queries import get_users_count, get_settings
 from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats, create_upload_code, list_onboarding_users
 from .auth import (
@@ -41,6 +42,7 @@ app = FastAPI()
 @app.on_event('startup')
 async def setup_onboarding():
     await initialize_flow()
+    await initialize_broadcasts()
 
 
 # Protection against cross-origin admin requests
@@ -50,6 +52,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/update",
         "/update-flow",
         "/create-video-upload",
+        "/broadcast/preview",
+        "/broadcast/send",
         "/change-credentials",
     }
 
@@ -273,6 +277,56 @@ async def users_page(
         },
         headers={"Cache-Control": "no-store"}
     )
+
+
+@app.get("/broadcast")
+async def broadcast_page(request: Request, user=Depends(get_current_user)):
+    counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked")}
+    campaigns = await list_broadcasts()
+    return templates.TemplateResponse(
+        request=request, name="broadcast.html",
+        context={
+            "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
+            "counts": counts, "campaigns": campaigns, "preview": None,
+        }, headers={"Cache-Control": "no-store"}
+    )
+
+
+@app.post("/broadcast/preview")
+async def preview_broadcast(
+    request: Request,
+    body: str = Form(""),
+    audience: str = Form("accepted"),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    if audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
+        raise HTTPException(status_code=400, detail="Введите сообщение длиной от 1 до 4000 символов и выберите аудиторию")
+    counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked")}
+    return templates.TemplateResponse(
+        request=request, name="broadcast.html",
+        context={
+            "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
+            "counts": counts, "campaigns": await list_broadcasts(),
+            "preview": {"body": body.strip(), "audience": audience,
+                        "recipients": counts[audience]},
+        }, headers={"Cache-Control": "no-store"}
+    )
+
+
+@app.post("/broadcast/send")
+async def send_broadcast(
+    request: Request,
+    body: str = Form(""),
+    audience: str = Form(""),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    if confirm != "SEND" or audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
+        raise HTTPException(status_code=400, detail="Подтверждение отправки отсутствует")
+    await create_broadcast(body, audience)
+    return RedirectResponse("/broadcast", status_code=303)
 
 
 # ⚙️ UPDATE SETTINGS
