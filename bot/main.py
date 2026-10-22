@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler
 from db.flow import initialize_flow
 from db.broadcast import initialize_broadcasts
+from db.automation import initialize_automation, enqueue_reminders
 from bot.broadcast_worker import broadcast_worker
 from bot.handlers import broadcast_optout_handler, broadcast_optin_handler
 
@@ -28,10 +29,20 @@ dp.message.register(broadcast_optin_handler, Command("notifications"))
 async def main():
     await initialize_flow()
     await initialize_broadcasts()
+    await initialize_automation()
+    async def reminder_scheduler():
+        while True:
+            try:
+                await enqueue_reminders()
+            except Exception:
+                logging.exception("Reminder scheduler failure")
+            await asyncio.sleep(60)
+    reminders_task = asyncio.create_task(reminder_scheduler())
     task = asyncio.create_task(broadcast_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
+        reminders_task.cancel()
         task.cancel()
         try:
             await task
