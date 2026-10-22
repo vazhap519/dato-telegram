@@ -183,11 +183,16 @@ async def eligible_removal_tests(grace_hours=24, limit=20):
             AND EXISTS (
               SELECT 1 FROM access_grants g
               WHERE g.telegram_id=t.telegram_id AND g.resource='community'
-                AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
+                AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
               UNION ALL
               SELECT 1 FROM subscriptions s
               WHERE s.telegram_id=t.telegram_id AND s.status='active'
                 AND s.paid_until IS NOT NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM access_grants g WHERE g.telegram_id=t.telegram_id
+                AND g.resource='community' AND g.revoked_at IS NULL
+                AND g.starts_at>NOW()
             )
             AND NOT EXISTS (
               SELECT 1 FROM access_grants g WHERE g.telegram_id=t.telegram_id
@@ -203,7 +208,7 @@ async def eligible_removal_tests(grace_hours=24, limit=20):
               SELECT MAX(expires) FROM (
                 SELECT g.ends_at AS expires FROM access_grants g
                 WHERE g.telegram_id=t.telegram_id AND g.resource='community'
-                  AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
+                  AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
                 UNION ALL
                 SELECT s.paid_until AS expires FROM subscriptions s
                 WHERE s.telegram_id=t.telegram_id AND s.status='active'
