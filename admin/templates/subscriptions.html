@@ -10,7 +10,20 @@
 </section>
 <p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Учтённые права в базе пока <strong>не предоставляют и не отзывают доступ автоматически</strong> в Telegram и на сайте. Нажатие кнопки оплаты не считается платежом. Сведения Tribute будут подключены отдельно.</p>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Тарифы</h2>
-<p class="text-gray-400 text-sm">Стартовые тарифы — черновики. Цены не публикуются и не списываются.</p>
+<p class="text-gray-400 text-sm">Тарифы пока существуют только в нашем реестре. Цены не публикуются и не списываются.</p>
+<form action="/subscriptions/plan/create" method="post" class="bg-gray-700 rounded-xl p-4 grid gap-3 mb-5">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<h3 class="text-lg font-semibold">➕ Добавить тариф</h3>
+<div class="grid md:grid-cols-2 gap-3">
+<label class="text-sm">Название тарифа<input name="name" maxlength="100" minlength="2" required placeholder="Например, 3 месяца" class="mt-1 w-full bg-gray-800 rounded p-2"></label>
+<label class="text-sm">Стоимость<input type="number" name="price" min="0" max="1000000" step="0.01" required class="mt-1 w-full bg-gray-800 rounded p-2"></label>
+<label class="text-sm">Валюта<select name="currency" class="mt-1 w-full bg-gray-800 rounded p-2"><option value="EUR">EUR</option><option value="USD">USD</option><option value="GEL">GEL</option></select></label>
+<label class="text-sm">Срок в днях<input id="new-plan-days" type="number" name="duration_days" min="1" max="3650" value="30" required class="mt-1 w-full bg-gray-800 rounded p-2"></label>
+</div>
+<label class="flex gap-2 items-center text-sm"><input type="checkbox" name="is_lifetime" value="true" id="new-plan-lifetime"> Бессрочный тариф</label>
+<p class="text-xs text-gray-400">Новый тариф создаётся выключенным. После проверки включи его в списке ниже. Пока цены не используются для оплаты.</p>
+<button class="justify-self-start bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded">Создать тариф</button>
+</form>
 <div class="grid md:grid-cols-2 gap-3">
 {% for p in plans %}
 <form action="/subscriptions/plan" method="post" class="bg-gray-700 rounded-xl p-4 space-y-2">
@@ -30,4 +43,11 @@
 </tbody></table></div>
 <nav class="flex justify-between items-center text-sm">
 <div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}">Далее →</a>{% endif %}</div></nav>
-</section></main></body></html>
+</section></main><script>
+const lifetime = document.getElementById("new-plan-lifetime");
+const days = document.getElementById("new-plan-days");
+lifetime.addEventListener("change", () => {
+  days.disabled = lifetime.checked;
+  days.required = !lifetime.checked;
+});
+</script></body></html>
