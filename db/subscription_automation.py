@@ -148,3 +148,69 @@ async def eligible_managed_removals(chat_id,grace_hours,limit=20):
             ORDER BY m.last_joined_at ASC LIMIT :limit
         """),{"chat":chat_id,"grace":grace_hours,"limit":limit})).mappings().all()
         return [dict(row) for row in rows]
+
+
+async def member_removal_diagnostics(telegram_id, chat_id):
+    """Explain eligibility without modifying access or initiating a removal."""
+    settings = await automation_settings()
+    if not chat_id:
+        return {"reason": "Группа не подключена", "ready": False}
+    async with SessionLocal() as session:
+        row = (await session.execute(text("""
+            SELECT
+              EXISTS(
+                SELECT 1 FROM group_removal_tests t
+                WHERE t.telegram_id=:uid AND t.chat_id=:chat
+                  AND t.enabled=TRUE AND t.status IN ('armed','error')
+              ) AS test_armed,
+              (SELECT status FROM group_removal_tests
+                WHERE telegram_id=:uid) AS test_status,
+              EXISTS(
+                SELECT 1 FROM subscription_managed_members m
+                WHERE m.telegram_id=:uid AND m.chat_id=:chat
+                  AND m.removed_at IS NULL
+              ) AS managed,
+              EXISTS(
+                SELECT 1 FROM access_grants g
+                WHERE g.telegram_id=:uid AND g.resource='community'
+                  AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+                  AND (g.ends_at IS NULL OR g.ends_at>NOW())
+              ) OR EXISTS(
+                SELECT 1 FROM subscriptions s
+                WHERE s.telegram_id=:uid AND s.status='active'
+                  AND (s.paid_until IS NULL OR s.paid_until>NOW())
+              ) AS active_access,
+              (SELECT MAX(expiry) FROM (
+                SELECT ends_at AS expiry FROM access_grants
+                WHERE telegram_id=:uid AND resource='community'
+                  AND starts_at<=NOW() AND ends_at IS NOT NULL
+                UNION ALL
+                SELECT paid_until AS expiry FROM subscriptions
+                WHERE telegram_id=:uid AND status='active'
+                  AND paid_until IS NOT NULL
+              ) dates) AS last_expiry,
+              NOW() AS checked_at
+        """), {"uid":telegram_id, "chat":chat_id})).mappings().one()
+        data=dict(row)
+    data["grace_hours"]=settings["grace_hours"]
+    data["global_enabled"]=settings["removal_enabled"]
+    data["ready"]=False
+    data["remove_at"]=None
+    if data["active_access"]:
+        data["reason"]="Есть действующий доступ — исключать нельзя."
+    elif not data["test_armed"] and not (settings["removal_enabled"] and data["managed"]):
+        if data["test_status"] in ("removed", "already_out"):
+            data["reason"]="Предыдущий тест уже завершён. Для нового теста включите его повторно после продления."
+        else:
+            data["reason"]="Исключение не запущено: индивидуальный тест не активен, а общая автоматизация не управляет этим аккаунтом."
+    elif not data["last_expiry"]:
+        data["reason"]="Неизвестна дата окончания доступа — исключение запрещено."
+    else:
+        from datetime import timedelta
+        data["remove_at"]=data["last_expiry"] + timedelta(hours=settings["grace_hours"])
+        if data["checked_at"] < data["remove_at"]:
+            data["reason"]="Срок подписки истёк, но льготный период ещё продолжается."
+        else:
+            data["ready"]=True
+            data["reason"]="Срок и льготный период истекли; аккаунт ожидает проверки членства ботом."
+    return data
