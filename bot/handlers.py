@@ -4,7 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 
 from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click, has_accepted_offer
-from db.subscriptions import available_payment_plans, select_payment_plan
+from db.subscriptions import available_payment_plans, select_payment_plan, subscription_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,72 @@ def subscription_intro(settings):
     if not message_text:
         message_text = "Вы уже приняли условия. Выберите подходящий тариф для участия в сообществе."
     return message_text, InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")]
+        [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")],
+        [InlineKeyboardButton(text="👤 Моя подписка", callback_data="my_subscription")]
     ])
+
+
+
+def account_keyboard(can_subscribe=True):
+    rows = []
+    if can_subscribe:
+        rows.append([InlineKeyboardButton(
+            text="💳 Выбрать тариф", callback_data="subscription_click"
+        )])
+    rows.append([InlineKeyboardButton(
+        text="🔄 Обновить статус", callback_data="my_subscription"
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def show_subscription_account(bot, telegram_id, message=None):
+    snapshot = await subscription_snapshot(telegram_id)
+    current = snapshot["grant"]
+    paid = snapshot["subscription"]
+    chosen = snapshot["selection"]
+    lines = ["👤 Моя подписка — «Круг Души»", ""]
+    if current:
+        if current["grant_type"] == "lifetime" and current["ends_at"] is None:
+            lines.append("✅ Доступ: постоянный")
+        elif current["ends_at"]:
+            lines.append("✅ Внутренний доступ действителен до: " +
+                         current["ends_at"].strftime("%d.%m.%Y %H:%M") + " UTC")
+        else:
+            lines.append("✅ Доступ назначен администратором")
+        lines.append("ℹ️ Подключение к Telegram-группе пока выполняется отдельно.")
+    elif paid:
+        lines.append("✅ Оплаченный период учтён до: " +
+                     paid["paid_until"].strftime("%d.%m.%Y %H:%M") + " UTC")
+        if paid["plan_name"]:
+            lines.append("Тариф: " + paid["plan_name"])
+    else:
+        lines.append("ℹ️ Подтверждённой активной подписки в нашей системе пока нет.")
+    if chosen:
+        lines.extend(["", "Последний выбранный тариф: " + chosen["plan_name"],
+                      "Выбор тарифа не является подтверждением оплаты."])
+    lines.extend(["", "Автоматическая проверка платежей Tribute ещё не подключена."])
+    output = "\n".join(lines)
+    buttons = account_keyboard()
+    if message:
+        try:
+            await message.edit_text(output, reply_markup=buttons)
+            return
+        except TelegramBadRequest:
+            pass
+    await bot.send_message(telegram_id, output, reply_markup=buttons)
+
+
+async def my_subscription_command(message: types.Message):
+    if not message.from_user or message.chat.type != "private":
+        return
+    await show_subscription_account(message.bot, message.from_user.id)
+
+
+async def my_subscription_callback(query: types.CallbackQuery):
+    if not query.from_user:
+        return
+    await query.answer()
+    await show_subscription_account(query.bot, query.from_user.id, query.message)
 
 
 async def start_handler(message: types.Message):
