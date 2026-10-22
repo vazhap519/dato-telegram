@@ -39,6 +39,9 @@ async def initialize_flow():
                 click_count INTEGER NOT NULL DEFAULT 1
             )
         """))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT"))
         await conn.execute(text("""
             INSERT INTO bot_flow_settings (id) VALUES (1)
             ON CONFLICT (id) DO NOTHING
@@ -65,15 +68,22 @@ async def save_flow_settings(values):
         """), values)
         await session.commit()
 
-async def register_user(telegram_id):
+async def register_user(telegram_id, username=None, first_name=None, last_name=None):
+    """Keep unique users and their latest visible Telegram profile details."""
     async with SessionLocal() as session:
-        row = (await session.execute(text("""
-            INSERT INTO users (telegram_id) VALUES (:id)
-            ON CONFLICT (telegram_id) DO NOTHING
+        created = (await session.execute(text("""
+            INSERT INTO users (telegram_id, username, first_name, last_name)
+            VALUES (:id, :username, :first_name, :last_name)
+            ON CONFLICT (telegram_id) DO UPDATE SET
+                username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name
             RETURNING id
-        """), {"id": telegram_id})).scalar_one_or_none()
+        """), {"id": telegram_id, "username": username,
+               "first_name": first_name, "last_name": last_name})).scalar_one_or_none()
         await session.commit()
-        return row is not None
+        return created is not None
+
 
 async def accept_offer(telegram_id, version):
     async with SessionLocal() as session:
@@ -168,13 +178,18 @@ async def list_onboarding_users(stage="started", search="", page=1, per_page=30)
         ) a ON a.telegram_id=u.telegram_id
         LEFT JOIN subscription_clicks c ON c.telegram_id=u.telegram_id
         WHERE """ + conditions[stage] + """
-          AND (CAST(:search AS TEXT) = '' OR CAST(u.telegram_id AS TEXT) LIKE '%' || :search || '%')
+          AND (CAST(:search AS TEXT) = ''
+               OR CAST(u.telegram_id AS TEXT) ILIKE '%' || :search || '%'
+               OR COALESCE(u.username, '') ILIKE '%' || :search || '%'
+               OR COALESCE(u.first_name, '') ILIKE '%' || :search || '%'
+               OR COALESCE(u.last_name, '') ILIKE '%' || :search || '%'
+               OR TRIM(CONCAT_WS(' ', u.first_name, u.last_name)) ILIKE '%' || :search || '%')
     """
-    params = {"search": search.strip()[:50], "limit": per_page, "offset": (page - 1) * per_page}
+    params = {"search": search.strip().lstrip("@")[:50], "limit": per_page, "offset": (page - 1) * per_page}
     async with SessionLocal() as session:
         total = (await session.execute(text("SELECT COUNT(*) " + query), params)).scalar_one()
         rows = (await session.execute(text("""
-            SELECT u.telegram_id, u.created_at, a.accepted_at,
+            SELECT u.telegram_id, u.username, u.first_name, u.last_name, u.created_at, a.accepted_at,
                    c.clicked_at, c.click_count
         """ + query + """
             ORDER BY u.created_at DESC, u.telegram_id DESC
