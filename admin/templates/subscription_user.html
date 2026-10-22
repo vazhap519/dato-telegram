@@ -39,6 +39,8 @@
 <p class="text-amber-200">Все условия по срокам выполнены. Если участник всё ещё в группе, проверьте права бота и журнал его службы.</p>
 {% endif %}
 <p class="text-gray-300">Индивидуальный тест: {{ 'готов' if removal_diagnostics.test_armed else (removal_diagnostics.test_status or 'не включён') }} · Под контролем общей автоматизации: {{ 'да' if removal_diagnostics.managed else 'нет' }}</p>
+<p class="text-gray-300">Статус в Telegram: {{ removal_diagnostics.telegram_status }}</p>
+<p class="text-gray-300">Бот может исключать: {{ 'да' if removal_diagnostics.bot_can_ban else 'нет / не удалось проверить' }}</p>
 <p class="text-gray-300">Общая автоматизация: {{ 'включена' if removal_diagnostics.global_enabled else 'выключена' }} · Льготный период: {{ removal_diagnostics.grace_hours }} ч.</p>
 {% if removal_diagnostics.remove_at %}
 <p class="text-gray-300">Не раньше: {{ removal_diagnostics.remove_at|tbilisi_time }} (Тбилиси)</p>
