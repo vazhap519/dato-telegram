@@ -1,104 +1,24 @@
-# import os
-# from aiogram import Bot, Dispatcher
-# from aiohttp import web
-# from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-# from dotenv import load_dotenv
-# from bot.handlers import start_handler
-# from aiogram.filters import CommandStart
-
-# load_dotenv()
-
-# BOT_TOKEN = os.getenv("BOT_TOKEN")
-# WEBHOOK_PATH = "/webhook"
-# WEBHOOK_URL = "https://yourdomain.com/webhook"
-
-# bot = Bot(token=BOT_TOKEN)
-# dp = Dispatcher()
-
-# dp.message.register(start_handler, CommandStart())
-
-# async def on_startup(app):
-#     await bot.set_webhook(WEBHOOK_URL)
-
-# async def on_shutdown(app):
-#     await bot.delete_webhook()
-
-# def main():
-#     app = web.Application()
-
-#     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
-#     setup_application(app, dp, bot=bot)
-
-#     app.on_startup.append(on_startup)
-#     app.on_shutdown.append(on_shutdown)
-
-#     web.run_app(app, host="0.0.0.0", port=3000)
-
-# if __name__ == "__main__":
-#     main()
-
-# import os
-# from aiogram import Bot, Dispatcher, types
-# from aiogram.types import Message
-# from aiogram.filters import CommandStart
-# from aiogram.utils.keyboard import InlineKeyboardBuilder
-# from dotenv import load_dotenv
-
-# from db.queries import add_user, get_settings
-
-# load_dotenv()
-
-# BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# bot = Bot(token=BOT_TOKEN)
-# dp = Dispatcher()
-
-
-# @dp.message(CommandStart())
-# async def start_handler(message: Message):
-#     await add_user(message.from_user.id)
-
-#     settings = await get_settings()
-
-#     if settings:
-#         kb = InlineKeyboardBuilder()
-#         kb.button(text=settings.btn1_text, url=settings.btn1_url)
-#         kb.button(text=settings.btn2_text, url=settings.btn2_url)
-
-#         await message.answer_video(
-#             settings.video_url,
-#             caption=f"{settings.text1}\n\n{settings.text2}",
-#             reply_markup=kb.as_markup()
-#         )
-#     else:
-#         await message.answer("No settings found")
-
-
-# async def main():
-#     await dp.start_polling(bot)
-
-
-# if __name__ == "__main__":
-#     import asyncio
-#     asyncio.run(main())
-
 import asyncio
-from aiogram import Bot, Dispatcher
-from dotenv import load_dotenv
+import logging
 import os
 
-from bot.handlers import start_handler
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
+from dotenv import load_dotenv
+
+from bot.handlers import start_handler, accept_offer_handler
+from db.flow import initialize_flow
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=os.getenv("BOT_TOKEN"))
+bot = Bot(token=os.environ["BOT_TOKEN"])
 dp = Dispatcher()
-
 dp.message.register(start_handler, CommandStart())
+dp.callback_query.register(accept_offer_handler, F.data == "accept_offer")
 
 async def main():
-    print("🤖 Bot started...")
+    await initialize_flow()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
