@@ -71,18 +71,25 @@ async def expiry_counts():
         return dict(result)
 
 async def claim_expiry_alerts(limit=40):
-    """Reserve one alert for each current eligibility window, never for old expirations."""
+    """Queue the appropriate reminder as its time window actually arrives.
+
+    One-day and expired notices are independent; a short test still gets
+    a distinct expiration notification. Previously sent notices stay deduped.
+    """
     async with SessionLocal() as s:
         async with s.begin():
             records=(await s.execute(text(ACCESS_CTE+"""
-                SELECT e.telegram_id, e.last_expires,
-                    CASE
+                SELECT e.telegram_id,e.last_expires,window.kind
+                FROM effective e
+                CROSS JOIN LATERAL (
+                    SELECT CASE
                       WHEN e.last_expires<=NOW() THEN 'expired'
                       WHEN e.last_expires<=NOW()+INTERVAL '1 day' THEN 'one_day'
                       ELSE 'three_days'
                     END AS kind
-                FROM effective e
-                WHERE NOT e.permanent AND e.last_expires IS NOT NULL
+                ) window
+                WHERE NOT e.permanent
+                  AND e.last_expires IS NOT NULL
                   AND e.last_expires>NOW()-INTERVAL '1 day'
                   AND e.last_expires<=NOW()+INTERVAL '3 days'
                 ORDER BY e.last_expires ASC
@@ -94,10 +101,14 @@ async def claim_expiry_alerts(limit=40):
                     INSERT INTO subscription_expiry_notifications
                       (telegram_id,alert_kind,expires_at)
                     VALUES (:uid,:kind,:exp)
-                    ON CONFLICT(telegram_id,alert_kind,expires_at) DO NOTHING
+                    ON CONFLICT(telegram_id,alert_kind,expires_at)
+                    DO UPDATE SET status='pending'
+                    WHERE subscription_expiry_notifications.status='failed'
+                      AND subscription_expiry_notifications.attempted_at
+                          <NOW()-INTERVAL '5 minutes'
                     RETURNING id
                 """),{"uid":rec["telegram_id"],"kind":rec["kind"],"exp":rec["last_expires"]})).scalar_one_or_none()
-                if inserted:
+                if inserted is not None:
                     alerts.append(dict(id=inserted,telegram_id=rec["telegram_id"],
                                        alert_kind=rec["kind"],expires_at=rec["last_expires"]))
             return alerts
