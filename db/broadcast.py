@@ -66,15 +66,15 @@ async def count_recipients(audience):
                 OR (:audience='clicked' AND EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id)))
         """), {"audience": audience})).scalar_one()
 
-async def create_broadcast(body, audience):
+async def create_broadcast(body, audience, scheduled_at=None):
     if audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
         raise ValueError("Invalid broadcast")
     async with SessionLocal() as session:
         async with session.begin():
             campaign_id = (await session.execute(text("""
-                INSERT INTO broadcasts (body, audience) VALUES (:body, :audience)
+                INSERT INTO broadcasts (body, audience, scheduled_at) VALUES (:body, :audience, :scheduled_at)
                 RETURNING id
-            """), {"body": body.strip(), "audience": audience})).scalar_one()
+            """), {"body": body.strip(), "audience": audience, "scheduled_at": scheduled_at})).scalar_one()
             await session.execute(text("""
                 INSERT INTO broadcast_recipients (broadcast_id, telegram_id)
                 SELECT :bid, u.telegram_id FROM users u
@@ -114,6 +114,7 @@ async def claim_recipient():
                     FROM broadcast_recipients r
                     JOIN broadcasts b ON b.id=r.broadcast_id
                     WHERE r.status='pending' AND b.status IN ('queued', 'sending')
+                      AND (b.scheduled_at IS NULL OR b.scheduled_at <= NOW())
                     ORDER BY b.id, r.telegram_id
                     FOR UPDATE OF r SKIP LOCKED LIMIT 1
                 )
@@ -125,10 +126,29 @@ async def claim_recipient():
             if not row:
                 return None
             await session.execute(text("UPDATE broadcasts SET status='sending' WHERE id=:id"), {"id": row.broadcast_id})
-            body = (await session.execute(text("SELECT body FROM broadcasts WHERE id=:id"), {"id": row.broadcast_id})).scalar_one()
+            msg = (await session.execute(text("""
+                SELECT b.body, b.campaign_kind, u.first_name
+                FROM broadcasts b JOIN users u ON u.telegram_id=:uid
+                WHERE b.id=:id
+            """), {"id": row.broadcast_id, "uid": row.telegram_id})).one()
+            body, kind, first_name = msg
             opted_out = (await session.execute(text(
                 "SELECT EXISTS (SELECT 1 FROM broadcast_opt_out WHERE telegram_id=:id)"
             ), {"id": row.telegram_id})).scalar_one()
+            if kind.startswith("reminder:"):
+                trigger = kind.partition(":")[2]
+                still_eligible = (await session.execute(text("""
+                    SELECT CASE
+                      WHEN :trigger='no_offer_24h' THEN NOT EXISTS (
+                        SELECT 1 FROM offer_acceptances WHERE telegram_id=:uid
+                      )
+                      WHEN :trigger='no_click_24h' THEN NOT EXISTS (
+                        SELECT 1 FROM subscription_clicks WHERE telegram_id=:uid
+                      )
+                      ELSE FALSE END
+                """), {"trigger": trigger, "uid": row.telegram_id})).scalar_one()
+                opted_out = opted_out or not still_eligible
+            body = body.replace("{first_name}", first_name or "друг")
             return row.broadcast_id, row.telegram_id, body, opted_out
 
 async def finish_recipient(campaign_id, user_id, status, error_code=None):
