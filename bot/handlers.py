@@ -3,7 +3,7 @@ from aiogram import types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 
-from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click
+from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click, has_accepted_offer
 from db.subscriptions import available_payment_plans, select_payment_plan
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,16 @@ def offer_buttons(offer_url):
     rows.append([InlineKeyboardButton(text="✅ Принимаю условия", callback_data="accept_offer")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+def subscription_intro(settings):
+    """Single reusable subscription step for accepted users."""
+    message_text = (settings.get("subscription_text") or "").strip()
+    if not message_text:
+        message_text = "Вы уже приняли условия. Выберите подходящий тариф для участия в сообществе."
+    return message_text, InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")]
+    ])
+
+
 async def start_handler(message: types.Message):
     if not message.from_user:
         return
@@ -22,6 +32,12 @@ async def start_handler(message: types.Message):
     settings = await get_flow_settings()
     if not settings:
         await message.answer("Настройки бота ещё не готовы.")
+        return
+    version = (settings.get("offer_version") or "1").strip()
+    if await has_accepted_offer(message.from_user.id, version):
+        subscription_text, buttons = subscription_intro(settings)
+        await message.answer(subscription_text, reply_markup=buttons)
+        logger.info("Returning user %s skipped accepted offer %s", message.from_user.id, version)
         return
     video_id = (settings.get("video_note_file_id") or "").strip()
     if video_id:
@@ -54,12 +70,7 @@ async def accept_offer_handler(query: types.CallbackQuery):
             await query.message.edit_reply_markup(reply_markup=None)
         except TelegramBadRequest:
             pass
-    subscription_text = (settings.get("subscription_text") or "").strip()
-    if not subscription_text:
-        subscription_text = "Спасибо! Чтобы оформить подписку, нажмите кнопку ниже."
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")]
-    ])
+    subscription_text, buttons = subscription_intro(settings)
     await query.bot.send_message(query.from_user.id, subscription_text, reply_markup=buttons)
 
 async def upload_command_handler(message: types.Message):
@@ -100,8 +111,9 @@ async def subscription_click_handler(query: types.CallbackQuery):
         return
     await query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=plan_button_label(plan), callback_data=f"choose_plan:{plan['id']}")]
-        for plan in plans
+        *[[InlineKeyboardButton(text=plan_button_label(plan), callback_data=f"choose_plan:{plan['id']}")]
+          for plan in plans],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_subscription")]
     ])
     if query.message:
         try:
@@ -114,6 +126,29 @@ async def subscription_click_handler(query: types.CallbackQuery):
         "Выберите срок участия в сообществе:",
         reply_markup=keyboard
     )
+
+
+async def back_to_subscription_handler(query: types.CallbackQuery):
+    """Return from the plan list to the subscription entry step."""
+    if not query.from_user:
+        return
+    settings = await get_flow_settings()
+    if not settings:
+        await query.answer("Настройки ещё не готовы.", show_alert=True)
+        return
+    version = (settings.get("offer_version") or "1").strip()
+    if not await has_accepted_offer(query.from_user.id, version):
+        await query.answer("Пожалуйста, примите актуальную оферту через /start.", show_alert=True)
+        return
+    subscription_text, buttons = subscription_intro(settings)
+    await query.answer()
+    if query.message:
+        try:
+            await query.message.edit_text(subscription_text, reply_markup=buttons)
+            return
+        except TelegramBadRequest:
+            pass
+    await query.bot.send_message(query.from_user.id, subscription_text, reply_markup=buttons)
 
 
 async def choose_plan_handler(query: types.CallbackQuery):
