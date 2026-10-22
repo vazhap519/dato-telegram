@@ -17,56 +17,37 @@
         </div>
     </div>
 
-    <!-- SETTINGS CARD -->
+    <!-- USER STATISTICS -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-gray-800 p-4 rounded-xl">Всего пользователей<div class="text-2xl text-green-400 font-bold">{{ stats.total }}</div></div>
+      <div class="bg-gray-800 p-4 rounded-xl">Новых сегодня<div class="text-2xl font-bold">{{ stats.today }}</div></div>
+      <div class="bg-gray-800 p-4 rounded-xl">Новых за 7 дней<div class="text-2xl font-bold">{{ stats.week }}</div></div>
+      <div class="bg-gray-800 p-4 rounded-xl">Приняли оферту<div class="text-2xl font-bold">{{ stats.accepted }}</div></div>
+    </div>
     <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
-        <h2 class="text-xl font-semibold mb-4">⚙️ Bot Settings</h2>
-
-        <form method="post" action="/update" class="grid gap-4">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-            <input name="video_url"
-                placeholder="Video URL"
-                value="{{ settings.video_url if settings else '' }}"
-                class="p-2 rounded bg-gray-700">
-
-            <input name="text1"
-                placeholder="Text 1"
-                value="{{ settings.text1 if settings else '' }}"
-                class="p-2 rounded bg-gray-700">
-
-            <input name="text2"
-                placeholder="Text 2"
-                value="{{ settings.text2 if settings else '' }}"
-                class="p-2 rounded bg-gray-700">
-
-            <div class="grid grid-cols-2 gap-4">
-                <input name="btn1_text"
-                    placeholder="Button 1 Text"
-                    value="{{ settings.btn1_text if settings else '' }}"
-                    class="p-2 rounded bg-gray-700">
-
-                <input name="btn1_url"
-                    placeholder="Button 1 URL"
-                    value="{{ settings.btn1_url if settings else '' }}"
-                    class="p-2 rounded bg-gray-700">
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <input name="btn2_text"
-                    placeholder="Button 2 Text"
-                    value="{{ settings.btn2_text if settings else '' }}"
-                    class="p-2 rounded bg-gray-700">
-
-                <input name="btn2_url"
-                    placeholder="Button 2 URL"
-                    value="{{ settings.btn2_url if settings else '' }}"
-                    class="p-2 rounded bg-gray-700">
-            </div>
-
-            <button class="bg-blue-500 hover:bg-blue-600 p-2 rounded font-semibold">
-                💾 Save Settings
-            </button>
-
+        <h2 class="text-xl font-semibold mb-4">Настройки подписки</h2>
+        <p class="text-gray-300 text-sm mb-4">После /start бот отправляет видеокружочек (если задан file_id), затем оферту. Инструкция по подписке отправляется только после подтверждения условий.</p>
+        <form method="post" action="/update-flow" class="grid gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="grid gap-1">Telegram file_id видеокружочка
+                <input name="video_note_file_id" value="{{ flow.video_note_file_id if flow else '' }}" placeholder="Необязательно; file_id именно video_note" class="p-2 rounded bg-gray-700">
+            </label>
+            <label class="grid gap-1">Текст сообщения с публичной офертой
+                <textarea name="offer_text" rows="4" class="p-2 rounded bg-gray-700">{{ flow.offer_text if flow else '' }}</textarea>
+            </label>
+            <label class="grid gap-1">Ссылка на публичную оферту
+                <input name="offer_url" type="url" value="{{ flow.offer_url if flow else '' }}" placeholder="https://..." class="p-2 rounded bg-gray-700">
+            </label>
+            <label class="grid gap-1">Версия оферты (изменяй при обновлении условий)
+                <input name="offer_version" required value="{{ flow.offer_version if flow else '1' }}" class="p-2 rounded bg-gray-700">
+            </label>
+            <label class="grid gap-1">Инструкция по оформлению подписки
+                <textarea name="subscription_text" rows="5" class="p-2 rounded bg-gray-700">{{ flow.subscription_text if flow else '' }}</textarea>
+            </label>
+            <label class="grid gap-1">Ссылка на оформление подписки
+                <input name="subscription_url" type="url" value="{{ flow.subscription_url if flow else '' }}" placeholder="https://..." class="p-2 rounded bg-gray-700">
+            </label>
+            <button class="bg-blue-500 hover:bg-blue-600 p-2 rounded font-semibold">💾 Сохранить настройки подписки</button>
         </form>
     </div>
 
