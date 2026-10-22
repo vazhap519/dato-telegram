@@ -112,21 +112,56 @@
 </div><label class="text-sm">Действует по дату (включительно; Тбилиси)<input type="date" id="end-date" name="end_date" class="block bg-gray-700 p-3 rounded mt-1 w-full"></label>
 <label class="text-sm">Причина предоставления доступа<input type="text" maxlength="500" name="reason" class="block bg-gray-700 p-3 rounded mt-1 w-full" placeholder="Например, первопроходец, подарок, ручное продление"></label>
 <button onclick="return confirm('Подтвердить запись права доступа в базу?')" class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-3 justify-self-start font-semibold">Назначить доступ</button></form></section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="text-xl font-semibold">Доступ в сообщество</h2>
-{% for g in grants %}<div class="bg-gray-700 p-4 rounded-xl grid md:grid-cols-[1fr_auto] gap-3 items-center">
-<div><div class="font-semibold">{{ {'lifetime':'Постоянный','temporary':'Временный','gift':'Подарочный','trial':'Пробный'}.get(g.grant_type,g.grant_type) }}</div>
-<div class="text-sm text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+(g.ends_at|tbilisi_time)+' (Тбилиси)' if g.ends_at else 'Без срока') }}</div><div class="text-xs text-gray-400">Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}{% if not g.revoked_at and g.ends_at and g.grant_type != 'lifetime' %}
-<form method="post" action="/subscriptions/grant/expiry" class="flex flex-wrap items-end gap-2 mt-3">
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<div class="flex flex-wrap justify-between items-center gap-3">
+<h2 class="text-xl font-semibold">Доступ в сообщество</h2>
+{% if grants|selectattr('revoked_at')|list %}
+<form method="post" action="/subscriptions/grants/history/clear"
+ onsubmit="return confirm('Скрыть старые отозванные доступы этого участника? Действующие права сохранятся.');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="confirm" value="CLEAR_REVOKED_GRANTS">
+<button class="rounded bg-red-800 hover:bg-red-700 px-3 py-2 text-sm" type="submit">Очистить историю</button>
+</form>
+{% endif %}
+</div>
+{% if request.query_params.get('grants') == 'cleared' %}
+<p class="text-green-300 text-sm">История отозванных доступов скрыта. Действующие права сохранены.</p>
+{% endif %}
+<div class="max-h-80 overflow-y-auto overscroll-contain rounded-lg border border-gray-700 p-2 space-y-2">
+{% for g in grants %}
+<details class="rounded-lg bg-gray-700 group p-3" {{ 'open' if not g.revoked_at else '' }}>
+<summary class="cursor-pointer flex items-center justify-between gap-2">
+<span class="font-semibold">{{ {'lifetime':'Постоянный','temporary':'Временный','gift':'Подарочный','trial':'Пробный'}.get(g.grant_type,g.grant_type) }}</span>
+<span class="text-xs text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+(g.ends_at|tbilisi_time) if g.ends_at else 'Без срока') }}</span>
+</summary>
+<div class="pt-3 mt-2 border-t border-gray-600 text-xs text-gray-300 space-y-2">
+<p>Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}</p>
+{% if not g.revoked_at and g.ends_at and g.grant_type != 'lifetime' %}
+<form method="post" action="/subscriptions/grant/expiry" class="flex flex-wrap items-end gap-2">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
 <input type="hidden" name="grant_id" value="{{ g.id }}">
 <input type="hidden" name="confirm" value="CHANGE_EXPIRY">
 <label class="text-sm">Новый срок (Тбилиси)<input type="datetime-local" name="end_at" required value="{{ g.ends_at|tbilisi_time('%Y-%m-%dT%H:%M') }}" class="block bg-gray-800 rounded p-2 mt-1"></label>
-<button class="bg-indigo-600 px-3 py-2 rounded" onclick="return confirm('Изменить дату и время окончания доступа?')">Сохранить время</button>
+<button class="bg-indigo-600 rounded px-3 py-2" onclick="return confirm('Изменить дату и время окончания доступа?')">Сохранить время</button>
 </form>
-{% endif %}</div></div>
-{% if not g.revoked_at %}<form method="post" action="/subscriptions/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="grant_id" value="{{ g.id }}"><input type="hidden" name="confirm" value="REVOKE"><button onclick="return confirm('Отозвать это право? Операция фиксируется в журнале.')" class="px-4 py-2 rounded bg-red-700">Отозвать</button></form>{% endif %}
-</div>{% else %}<p class="text-gray-400">Назначенных прав пока нет.</p>{% endfor %}</section>
+{% endif %}
+{% if not g.revoked_at %}
+<form method="post" action="/subscriptions/revoke">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="grant_id" value="{{ g.id }}">
+<input type="hidden" name="confirm" value="REVOKE">
+<button onclick="return confirm('Отозвать это право? Операция фиксируется в журнале.')" class="px-3 py-2 rounded bg-red-700 text-sm">Отозвать доступ</button>
+</form>
+{% endif %}
+</div>
+</details>
+{% else %}<p class="text-gray-400 text-sm p-3">Назначенных прав пока нет.</p>{% endfor %}
+</div>
+<p class="text-xs text-gray-500">Нажмите на запись для подробностей. Очистка скрывает только отозванные доступы, не удаляя их из базы.</p>
+</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Учётные подписки</h2><p class="text-gray-400 text-sm">Платёжный модуль ещё не подключён.</p>
 {% for s in subscriptions %}<div class="p-3 border-t border-gray-700 text-sm">{{ s.plan_name or 'Тариф не указан' }} · {{ s.status }} · {{ s.provider }} · {{ s.paid_until|tbilisi_time('%d.%m.%Y %H:%M') if s.paid_until else 'без подтверждённого периода' }}</div>{% else %}<p class="text-gray-400">Подписок пока нет.</p>{% endfor %}</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3">
