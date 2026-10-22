@@ -23,7 +23,7 @@
 </section>
 <form action="/users" method="get" class="flex gap-2 mb-4">
 <input type="hidden" name="stage" value="{{ stage }}">
-<input type="text" name="search" value="{{ search }}" placeholder="Поиск по Telegram ID" class="flex-1 min-w-0 rounded-lg bg-gray-800 border border-gray-700 px-4 py-2">
+<input type="text" name="search" value="{{ search }}" placeholder="Поиск по имени, @username или Telegram ID" class="flex-1 min-w-0 rounded-lg bg-gray-800 border border-gray-700 px-4 py-2">
 <button class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500">Найти</button>
 {% if search %}<a href="/users?stage={{ stage }}" class="px-3 py-2 rounded-lg bg-gray-700">Сбросить</a>{% endif %}
 </form>
@@ -31,19 +31,30 @@
 <div class="overflow-x-auto bg-gray-800 rounded-xl border border-gray-700">
 <table class="w-full text-sm text-left">
 <thead class="bg-gray-700 text-gray-200"><tr>
-<th class="p-3">Telegram ID</th><th class="p-3">Первый /start</th><th class="p-3">Принял оферту</th><th class="p-3">Нажал подписку</th><th class="p-3">Нажатий</th>
+<th class="p-3">Пользователь</th><th class="p-3">Telegram ID</th><th class="p-3">Первый /start</th><th class="p-3">Принял оферту</th><th class="p-3">Нажал подписку</th><th class="p-3">Нажатий</th>
 </tr></thead>
 <tbody>
 {% for u in users %}
 <tr class="border-t border-gray-700 hover:bg-gray-750">
-<td class="p-3 font-mono">{{ u.telegram_id }}</td>
+<td class="p-3">
+  <div class="font-semibold">{{ ([u.first_name, u.last_name]|select|join(' ')) or 'Имя не указано' }}</div>
+  {% if u.username %}
+    <a href="https://t.me/{{ u.username }}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">@{{ u.username }}</a>
+  {% else %}
+    <span class="text-gray-500 text-xs">Без username</span>
+  {% endif %}
+  <div class="mt-1">
+    <a href="{{ 'https://t.me/' ~ u.username if u.username else 'tg://user?id=' ~ u.telegram_id }}" class="inline-block text-xs text-indigo-300 hover:underline">↗ Открыть в Telegram</a>
+  </div>
+</td>
+<td class="p-3 font-mono text-gray-400">{{ u.telegram_id }}</td>
 <td class="p-3 whitespace-nowrap">{{ u.created_at.strftime('%d.%m.%Y %H:%M') if u.created_at else '—' }}</td>
 <td class="p-3 whitespace-nowrap">{{ u.accepted_at.strftime('%d.%m.%Y %H:%M') if u.accepted_at else '—' }}</td>
 <td class="p-3 whitespace-nowrap">{{ u.clicked_at.strftime('%d.%m.%Y %H:%M') if u.clicked_at else '—' }}</td>
 <td class="p-3">{{ u.click_count or '—' }}</td>
 </tr>
 {% else %}
-<tr><td colspan="5" class="p-8 text-center text-gray-400">Пользователей пока нет</td></tr>
+<tr><td colspan="6" class="p-8 text-center text-gray-400">Пользователей пока нет</td></tr>
 {% endfor %}
 </tbody></table></div>
 <nav class="flex items-center justify-between mt-5">
@@ -51,6 +62,6 @@
 <span class="text-gray-400 text-sm">Страница {{ page }} из {{ page_count }}</span>
 <div>{% if page < page_count %}<a href="{{ next_url }}" class="bg-gray-700 rounded-lg px-4 py-2">Вперёд →</a>{% endif %}</div>
 </nav>
-<p class="text-xs text-gray-500 mt-8">«Нажали подписку» означает нажатие кнопки внутри бота, а не подтверждённую оплату. Нажатия внешней ссылки Telegram не отслеживаются.</p>
+<p class="text-xs text-gray-500 mt-8">Для пользователей без публичного @username ссылка по ID может не открыться из-за ограничений Telegram. «Нажали подписку» означает нажатие кнопки внутри бота, а не подтверждённую оплату. Нажатия внешней ссылки Telegram не отслеживаются.</p>
 </main>
 </body></html>
