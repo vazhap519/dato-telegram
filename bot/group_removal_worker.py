@@ -58,8 +58,7 @@ async def group_removal_test_worker(bot):
                         await finish_group_removal(uid,"unban_failed","Участник исключён, но разблокировка не удалась. Требуется ручная проверка группы.")
                         continue
                     await mark_managed_removed(uid,chat_id)
-                    if target in targets[:len(targets)]:
-                        await finish_group_removal(uid,"removed")
+                    await finish_group_removal(uid,"removed")
                     try:
                         await bot.send_message(uid,"⏳ Срок тестового доступа в «Круг Души» истёк, поэтому доступ к группе завершён. После продления можно получить новое приглашение через /subscription.")
                     except Exception:
