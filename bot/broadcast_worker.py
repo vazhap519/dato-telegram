@@ -18,13 +18,14 @@ async def broadcast_worker(bot: Bot):
         if not item:
             await asyncio.sleep(3)
             continue
-        campaign_id, user_id, body, opted_out = item
+        campaign_id, user_id, body, opted_out, button_text, button_url = item
+        markup = InlineKeyboardMarkup(inline_keyboard=([[InlineKeyboardButton(text=button_text, url=button_url)]] if button_text and button_url else []) + [[InlineKeyboardButton(text="🔕 Отписаться от рассылок", callback_data="broadcast_optout")]])
         if opted_out:
             await finish_recipient(campaign_id, user_id, "skipped", "opted_out")
             continue
         try:
             # Respect Telegram's conservative throughput: no more than ~10 messages/second.
-            await bot.send_message(user_id, body, reply_markup=OPT_OUT_BUTTON)
+            await bot.send_message(user_id, body, reply_markup=markup)
         except TelegramRetryAfter as exc:
             # Sending result was explicitly rejected by API with retry_after.
             await asyncio.sleep(min(exc.retry_after, 120))
