@@ -10,6 +10,8 @@ from bot.handlers import start_handler, accept_offer_handler, upload_command_han
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
 from db.group_access import initialize_group_access
+from db.expiry_monitor import initialize_expiry_monitor
+from bot.expiry_worker import expiry_worker
 from bot.group_handlers import group_join_request_handler, group_id_handler
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
@@ -41,6 +43,7 @@ async def main():
     await initialize_flow()
     await initialize_subscriptions()
     await initialize_group_access()
+    await initialize_expiry_monitor()
     await initialize_broadcasts()
     await initialize_automation()
     async def reminder_scheduler():
@@ -52,13 +55,19 @@ async def main():
             await asyncio.sleep(60)
     reminders_task = asyncio.create_task(reminder_scheduler())
     task = asyncio.create_task(broadcast_worker(bot))
+    expiry_task = asyncio.create_task(expiry_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
         reminders_task.cancel()
         task.cancel()
+        expiry_task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await expiry_task
         except asyncio.CancelledError:
             pass
 
