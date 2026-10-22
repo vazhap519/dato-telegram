@@ -10,7 +10,7 @@ from bot.handlers import start_handler, accept_offer_handler, upload_command_han
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
 from db.group_access import initialize_group_access
-from bot.group_handlers import group_join_request_handler
+from bot.group_handlers import group_join_request_handler, group_id_handler
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
 from bot.broadcast_worker import broadcast_worker
@@ -23,6 +23,7 @@ bot = Bot(token=os.environ["BOT_TOKEN"])
 dp = Dispatcher()
 dp.chat_join_request.register(group_join_request_handler)
 dp.message.register(start_handler, CommandStart())
+dp.message.register(group_id_handler, Command("chatid"))
 dp.message.register(my_subscription_command, Command('subscription', 'my_subscription'))
 dp.message.register(upload_command_handler, Command('upload'))
 dp.message.register(upload_video_note_handler, F.video_note)
