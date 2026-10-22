@@ -36,6 +36,9 @@ def account_keyboard(can_subscribe=True):
     rows.append([InlineKeyboardButton(
         text="🔄 Обновить статус", callback_data="my_subscription"
     )])
+    rows.append([InlineKeyboardButton(
+        text="⬅️ Назад", callback_data="back_to_subscription"
+    )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
