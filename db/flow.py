@@ -25,6 +25,14 @@ async def initialize_flow():
             )
         """))
         await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS video_note_upload (
+                id INTEGER PRIMARY KEY CHECK (id=1),
+                code_hash TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                telegram_id BIGINT
+            )
+        """))
+        await conn.execute(text("""
             INSERT INTO bot_flow_settings (id) VALUES (1)
             ON CONFLICT (id) DO NOTHING
         """))
@@ -80,3 +88,42 @@ async def registration_stats():
               (SELECT COUNT(DISTINCT telegram_id) FROM offer_acceptances) AS accepted
         """))).one()
         return dict(row._mapping)
+
+async def create_upload_code(code):
+    import hashlib
+    async with SessionLocal() as session:
+        await session.execute(text("""
+            INSERT INTO video_note_upload (id, code_hash, expires_at, telegram_id)
+            VALUES (1, :hash, NOW() + INTERVAL '15 minutes', NULL)
+            ON CONFLICT (id) DO UPDATE SET
+              code_hash=EXCLUDED.code_hash, expires_at=EXCLUDED.expires_at,
+              telegram_id=NULL
+        """), {"hash": hashlib.sha256(code.encode()).hexdigest()})
+        await session.commit()
+
+async def authorize_video_uploader(telegram_id, code):
+    import hashlib
+    async with SessionLocal() as session:
+        row = (await session.execute(text("""
+            UPDATE video_note_upload
+            SET telegram_id=:uid
+            WHERE id=1 AND code_hash=:hash AND expires_at > NOW()
+              AND telegram_id IS NULL
+            RETURNING id
+        """), {"uid": telegram_id, "hash": hashlib.sha256(code.encode()).hexdigest()})).first()
+        await session.commit()
+        return bool(row)
+
+async def store_uploaded_video_note(telegram_id, file_id):
+    async with SessionLocal() as session:
+        row = (await session.execute(text("""
+            DELETE FROM video_note_upload
+            WHERE id=1 AND telegram_id=:uid AND expires_at > NOW()
+            RETURNING id
+        """), {"uid": telegram_id})).first()
+        if row:
+            await session.execute(text("""
+                UPDATE bot_flow_settings SET video_note_file_id=:fid WHERE id=1
+            """), {"fid": file_id})
+        await session.commit()
+        return bool(row)
