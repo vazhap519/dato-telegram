@@ -166,7 +166,12 @@ async def person(telegram_id):
           SELECT action,actor,details,created_at FROM subscription_audit_log
           WHERE telegram_id=:uid ORDER BY id DESC LIMIT 60
         """),{"uid":telegram_id})).mappings()]
-        return dict(user),grants,subs,audit
+        selection=(await s.execute(text("""
+          SELECT x.plan_id,p.name AS plan_name,x.first_selected_at,x.selected_at,x.selection_count
+          FROM subscription_plan_selections x JOIN subscription_plans p ON p.id=x.plan_id
+          WHERE x.telegram_id=:uid
+        """), {"uid":telegram_id})).mappings().first()
+        return dict(user),grants,subs,audit,(dict(selection) if selection else None)
 
 async def grant_access(telegram_id,resource,grant_type,ends_at,reason,actor):
     if resource != 'community':
