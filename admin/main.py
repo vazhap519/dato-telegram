@@ -404,6 +404,21 @@ async def subscriptions_grant(
     )
 
 
+@app.post("/subscriptions/renew")
+async def subscriptions_renew(
+    telegram_id: int = Form(...), days: int = Form(...),
+    reason: str = Form(""), confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    if confirm != "RENEW":
+        raise HTTPException(400, detail="Подтвердите продление")
+    try:
+        await extend_community_access(telegram_id, days, reason, user["user"])
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?renewed=1",status_code=303)
+
+
 @app.post("/subscriptions/grant/expiry")
 async def subscriptions_change_grant_expiry(
     telegram_id: int = Form(...), grant_id: int = Form(...),
