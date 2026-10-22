@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
@@ -47,6 +48,7 @@ async def setup_onboarding():
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
+    await initialize_group_access()
 
 
 # Protection against cross-origin admin requests
@@ -64,6 +66,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/revoke",
         "/subscriptions/plan",
         "/subscriptions/plan/create",
+        "/subscriptions/group",
+        "/subscriptions/invite",
         "/change-credentials",
     }
 
@@ -299,12 +303,13 @@ async def subscriptions_page(
 ):
     from urllib.parse import urlencode
     summary, plans = await subscriptions_overview()
+    tg_group = await group_settings()
     users, total = await subscription_people(search, page)
     page = max(1, min(page, 100000))
     return templates.TemplateResponse(
         request=request, name="subscriptions.html",
         context={
-            "summary": summary, "plans": plans, "users": users,
+            "summary": summary, "plans": plans, "users": users, "tg_group":tg_group,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
             "next_url": "/subscriptions?" + urlencode({"search":search,"page":page+1}),
@@ -321,11 +326,15 @@ async def subscription_user_page(
     data = await subscription_person(telegram_id)
     if data is None: raise HTTPException(404, detail="Пользователь не найден")
     participant, grants, subs, audit, selection = data
+    tg_group = await group_settings()
+    recent_invites = await latest_invites(telegram_id)
+    can_invite = bool(await has_group_access(telegram_id))
     return templates.TemplateResponse(
         request=request, name="subscription_user.html",
         context={
             "participant":participant, "grants":grants,
             "subscriptions":subs, "audit":audit, "selection":selection,
+            "tg_group":tg_group, "recent_invites":recent_invites, "can_invite":can_invite,
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
@@ -397,6 +406,89 @@ async def subscriptions_plan_create(
     except (InvalidOperation, ValueError) as exc:
         raise HTTPException(400, detail=str(exc) if isinstance(exc, ValueError) else "Неверная цена")
     return RedirectResponse("/subscriptions", status_code=303)
+
+
+@app.post("/subscriptions/group")
+async def subscriptions_group_setup(
+    chat_id: int = Form(...), csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    import os
+    from aiogram import Bot
+    from aiogram.enums import ChatMemberStatus
+    if chat_id >= 0:
+        raise HTTPException(400, detail="Укажите отрицательный ID закрытой супергруппы")
+    async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+        try:
+            chat = await telegram.get_chat(chat_id)
+            me = await telegram.get_me()
+            membership = await telegram.get_chat_member(chat_id, me.id)
+        except Exception:
+            raise HTTPException(400, detail="Группа недоступна. Проверьте ID и добавление бота")
+        if chat.type != "supergroup":
+            raise HTTPException(400, detail="Поддерживаются только Telegram-супергруппы")
+        if membership.status not in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
+            raise HTTPException(400, detail="Боту необходимы права администратора")
+        if membership.status == ChatMemberStatus.ADMINISTRATOR and not membership.can_invite_users:
+            raise HTTPException(400, detail="Включите боту право приглашать участников")
+    await save_group(chat_id, chat.title or "Telegram-группа", user["user"])
+    return RedirectResponse("/subscriptions?group=connected", status_code=303)
+
+
+@app.post("/subscriptions/invite")
+async def subscriptions_send_invite(
+    telegram_id: int = Form(...),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    from datetime import datetime, timedelta, timezone
+    import os
+    from aiogram import Bot
+    from aiogram.exceptions import TelegramAPIError
+    from bot.group_handlers import INVITE_PREFIX
+    if not await has_group_access(telegram_id):
+        raise HTTPException(400, detail="Сначала назначьте действующий доступ в карточке участника")
+    if await subscription_person(telegram_id) is None:
+        raise HTTPException(404, detail="Пользователь не найден")
+    group = await group_settings()
+    chat_id = group.get("chat_id")
+    if not chat_id:
+        raise HTTPException(400, detail="Сначала подключите супергруппу в разделе Подписки")
+    expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+    async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+        try:
+            member = await telegram.get_chat_member(chat_id, telegram_id)
+            if member.status in ("member", "administrator", "creator") or (
+                member.status == "restricted" and member.is_member
+            ):
+                return RedirectResponse(
+                    f"/subscriptions/users/{telegram_id}?invite=already_member", status_code=303
+                )
+        except TelegramAPIError:
+            # Telegram may not return a nonmember; this is not proof of membership.
+            pass
+        try:
+            invite = await telegram.create_chat_invite_link(
+                chat_id=chat_id,
+                name=f"{INVITE_PREFIX}{telegram_id}",
+                expire_date=expiry,
+                creates_join_request=True
+            )
+            await record_invite(telegram_id, chat_id, invite.invite_link, expiry, user["user"])
+            await telegram.send_message(
+                telegram_id,
+                "🔐 Вам предоставлен доступ в «Круг Души». "
+                "Нажмите кнопку ниже и отправьте заявку на вступление. "
+                "Ссылка действует 1 час.",
+                reply_markup={
+                    "inline_keyboard": [[{
+                        "text": "🚪 Вступить в сообщество",
+                        "url": invite.invite_link
+                    }]]
+                }
+            )
+        except TelegramAPIError:
+            raise HTTPException(502, detail="Не удалось отправить приглашение в Telegram. Пользователь должен сначала открыть бота.")
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?invite=sent", status_code=303)
 
 
 @app.get("/broadcast")
