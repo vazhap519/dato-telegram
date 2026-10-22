@@ -19,7 +19,7 @@ async def group_removal_test_worker(bot):
             await rearm_renewed_removal_tests()
             group=await group_settings()
             settings=await automation_settings()
-            targets=await eligible_removal_tests()
+            targets=await eligible_removal_tests(settings['grace_hours'])
             if settings["removal_enabled"]:
                 targets += await eligible_managed_removals(group.get("chat_id"),settings["grace_hours"])
             seen=set()
@@ -45,7 +45,18 @@ async def group_removal_test_worker(bot):
                         await mark_managed_removed(uid,chat_id)
                         await finish_group_removal(uid,"already_out")
                         continue
-                    # Re-check access immediately before Telegram action.
+                    # Recheck both the entitlement and the configured grace window
+                # immediately before any irreversible Telegram operation.
+                latest=await automation_settings()
+                still_eligible=await eligible_removal_tests(latest["grace_hours"],limit=100)
+                if not any(x["telegram_id"]==uid and x["chat_id"]==chat_id
+                           for x in still_eligible):
+                    if not latest["removal_enabled"]:
+                        continue
+                    active=await eligible_managed_removals(chat_id,latest["grace_hours"],limit=100)
+                    if not any(x["telegram_id"]==uid for x in active):
+                        continue
+                # Re-check access immediately before Telegram action.
                     if await has_group_access(uid):
                         continue
                     # Remove via ban then immediately unban, so the account can join
