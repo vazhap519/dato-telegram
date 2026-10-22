@@ -320,12 +320,12 @@ async def subscription_user_page(
 ):
     data = await subscription_person(telegram_id)
     if data is None: raise HTTPException(404, detail="Пользователь не найден")
-    participant, grants, subs, audit = data
+    participant, grants, subs, audit, selection = data
     return templates.TemplateResponse(
         request=request, name="subscription_user.html",
         context={
             "participant":participant, "grants":grants,
-            "subscriptions":subs, "audit":audit,
+            "subscriptions":subs, "audit":audit, "selection":selection,
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
