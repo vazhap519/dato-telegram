@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
+from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, group_removal_test, set_group_removal_test
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, change_grant_expiry, extend_community_access
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
@@ -51,6 +52,7 @@ async def setup_onboarding():
     await initialize_subscriptions()
     await initialize_group_access()
     await initialize_expiry_monitor()
+    await initialize_subscription_automation()
 
 
 # Protection against cross-origin admin requests
@@ -68,6 +70,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/revoke",
         "/subscriptions/grant/expiry",
         "/subscriptions/renew",
+        "/subscriptions/automation",
         "/subscriptions/removal-test",
         "/subscriptions/plan",
         "/subscriptions/plan/create",
@@ -324,6 +327,8 @@ async def subscriptions_page(
     from urllib.parse import urlencode
     summary, plans = await subscriptions_overview()
     tg_group = await group_settings()
+    automation = await automation_settings()
+    managed_total = await managed_count(tg_group.get('chat_id'))
     expiry_people = await expiry_overview()
     expiry_summary = await expiry_counts()
     users, total = await subscription_people(search, page)
@@ -332,6 +337,7 @@ async def subscriptions_page(
         request=request, name="subscriptions.html",
         context={
             "summary": summary, "plans": plans, "users": users, "tg_group":tg_group,
+            "subscription_automation":automation,"managed_total":managed_total,
             "expiry_people":expiry_people,"expiry_summary":expiry_summary,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
@@ -340,6 +346,43 @@ async def subscriptions_page(
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
+
+
+@app.post("/subscriptions/automation")
+async def subscriptions_automation_update(
+    notifications_enabled: bool = Form(False),
+    removal_enabled: bool = Form(False),
+    grace_hours: int = Form(24),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    if confirm != "SAVE_AUTOMATION":
+        raise HTTPException(400, detail="Подтвердите настройки автоматизации")
+    if grace_hours not in (0,24,72):
+        raise HTTPException(400, detail="Неверный льготный период")
+    if removal_enabled:
+        group = await group_settings()
+        if not group.get("chat_id"):
+            raise HTTPException(400, detail="Сначала подключите Telegram-группу")
+        from aiogram import Bot
+        from aiogram.enums import ChatMemberStatus
+        try:
+            async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+                me=await telegram.get_me()
+                admin=await telegram.get_chat_member(group["chat_id"],me.id)
+                if admin.status != ChatMemberStatus.CREATOR and not (
+                    admin.status == ChatMemberStatus.ADMINISTRATOR and admin.can_restrict_members
+                ):
+                    raise HTTPException(400, detail="Боту нужны права блокировать участников")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(400, detail="Не удалось проверить права бота")
+    await save_automation_settings(
+        notifications_enabled, removal_enabled, grace_hours, user["user"]
+    )
+    return RedirectResponse("/subscriptions?automation=saved",status_code=303)
 
 
 @app.get("/subscriptions/users/{telegram_id}")
