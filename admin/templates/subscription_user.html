@@ -2,6 +2,21 @@
 <body class="bg-gray-900 text-white"><main class="max-w-5xl mx-auto p-5 md:p-8 space-y-6">
 <header class="flex items-center justify-between gap-4"><div><h1 class="text-2xl font-bold">👤 {{ ([participant.first_name,participant.last_name]|select|join(' ')) or (participant.username or 'Участник') }}</h1><p class="text-gray-400">Telegram ID: {{ participant.telegram_id }}</p></div><a class="px-4 py-2 bg-gray-700 rounded" href="/subscriptions">← Подписки</a></header>
 <div class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Здесь ведётся только внутренний учёт прав. Добавление или отзыв права <strong>не меняет членство в Telegram</strong> и не подтверждает оплату.</div>
+{% if request.query_params.get('revoke_result') == 'removed' %}
+<p class="rounded-lg bg-green-900/40 p-3 text-sm text-green-300">Доступ отозван. Участник исключён из Telegram-группы.</p>
+{% elif request.query_params.get('revoke_result') == 'other_access' %}
+<p class="rounded-lg bg-gray-800 p-3 text-sm text-amber-300">Доступ отозван, но участник остаётся в группе: у него есть другое действующее или запланированное право.</p>
+{% elif request.query_params.get('revoke_result') == 'not_managed' %}
+<p class="rounded-lg bg-gray-800 p-3 text-sm text-amber-300">Доступ отозван. Участник не исключён: он не находится под контролем бота и индивидуальный тест не включён.</p>
+{% elif request.query_params.get('revoke_result') in ['failed', 'unban_failed'] %}
+<p class="rounded-lg bg-red-900/40 p-3 text-sm text-red-300">Доступ отозван, но операция в Telegram завершилась ошибкой. Проверьте журнал службы бота и статус участника в группе.</p>
+{% elif request.query_params.get('revoke_result') == 'admin' %}
+<p class="rounded-lg bg-gray-800 p-3 text-sm text-amber-300">Доступ отозван, но администраторы Telegram-группы защищены от исключения.</p>
+{% elif request.query_params.get('revoke_result') == 'already_out' %}
+<p class="rounded-lg bg-green-900/40 p-3 text-sm text-green-300">Доступ отозван. Участник уже отсутствует в группе.</p>
+{% elif request.query_params.get('revoke_result') == 'no_group' %}
+<p class="rounded-lg bg-gray-800 p-3 text-sm text-amber-300">Доступ отозван. Telegram-группа не подключена.</p>
+{% endif %}
 <section class="bg-gray-800 rounded-xl p-5 space-y-3">
 <h2 class="text-xl font-semibold">🚪 Приглашение в Telegram-группу</h2>
 <p class="text-sm text-gray-400">После назначения доступа система пробует отправить приглашение автоматически. Здесь можно отправить его повторно. Ссылка действует 20 минут и допускает одно вступление. Пользователь входит сразу, без заявки и одобрения администратора.</p>
