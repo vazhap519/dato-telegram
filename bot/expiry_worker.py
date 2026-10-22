@@ -7,11 +7,11 @@ from db.subscription_automation import automation_settings
 logger=logging.getLogger(__name__)
 
 async def expiry_worker(bot):
-    # Re-check hourly. Each user/end-date/stage can be sent only once.
+    # Re-check every 30 seconds. Each user/end-date/stage can be sent only once.
     while True:
         try:
             if not (await automation_settings())["notifications_enabled"]:
-                await asyncio.sleep(3600)
+                await asyncio.sleep(30)
                 continue
             alerts=await claim_expiry_alerts()
             for alert in alerts:
@@ -39,4 +39,4 @@ async def expiry_worker(bot):
             raise
         except Exception:
             logger.exception("Expiry monitoring cycle failed")
-        await asyncio.sleep(3600)
+        await asyncio.sleep(30)
