@@ -24,14 +24,17 @@ async def expiry_worker(bot):
                     msg=("⏳ Доступ в «Круг Души» заканчивается в ближайшие 24 часа. "
                          "Посмотреть статус подписки: /subscription.")
                 else:
-                    grace = (await automation_settings())["grace_hours"]
+                    config = await automation_settings()
+                    grace = config["grace_hours"]
                     msg = (
                         "⏳ Срок подписки «Круг Души» закончился. "
                         + (f"Льготный период для продления: {grace} ч. "
                            if grace else "Льготного периода нет. ")
                         + "Если уже оплатили, обратитесь к администратору: "
                         "подтверждение Tribute пока не подключено. "
-                        "Проверить подписку: /subscription."
+                        "Проверить подписку: /subscription. "
+                        "Это уведомление об окончании срока, а не подтверждение исключения."
+
                     )
                 try:
                     await bot.send_message(alert["telegram_id"],msg)
