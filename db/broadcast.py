@@ -66,15 +66,15 @@ async def count_recipients(audience):
                 OR (:audience='clicked' AND EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id)))
         """), {"audience": audience})).scalar_one()
 
-async def create_broadcast(body, audience, scheduled_at=None):
+async def create_broadcast(body, audience, scheduled_at=None, button_text='', button_url=''):
     if audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
         raise ValueError("Invalid broadcast")
     async with SessionLocal() as session:
         async with session.begin():
             campaign_id = (await session.execute(text("""
-                INSERT INTO broadcasts (body, audience, scheduled_at) VALUES (:body, :audience, :scheduled_at)
+                INSERT INTO broadcasts (body, audience, scheduled_at, button_text, button_url) VALUES (:body, :audience, :scheduled_at, :button_text, :button_url)
                 RETURNING id
-            """), {"body": body.strip(), "audience": audience, "scheduled_at": scheduled_at})).scalar_one()
+            """), {"body": body.strip(), "audience": audience, "scheduled_at": scheduled_at, "button_text": button_text, "button_url": button_url})).scalar_one()
             await session.execute(text("""
                 INSERT INTO broadcast_recipients (broadcast_id, telegram_id)
                 SELECT :bid, u.telegram_id FROM users u
@@ -127,11 +127,11 @@ async def claim_recipient():
                 return None
             await session.execute(text("UPDATE broadcasts SET status='sending' WHERE id=:id"), {"id": row.broadcast_id})
             msg = (await session.execute(text("""
-                SELECT b.body, b.campaign_kind, u.first_name
+                SELECT b.body, b.campaign_kind, u.first_name, b.button_text, b.button_url
                 FROM broadcasts b LEFT JOIN users u ON u.telegram_id=:uid
                 WHERE b.id=:id
             """), {"id": row.broadcast_id, "uid": row.telegram_id})).one()
-            body, kind, first_name = msg
+            body, kind, first_name, button_text, button_url = msg
             opted_out = (await session.execute(text(
                 "SELECT EXISTS (SELECT 1 FROM broadcast_opt_out WHERE telegram_id=:id)"
             ), {"id": row.telegram_id})).scalar_one()
@@ -149,7 +149,7 @@ async def claim_recipient():
                 """), {"trigger": trigger, "uid": row.telegram_id})).scalar_one()
                 opted_out = opted_out or not still_eligible
             body = body.replace("{first_name}", first_name or "друг")
-            return row.broadcast_id, row.telegram_id, body, opted_out
+            return row.broadcast_id, row.telegram_id, body, opted_out, button_text, button_url
 
 async def finish_recipient(campaign_id, user_id, status, error_code=None):
     async with SessionLocal() as session:
