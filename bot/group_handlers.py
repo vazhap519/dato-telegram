@@ -157,3 +157,16 @@ async def managed_member_join_handler(event: types.ChatMemberUpdated):
         )
     except Exception:
         log.exception("Failed to record managed membership")
+
+
+async def remove_invalid_direct_join(event: types.ChatMemberUpdated):
+    """Evict a join using a previously invalidated bot-issued invitation."""
+    from aiogram.enums import ChatMemberStatus
+    if event.new_chat_member.status == ChatMemberStatus.ADMINISTRATOR:
+        return
+    uid = event.new_chat_member.user.id
+    try:
+        await event.bot.ban_chat_member(event.chat.id, uid, revoke_messages=False)
+        await event.bot.unban_chat_member(event.chat.id, uid, only_if_banned=True)
+    except Exception:
+        log.exception("Unable to remove member joined with invalid direct invitation")
