@@ -11,7 +11,7 @@ from db.flow import initialize_flow
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
 from bot.broadcast_worker import broadcast_worker
-from bot.handlers import broadcast_optout_handler, broadcast_optin_handler
+from bot.handlers import broadcast_optout_handler, broadcast_optin_handler, broadcast_stop_handler
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +25,7 @@ dp.callback_query.register(accept_offer_handler, F.data == "accept_offer")
 dp.callback_query.register(subscription_click_handler, F.data == "subscription_click")
 dp.callback_query.register(broadcast_optout_handler, F.data == "broadcast_optout")
 dp.message.register(broadcast_optin_handler, Command("notifications"))
+dp.message.register(broadcast_stop_handler, Command("stopnotifications"))
 
 async def main():
     await initialize_flow()
