@@ -34,6 +34,10 @@ async def initialize_group_access():
             )
         """))
         await conn.execute(text("""
+            ALTER TABLE telegram_group_invites
+            ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ
+        """))
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS group_removal_tests (
                 telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
                 chat_id BIGINT NOT NULL,
@@ -134,7 +138,8 @@ async def latest_invites(telegram_id):
         records=(await session.execute(text("""
             SELECT chat_id,status,created_at,expires_at,completed_at
             FROM telegram_group_invites WHERE telegram_id=:uid
-            ORDER BY id DESC LIMIT 10
+              AND hidden_at IS NULL
+            ORDER BY id DESC LIMIT 30
         """),{"uid":telegram_id})).mappings()
         return [dict(x) for x in records]
 
@@ -325,3 +330,28 @@ async def direct_invite_owner(chat_id,invite_link):
             ORDER BY id DESC LIMIT 1
         """),{"chat":chat_id,"link":invite_link})).mappings().first()
         return dict(row) if row else None
+
+
+async def clear_completed_invite_history(telegram_id, actor):
+    """Hide only consumed, revoked or expired invites from this member's admin UI.
+
+    This does not delete the invitation or modify an active Telegram link.
+    """
+    async with SessionLocal() as session:
+        async with session.begin():
+            if not (await session.execute(text(
+                "SELECT 1 FROM users WHERE telegram_id=:uid"
+            ),{"uid":telegram_id})).first():
+                raise ValueError("Участник не найден")
+            result = await session.execute(text("""
+                UPDATE telegram_group_invites
+                SET hidden_at=NOW()
+                WHERE telegram_id=:uid AND hidden_at IS NULL
+                  AND (status <> 'issued' OR expires_at <= NOW())
+            """),{"uid":telegram_id})
+            await session.execute(text("""
+                INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                VALUES (:uid,'group_invites_history_hidden',:actor,
+                        jsonb_build_object('count',CAST(:count AS INTEGER)))
+            """),{"uid":telegram_id,"actor":actor,"count":result.rowcount})
+            return result.rowcount
