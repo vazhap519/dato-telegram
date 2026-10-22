@@ -51,18 +51,22 @@ async def start_handler(message: types.Message):
     # 📝 ტექსტი
     caption_text = f"{settings.text1 or ''}\n\n{settings.text2 or ''}"
 
-    # 🎬 ვიდეო გაგზავნა (try/except რომ არ დაექრეშოს)
-    try:
-        await message.answer_video(
-            video=settings.video_url,
-            caption=caption_text,
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        print("❌ VIDEO ERROR:", e)
+    # Send video when available; otherwise send text
+    video_url = (settings.video_url or "").strip()
+    caption_text = caption_text.strip()
 
-        # fallback (თუ ვიდეო არ იმუშავებს)
-        await message.answer(
-            f"{caption_text}\n\n⚠️ Video failed to load",
-            reply_markup=keyboard
-        )
+    if video_url:
+        try:
+            await message.answer_video(
+                video=video_url,
+                caption=caption_text or None,
+                reply_markup=keyboard
+            )
+            return
+        except Exception as e:
+            print("Video delivery failed:", type(e).__name__)
+
+    await message.answer(
+        caption_text or "Добро пожаловать!",
+        reply_markup=keyboard
+    )

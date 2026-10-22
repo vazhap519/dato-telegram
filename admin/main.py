@@ -22,8 +22,47 @@ from .auth import (
     hash_password
 )
 from .websocket import connections
+import hmac
+import hashlib
+import os
+
+def make_csrf_token(session_token: str) -> str:
+    secret = os.environ["SECRET_KEY"].encode()
+    return hmac.new(
+        secret,
+        session_token.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
 
 app = FastAPI()
+
+# Protection against cross-origin admin requests
+@app.middleware("http")
+async def protect_admin_forms(request: Request, call_next):
+    protected_paths = {
+        "/update",
+        "/change-credentials",
+    }
+
+    if (
+        request.method == "POST"
+        and request.url.path in protected_paths
+    ):
+        origin = request.headers.get("origin")
+
+        if origin != "https://bot.arutyun.me":
+            raise_response = HTTPException(
+                status_code=403,
+                detail="Forbidden origin"
+            )
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=raise_response.status_code,
+                content={"detail": raise_response.detail}
+            )
+
+    return await call_next(request)
 
 templates = Jinja2Templates(directory="admin/templates")
 
@@ -137,29 +176,6 @@ async def login(
 
             await session.commit()
 
-            # ✅ CHECK DEFAULT ADMIN
-            result = await session.execute(
-                text("SELECT * FROM admins WHERE username=:u"),
-                {"u": "dato"}
-            )
-
-            admin = result.fetchone()
-
-            # ✅ CREATE DEFAULT ADMIN
-            if not admin:
-                await session.execute(
-                    text("""
-                        INSERT INTO admins (username, password)
-                        VALUES (:u, :p)
-                    """),
-                    {
-                        "u": "dato",
-                        "p": hash_password("Godsmotivator1")
-                    }
-                )
-
-                await session.commit()
-
             # ✅ LOGIN CHECK
             result = await session.execute(
                 text("SELECT * FROM admins WHERE username=:u"),
@@ -202,7 +218,11 @@ async def login(
             response.set_cookie(
                 key="access_token",
                 value=token,
-                httponly=True
+                httponly=True,
+                secure=True,
+                samesite="strict",
+                max_age=43200,
+                path="/"
             )
 
             return response
@@ -212,6 +232,28 @@ async def login(
             "error": str(e)
         }
 
+
+# CSRF token validation
+async def verify_csrf(
+    request: Request,
+    csrf_token: str = Form(""),
+    access_token: str = Cookie(None)
+):
+    if not access_token or not csrf_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Missing CSRF token"
+        )
+
+    expected = make_csrf_token(access_token)
+
+    if not hmac.compare_digest(csrf_token, expected):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid CSRF token"
+        )
+
+
 # 📊 DASHBOARD
 @app.get("/dashboard")
 async def dashboard(
@@ -220,6 +262,9 @@ async def dashboard(
 ):
     count = await get_users_count()
     settings = await get_settings()
+    csrf_token = make_csrf_token(
+        request.cookies.get("access_token", "")
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -227,7 +272,8 @@ async def dashboard(
         context={
             "count": count,
             "settings": settings,
-            "user": user
+            "user": user,
+            "csrf_token": csrf_token
         }
     )
 
@@ -235,10 +281,11 @@ async def dashboard(
 # ⚙️ UPDATE SETTINGS
 @app.post("/update")
 async def update_settings(
+    csrf_check=Depends(verify_csrf),
     user=Depends(get_current_user),
-    video_url: str = Form(...),
-    text1: str = Form(...),
-    text2: str = Form(...),
+    video_url: str = Form(""),
+    text1: str = Form(""),
+    text2: str = Form(""),
     btn1_text: str = Form(...),
     btn1_url: str = Form(...),
     btn2_text: str = Form(...),
@@ -280,6 +327,7 @@ async def update_settings(
 # 🔐 CHANGE CREDENTIALS
 @app.post("/change-credentials")
 async def change_credentials(
+    csrf_check=Depends(verify_csrf),
     user=Depends(get_current_user),
     new_username: str = Form(...),
     new_password: str = Form(...)
@@ -345,14 +393,46 @@ async def change_credentials(
 # 🔌 WEBSOCKET
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+    origin = websocket.headers.get("origin")
 
+    if origin != "https://bot.arutyun.me":
+        await websocket.close(code=1008)
+        return
+
+    token = websocket.cookies.get("access_token")
+
+    if not token:
+        await websocket.close(code=1008)
+        return
+
+    try:
+        payload = decode_token(token)
+        username = payload.get("user")
+
+        if not username:
+            raise ValueError("Invalid user")
+
+        async with SessionLocal() as session:
+            result = await session.execute(
+                text("SELECT username FROM admins WHERE username=:u"),
+                {"u": username}
+            )
+
+            if not result.fetchone():
+                raise ValueError("Unknown user")
+
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
     connections.append(websocket)
 
     try:
         while True:
             await websocket.receive_text()
-
     except Exception:
+        pass
+    finally:
         if websocket in connections:
             connections.remove(websocket)

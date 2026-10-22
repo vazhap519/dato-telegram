@@ -1,8 +1,12 @@
+from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 from jose import jwt
 import os
+from dotenv import load_dotenv
 
-SECRET = os.getenv("SECRET_KEY", "supersecret")
+load_dotenv()
+
+SECRET = os.environ["SECRET_KEY"]
 
 pwd = CryptContext(
     schemes=["pbkdf2_sha256"],  # 🔥 სტაბილური
@@ -16,7 +20,9 @@ def verify_password(p, h):
     return pwd.verify(p, h)
 
 def create_token(data: dict):
-    return jwt.encode(data, SECRET, algorithm="HS256")
+    payload = data.copy()
+    payload["exp"] = datetime.now(timezone.utc) + timedelta(hours=12)
+    return jwt.encode(payload, SECRET, algorithm="HS256")
 
 def decode_token(token: str):
     return jwt.decode(token, SECRET, algorithms=["HS256"])
