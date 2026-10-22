@@ -139,6 +139,16 @@ async def managed_member_join_handler(event: types.ChatMemberUpdated):
     invite=event.invite_link
     if not invite or not (invite.name or "").startswith("dato-direct-"):
         return
+    from db.group_access import direct_invite_owner
+    record = await direct_invite_owner(event.chat.id, invite.invite_link)
+    if not record:
+        return
+    if record["telegram_id"] != event.new_chat_member.user.id:
+        return
+    if record["status"] != "issued" or not record["in_time"]:
+        return
+    if not await has_group_access(event.new_chat_member.user.id):
+        return
     try:
         await record_managed_join(
             event.new_chat_member.user.id,event.chat.id,invite.invite_link
