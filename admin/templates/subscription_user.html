@@ -4,7 +4,7 @@
 <div class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Здесь ведётся только внутренний учёт прав. Добавление или отзыв права <strong>не меняет членство в Telegram</strong> и не подтверждает оплату.</div>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3">
 <h2 class="text-xl font-semibold">🚪 Приглашение в Telegram-группу</h2>
-<p class="text-sm text-gray-400">После назначения доступа система пробует отправить приглашение автоматически. Здесь можно отправить его повторно. Ссылка действует один час. Переход по ссылке создаёт заявку, которую бот проверяет по Telegram ID.</p>
+<p class="text-sm text-gray-400">После назначения доступа система пробует отправить приглашение автоматически. Здесь можно отправить его повторно. Ссылка действует 20 минут и допускает одно вступление. Пользователь входит сразу, без заявки и одобрения администратора.</p>
 {% if request.query_params.get('invite') == 'sent' %}<p class="text-green-300">Приглашение отправлено пользователю.</p>{% endif %}
 {% if request.query_params.get('invite') == 'already_member' %}<p class="text-green-300">Пользователь уже находится в группе.</p>{% endif %}
 {% if request.query_params.get('invite') == 'failed' %}<p class="text-red-300">Доступ сохранён, но приглашение отправить не удалось. Проверьте, что бот может писать пользователю и имеет право приглашать в группу. Попробуйте кнопку ниже.</p>{% endif %}
@@ -14,7 +14,7 @@
 <form method="post" action="/subscriptions/invite">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
-<button class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-3" onclick="return confirm('Отправить тестовое приглашение этому участнику?')">📨 Отправить приглашение</button>
+<button class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-3" onclick="return confirm('Отправить прямое приглашение этому участнику?')">📨 Отправить приглашение</button>
 </form>
 {% elif not tg_group.chat_id %}
 <p class="text-amber-300 text-sm">Сначала подключите Telegram-группу в разделе «Подписки».</p>
