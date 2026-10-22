@@ -42,9 +42,15 @@ async def group_removal_test_worker(bot):
             if not chat_id:
                 await asyncio.sleep(30)
                 continue
-            targets = await eligible_removal_tests(settings["grace_hours"])
+            test_targets = await eligible_removal_tests(settings["grace_hours"])
+            targets = list(test_targets)
             if settings["removal_enabled"]:
                 targets += await eligible_managed_removals(chat_id, settings["grace_hours"])
+            logger.info(
+                "Removal scan: group=%s grace=%sh global=%s candidates=%s",
+                chat_id, settings["grace_hours"], settings["removal_enabled"],
+                len(targets),
+            )
             seen = set()
             for target in targets:
                 uid = target["telegram_id"]
