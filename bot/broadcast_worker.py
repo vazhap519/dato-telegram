@@ -1,4 +1,4 @@
-"""Background sender: throttled Telegram broadcasts with opt-out button."""
+"""Background sender: throttled Telegram broadcasts with optional action links."""
 import asyncio
 import logging
 from aiogram import Bot
@@ -7,9 +7,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from db.broadcast import claim_recipient, finish_recipient, mark_unfinished_as_uncertain
 
 log = logging.getLogger(__name__)
-OPT_OUT_BUTTON = InlineKeyboardMarkup(inline_keyboard=[[
-    InlineKeyboardButton(text="🔕 Отписаться от рассылок", callback_data="broadcast_optout")
-]])
 
 async def broadcast_worker(bot: Bot):
     await mark_unfinished_as_uncertain()
@@ -19,7 +16,9 @@ async def broadcast_worker(bot: Bot):
             await asyncio.sleep(3)
             continue
         campaign_id, user_id, body, opted_out, button_text, button_url = item
-        markup = InlineKeyboardMarkup(inline_keyboard=([[InlineKeyboardButton(text=button_text, url=button_url)]] if button_text and button_url else []) + [[InlineKeyboardButton(text="🔕 Отписаться от рассылок", callback_data="broadcast_optout")]])
+        markup = (InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=button_text, url=button_url)
+        ]]) if button_text and button_url else None)
         if opted_out:
             await finish_recipient(campaign_id, user_id, "skipped", "opted_out")
             continue
