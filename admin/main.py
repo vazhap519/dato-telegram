@@ -15,8 +15,8 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
-from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites
-from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan
+from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, group_removal_test, set_group_removal_test
+from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, change_grant_expiry
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
@@ -66,6 +66,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/broadcast/rule",
         "/subscriptions/grant",
         "/subscriptions/revoke",
+        "/subscriptions/grant/expiry",
+        "/subscriptions/removal-test",
         "/subscriptions/plan",
         "/subscriptions/plan/create",
         "/subscriptions/group",
@@ -334,12 +336,14 @@ async def subscription_user_page(
     tg_group = await group_settings()
     recent_invites = await latest_invites(telegram_id)
     can_invite = bool(await has_group_access(telegram_id))
+    removal_test = await group_removal_test(telegram_id)
     return templates.TemplateResponse(
         request=request, name="subscription_user.html",
         context={
             "participant":participant, "grants":grants,
             "subscriptions":subs, "audit":audit, "selection":selection,
             "tg_group":tg_group, "recent_invites":recent_invites, "can_invite":can_invite,
+            "removal_test":removal_test,
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
@@ -380,6 +384,42 @@ async def subscriptions_grant(
     return RedirectResponse(
         f"/subscriptions/users/{telegram_id}?invite={quote(invite_status)}", status_code=303
     )
+
+
+@app.post("/subscriptions/grant/expiry")
+async def subscriptions_change_grant_expiry(
+    telegram_id: int = Form(...), grant_id: int = Form(...),
+    end_at: str = Form(...), confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    if confirm != "CHANGE_EXPIRY":
+        raise HTTPException(400, detail="Подтвердите изменение срока")
+    try:
+        parsed=datetime.strptime(end_at,"%Y-%m-%dT%H:%M")
+        expires=parsed.replace(tzinfo=ZoneInfo("Asia/Tbilisi")).astimezone(timezone.utc)
+        await change_grant_expiry(telegram_id,grant_id,expires,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?expiry=changed",status_code=303)
+
+
+@app.post("/subscriptions/removal-test")
+async def subscriptions_removal_test(
+    telegram_id: int = Form(...), enabled: bool = Form(False),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    if confirm != "REMOVAL_TEST":
+        raise HTTPException(400,detail="Подтвердите тестовый режим")
+    if await subscription_person(telegram_id) is None:
+        raise HTTPException(404,detail="Пользователь не найден")
+    group=await group_settings()
+    if not group.get("chat_id"):
+        raise HTTPException(400,detail="Сначала подключите Telegram-группу")
+    await set_group_removal_test(telegram_id,group["chat_id"],enabled,user["user"])
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?test={'enabled' if enabled else 'disabled'}",status_code=303)
 
 
 @app.post("/subscriptions/revoke")
