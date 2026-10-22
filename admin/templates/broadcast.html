@@ -92,7 +92,7 @@
 </section>
 <section class="bg-gray-800 p-5 rounded-xl space-y-4">
   <h2 class="text-xl font-semibold">Автоматические напоминания</h2>
-  <p class="text-sm text-gray-400">Сценарии по умолчанию выключены. Они работают только для событий, произошедших после включения, и не связаны с практикумами. Отписавшимся сообщения не отправляются.</p>
+  <p class="text-sm text-gray-400">Три последовательных сценария включаются автоматически после обновления. Каждый этап отправляется максимум один раз и только если пользователь ещё не совершил следующее действие. События до включения не запускают старые напоминания. Оплату пока невозможно проверить без интеграции Tribute.</p>
   {% for rule in rules %}
   <form method="post" action="/broadcast/rule" class="grid gap-2 border border-gray-700 rounded-xl p-3">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
