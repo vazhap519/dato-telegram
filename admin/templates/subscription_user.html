@@ -4,9 +4,12 @@
 <div class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Здесь ведётся только внутренний учёт прав. Добавление или отзыв права <strong>не меняет членство в Telegram</strong> и не подтверждает оплату.</div>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3">
 <h2 class="text-xl font-semibold">🚪 Приглашение в Telegram-группу</h2>
-<p class="text-sm text-gray-400">Только для участников с активным доступом. Приглашение отправляется вручную и действует один час. Переход по ссылке создаёт заявку, которую бот проверяет по Telegram ID.</p>
+<p class="text-sm text-gray-400">После назначения доступа система пробует отправить приглашение автоматически. Здесь можно отправить его повторно. Ссылка действует один час. Переход по ссылке создаёт заявку, которую бот проверяет по Telegram ID.</p>
 {% if request.query_params.get('invite') == 'sent' %}<p class="text-green-300">Приглашение отправлено пользователю.</p>{% endif %}
 {% if request.query_params.get('invite') == 'already_member' %}<p class="text-green-300">Пользователь уже находится в группе.</p>{% endif %}
+{% if request.query_params.get('invite') == 'failed' %}<p class="text-red-300">Доступ сохранён, но приглашение отправить не удалось. Проверьте, что бот может писать пользователю и имеет право приглашать в группу. Попробуйте кнопку ниже.</p>{% endif %}
+{% if request.query_params.get('invite') == 'not_configured' %}<p class="text-amber-300">Доступ сохранён, но группа ещё не подключена.</p>{% endif %}
+{% if request.query_params.get('invite') == 'no_access' %}<p class="text-amber-300">Не найден действующий доступ для отправки приглашения.</p>{% endif %}
 {% if tg_group.chat_id and can_invite %}
 <form method="post" action="/subscriptions/invite">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
