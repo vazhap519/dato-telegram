@@ -27,6 +27,18 @@
     <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
         <h2 class="text-xl font-semibold mb-4">Настройки подписки</h2>
         <p class="text-gray-300 text-sm mb-4">После /start бот отправляет видеокружочек (если задан file_id), затем оферту. Инструкция по подписке отправляется только после подтверждения условий.</p>
+        <div class="bg-gray-700 rounded-xl p-4 mb-4">
+          <h3 class="font-semibold mb-2">🎥 Загрузить видеокружочек через Telegram</h3>
+          <p class="text-sm text-gray-300 mb-3">Нажмите кнопку, отправьте появившуюся команду своему боту в личном чате, затем отправьте видеокружочек. Код действует 15 минут и используется один раз.</p>
+          <form method="post" action="/create-video-upload" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded">Создать код загрузки</button>
+          </form>
+          {% if upload_command %}
+          <p class="text-sm text-green-300 mb-1">Отправьте боту эту команду (никому не передавайте):</p>
+          <code class="block bg-gray-900 p-3 rounded break-all select-all">{{ upload_command }}</code>
+          {% endif %}
+        </div>
         <form method="post" action="/update-flow" class="grid gap-4">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <label class="grid gap-1">Telegram file_id видеокружочка
@@ -93,8 +105,6 @@ ws.onmessage = function(e) {
 
     document.getElementById("events").prepend(li);
 
-    let count = document.getElementById("count");
-    count.textContent = parseInt(count.textContent) + 1;
 }
 </script>
 
