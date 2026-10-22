@@ -29,3 +29,17 @@ async def group_join_request_handler(request: types.ChatJoinRequest):
         await mark_joined(uid, request.chat.id, link.invite_link)
     except Exception:
         log.exception("Could not approve group join request chat=%s user=%s", request.chat.id, uid)
+
+
+async def group_id_handler(message: types.Message):
+    """Group administrators can discover the chat ID without external bots."""
+    from aiogram.enums import ChatMemberStatus
+    if not message.from_user or message.chat.type not in ("group", "supergroup"):
+        return
+    try:
+        member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+        if member.status not in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
+            return
+        await message.answer(f"ID группы: `{message.chat.id}`")
+    except Exception:
+        log.exception("Unable to show group ID")
