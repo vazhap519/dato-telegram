@@ -337,13 +337,15 @@ async def subscription_user_page(
     recent_invites = await latest_invites(telegram_id)
     can_invite = bool(await has_group_access(telegram_id))
     removal_test = await group_removal_test(telegram_id)
+    from zoneinfo import ZoneInfo
+    tbilisi_tz = ZoneInfo("Asia/Tbilisi")
     return templates.TemplateResponse(
         request=request, name="subscription_user.html",
         context={
             "participant":participant, "grants":grants,
             "subscriptions":subs, "audit":audit, "selection":selection,
             "tg_group":tg_group, "recent_invites":recent_invites, "can_invite":can_invite,
-            "removal_test":removal_test,
+            "removal_test":removal_test, "tbilisi_tz":tbilisi_tz,
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
