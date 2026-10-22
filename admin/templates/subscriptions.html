@@ -8,10 +8,33 @@
 <div class="bg-gray-800 rounded-xl p-4">Учтённые платные<div class="text-2xl font-semibold">{{ summary.recorded_active }}</div></div>
 <div class="bg-gray-800 rounded-xl p-4">Истекают за 7 дней<div class="text-2xl font-semibold">{{ summary.expiring }}</div></div>
 </section>
-<p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Учтённые права в базе пока <strong>не предоставляют и не отзывают доступ автоматически</strong> в Telegram и на сайте. Нажатие кнопки оплаты не считается платежом. Сведения Tribute будут подключены отдельно.</p>
+<p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Доступ выдаётся и продлевается через бота. Автоматическое исключение настраивается ниже и распространяется только на учтённых ботом участников. Нажатие кнопки оплаты не считается платежом — подтверждение Tribute подключим отдельно.</p>
+<section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscription-automation">
+<h2 class="font-semibold text-xl">⚙️ Автоматизация подписок</h2>
+<p class="text-sm text-gray-400">Автоматизация работает только с участниками, вступление которых бот зафиксировал по собственной ссылке. Старые участники сообщества не добавляются в этот список автоматически.</p>
+{% if request.query_params.get('automation') == 'saved' %}<p class="text-green-300 text-sm">Настройки успешно сохранены.</p>{% endif %}
+<div class="bg-gray-700 rounded-lg p-4 text-sm">Под контролем бота в подключённой группе: <strong>{{ managed_total }}</strong> участник(ов). Тестовые исключения отдельных аккаунтов настраиваются в их карточках отдельно.</div>
+<form method="post" action="/subscriptions/automation" class="space-y-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="confirm" value="SAVE_AUTOMATION">
+<label class="flex items-center gap-3"><input type="checkbox" name="notifications_enabled" value="true" {{ 'checked' if subscription_automation.notifications_enabled else '' }}> <span>Отправлять напоминания об окончании доступа</span></label>
+<label class="flex items-center gap-3"><input type="checkbox" name="removal_enabled" value="true" {{ 'checked' if subscription_automation.removal_enabled else '' }}> <span>Автоматически исключать участников с истёкшим доступом</span></label>
+<p class="text-xs text-amber-300">Внимание: функция исключения выключена по умолчанию. При включении действуют только участники, записанные ботом при вступлении через его собственную ссылку. Постоянные права и действующие продления имеют приоритет.</p>
+<div>
+<label class="block text-sm mb-2" for="automation-grace">Льготный период после окончания доступа</label>
+<select id="automation-grace" name="grace_hours" class="bg-gray-700 rounded p-3">
+<option value="0" {{ 'selected' if subscription_automation.grace_hours == 0 else '' }}>Без задержки</option>
+<option value="24" {{ 'selected' if subscription_automation.grace_hours == 24 else '' }}>24 часа</option>
+<option value="72" {{ 'selected' if subscription_automation.grace_hours == 72 else '' }}>3 дня</option>
+</select>
+</div>
+<button class="bg-indigo-600 hover:bg-indigo-500 px-4 py-3 rounded font-semibold" onclick="return confirm('Сохранить настройки автоматизации подписок?')">Сохранить настройки</button>
+</form>
+<p class="text-xs text-gray-500">Изменения влияют на действующий бот без ручного редактирования файлов. Изменения сохраняются в журнале аудита.</p>
+</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4">
 <h2 class="font-semibold text-xl">⏳ Контроль сроков доступа</h2>
-<p class="text-gray-400 text-sm">Система учитывает все действующие ручные права и записанные активные подписки. Постоянный доступ имеет приоритет. Напоминания отправляются один раз для каждой даты окончания: за 3 дня, за сутки и после истечения. Исключение из Telegram-группы отключено.</p>
+<p class="text-gray-400 text-sm">Система учитывает все действующие ручные права и записанные активные подписки. Постоянный доступ имеет приоритет. Напоминания: за 3 дня, за сутки и после истечения, если они включены выше. Исключение настраивается отдельно.</p>
 <div class="grid grid-cols-2 gap-3">
 <div class="bg-gray-700 rounded-lg p-3">Истекают за 3 дня<div class="font-semibold text-2xl">{{ expiry_summary.expiring }}</div></div>
 <div class="bg-gray-700 rounded-lg p-3">Истекли за 30 дней<div class="font-semibold text-2xl">{{ expiry_summary.expired }}</div></div>
@@ -29,7 +52,7 @@
 </section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3">
 <h2 class="font-semibold text-xl">🔐 Telegram-группа · тестовый режим</h2>
-<p class="text-sm text-gray-400">Бот проверяет права администратора и право приглашать людей. При назначении доступа бот отправляет ссылку для прямого вступления. Участник также может запросить новую ссылку сам. Ссылка допускает одно вступление и действует 20 минут. Автоматического исключения нет.</p>
+<p class="text-sm text-gray-400">Бот проверяет права администратора и право приглашать людей. При назначении доступа бот отправляет ссылку для прямого вступления. Участник также может запросить новую ссылку сам. Ссылка допускает одно вступление и действует 20 минут. Автоматическое исключение регулируется настройками выше.</p>
 {% if tg_group.chat_id %}
 <p class="text-green-300 text-sm">Подключена: <strong>{{ tg_group.chat_title }}</strong> · ID: <code>{{ tg_group.chat_id }}</code></p>
 {% else %}
