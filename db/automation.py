@@ -45,6 +45,8 @@ async def initialize_automation():
         await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS campaign_kind TEXT NOT NULL DEFAULT 'manual'"))
         await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS recipient_id BIGINT"))
+        await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS button_text TEXT"))
+        await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS button_url TEXT"))
         for name, body in DEFAULT_TEMPLATES:
             await conn.execute(text("""
                 INSERT INTO message_templates (title, body)
