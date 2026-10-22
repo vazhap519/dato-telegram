@@ -32,6 +32,7 @@
 <p class="text-sm text-gray-400">Только для этого Telegram ID. Проверка примерно каждые 30 секунд. Исключение произойдёт только после окончания ВСЕХ действующих сроков, если аккаунт не администратор группы. Для теста боту нужны права блокировать участников. По умолчанию выключено.</p>
 {% if removal_test %}
 <p>Режим: {{ 'Включён' if removal_test.enabled else 'Выключен' }} · Результат: {{ removal_test.status }}</p>
+{% if removal_test.status == 'removed' %}<p class="text-sm text-gray-400">Последнее исключение выполнено. После продления активного доступа тест автоматически перезапустится.</p>{% endif %}
 {% if removal_test.last_error %}<p class="text-red-300 text-sm">{{ removal_test.last_error }}</p>{% endif %}
 {% else %}<p class="text-amber-300">Тест выключен.</p>{% endif %}
 {% if tg_group.chat_id %}
