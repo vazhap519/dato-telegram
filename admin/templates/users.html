@@ -27,7 +27,7 @@
 <button class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500">Найти</button>
 {% if search %}<a href="/users?stage={{ stage }}" class="px-3 py-2 rounded-lg bg-gray-700">Сбросить</a>{% endif %}
 </form>
-<p class="text-sm text-gray-400 mb-3">Найдено: {{ total }}. Время отображается в UTC. Повторные нажатия не увеличивают число уникальных пользователей.</p>
+<p class="text-sm text-gray-400 mb-3">Найдено: {{ total }}. Время отображается по Тбилиси (UTC+4). Повторные нажатия не увеличивают число уникальных пользователей.</p>
 <div class="overflow-x-auto bg-gray-800 rounded-xl border border-gray-700">
 <table class="w-full text-sm text-left">
 <thead class="bg-gray-700 text-gray-200"><tr>
@@ -48,9 +48,9 @@
   </div>
 </td>
 <td class="p-3 font-mono text-gray-400">{{ u.telegram_id }}</td>
-<td class="p-3 whitespace-nowrap">{{ u.created_at.strftime('%d.%m.%Y %H:%M') if u.created_at else '—' }}</td>
-<td class="p-3 whitespace-nowrap">{{ u.accepted_at.strftime('%d.%m.%Y %H:%M') if u.accepted_at else '—' }}</td>
-<td class="p-3 whitespace-nowrap">{{ u.clicked_at.strftime('%d.%m.%Y %H:%M') if u.clicked_at else '—' }}</td>
+<td class="p-3 whitespace-nowrap">{{ u.created_at|tbilisi_time if u.created_at else '—' }}</td>
+<td class="p-3 whitespace-nowrap">{{ u.accepted_at|tbilisi_time if u.accepted_at else '—' }}</td>
+<td class="p-3 whitespace-nowrap">{{ u.clicked_at|tbilisi_time if u.clicked_at else '—' }}</td>
 <td class="p-3">{{ u.click_count or '—' }}</td>
 </tr>
 {% else %}
