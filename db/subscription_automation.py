@@ -66,6 +66,7 @@ async def record_managed_join(telegram_id,chat_id,invite_link):
             record=(await session.execute(text("""
                 SELECT id FROM telegram_group_invites
                 WHERE telegram_id=:uid AND chat_id=:chat AND invite_link=:link
+                  AND status='issued' AND expires_at>NOW()
                 ORDER BY id DESC LIMIT 1
             """),{"uid":telegram_id,"chat":chat_id,"link":invite_link})).first()
             if not record:
@@ -80,7 +81,7 @@ async def record_managed_join(telegram_id,chat_id,invite_link):
             await session.execute(text("""
                 UPDATE telegram_group_invites
                 SET status='joined',completed_at=NOW()
-                WHERE id=:id
+                WHERE id=:id AND status='issued'
             """),{"id":record[0]})
             return True
 
