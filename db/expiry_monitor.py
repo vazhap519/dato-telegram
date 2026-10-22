@@ -14,7 +14,8 @@ WITH sources AS (
     UNION ALL
     SELECT telegram_id, paid_until AS expires_at
     FROM subscriptions
-    WHERE status='active' AND (paid_until IS NULL OR paid_until>NOW()-INTERVAL '30 days')
+    WHERE status='active' AND paid_until IS NOT NULL
+      AND paid_until>NOW()-INTERVAL '30 days'
 ),
 effective AS (
     SELECT telegram_id,
