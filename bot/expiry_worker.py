@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from db.expiry_monitor import claim_expiry_alerts, finish_expiry_alert
+from db.subscription_automation import automation_settings
 
 logger=logging.getLogger(__name__)
 
@@ -9,6 +10,9 @@ async def expiry_worker(bot):
     # Re-check hourly. Each user/end-date/stage can be sent only once.
     while True:
         try:
+            if not (await automation_settings())["notifications_enabled"]:
+                await asyncio.sleep(3600)
+                continue
             alerts=await claim_expiry_alerts()
             for alert in alerts:
                 kind=alert["alert_kind"]
