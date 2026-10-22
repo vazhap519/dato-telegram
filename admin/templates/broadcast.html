@@ -23,6 +23,12 @@
   <form method="post" action="/broadcast/preview" class="space-y-4">
     <p class="text-xs text-gray-400">Переменная {first_name} подставит имя пользователя при отправке.</p>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="block">Использовать сохранённый шаблон
+      <select id="template-picker" class="mt-1 block w-full bg-gray-700 rounded-lg p-3">
+        <option value="">Выберите шаблон (необязательно)</option>
+        {% for t in templates %}<option value="{{ t.id }}">{{ t.title }}</option>{% endfor %}
+      </select>
+    </label>
     <label class="block">Получатели
       <select name="audience" class="mt-1 block w-full bg-gray-700 rounded-lg p-3">
         <option value="accepted" {{ 'selected' if not preview or preview.audience == 'accepted' else '' }}>Приняли оферту</option>
@@ -31,7 +37,7 @@
       </select>
     </label>
     <label class="block">Текст сообщения (до 4000 символов)
-      <textarea name="body" maxlength="4000" required rows="7" class="mt-1 block w-full bg-gray-700 rounded-lg p-3" placeholder="Напишите сообщение для участников...">{{ preview.body if preview else '' }}</textarea>
+      <textarea id="broadcast-body" name="body" maxlength="4000" required rows="7" class="mt-1 block w-full bg-gray-700 rounded-lg p-3" placeholder="Напишите сообщение для участников...">{{ preview.body if preview else '' }}</textarea>
     </label>
     <button class="bg-blue-600 hover:bg-blue-500 px-5 py-3 rounded-lg font-semibold">Предварительный просмотр →</button>
   </form>
@@ -110,4 +116,14 @@
  <p class="text-xs text-gray-400">Сообщение считается доставленным после успешного ответа Telegram API. Это не означает, что пользователь его прочитал.</p>
 </section>
 </main>
+<script>
+const savedTemplates = {{ templates | tojson }};
+document.getElementById("template-picker").addEventListener("change", function () {
+  const chosen = savedTemplates.find(t => String(t.id) === this.value);
+  if (!chosen) return;
+  const field = document.getElementById("broadcast-body");
+  if (field.value.trim() && !window.confirm("Заменить текущий текст выбранным шаблоном?")) return;
+  field.value = chosen.body;
+});
+</script>
 </body></html>
