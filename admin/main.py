@@ -413,7 +413,7 @@ async def subscriptions_renew(
     if confirm != "RENEW":
         raise HTTPException(400, detail="Подтвердите продление")
     try:
-        await extend_community_access(telegram_id, days, reason, user["user"])
+        new_expiry = await extend_community_access(telegram_id, days, reason, user["user"])
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return RedirectResponse(f"/subscriptions/users/{telegram_id}?renewed=1",status_code=303)
