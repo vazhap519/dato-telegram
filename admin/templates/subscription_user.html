@@ -129,7 +129,37 @@
 </div>{% else %}<p class="text-gray-400">Назначенных прав пока нет.</p>{% endfor %}</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Учётные подписки</h2><p class="text-gray-400 text-sm">Платёжный модуль ещё не подключён.</p>
 {% for s in subscriptions %}<div class="p-3 border-t border-gray-700 text-sm">{{ s.plan_name or 'Тариф не указан' }} · {{ s.status }} · {{ s.provider }} · {{ s.paid_until|tbilisi_time('%d.%m.%Y %H:%M') if s.paid_until else 'без подтверждённого периода' }}</div>{% else %}<p class="text-gray-400">Подписок пока нет.</p>{% endfor %}</section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Журнал изменений</h2>
-{% for a in audit %}<div class="border-t border-gray-700 py-3 text-sm"><div class="font-medium">{{ a.action }} · {{ a.created_at|tbilisi_time }} (Тбилиси)</div><div class="text-gray-400">Администратор: {{ a.actor }}</div><div class="break-all text-xs text-gray-500">{{ a.details }}</div></div>{% else %}<p class="text-gray-400">История пуста.</p>{% endfor %}</section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<div class="flex flex-wrap items-center justify-between gap-3">
+<h2 class="font-semibold text-xl">Журнал изменений</h2>
+{% if audit %}
+<form method="post" action="/subscriptions/audit/clear"
+ onsubmit="return confirm('Очистить видимый журнал изменений ТОЛЬКО этого участника? Данные останутся в базе для аудита.');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="confirm" value="CLEAR_MEMBER_AUDIT">
+<button type="submit" class="rounded bg-red-800 hover:bg-red-700 px-3 py-2 text-sm">Очистить журнал</button>
+</form>
+{% endif %}
+</div>
+{% if request.query_params.get('audit') == 'cleared' %}
+<p class="text-green-300 text-sm">Журнал этого участника очищен.</p>
+{% endif %}
+<div class="max-h-80 overflow-y-auto overscroll-contain rounded-lg border border-gray-700 px-3 divide-y divide-gray-700">
+{% for a in audit %}
+<details class="py-2 text-sm group">
+<summary class="cursor-pointer list-none flex items-center justify-between gap-3">
+<span class="font-medium break-words">{{ a.action }}</span>
+<span class="text-gray-400 text-xs shrink-0">{{ a.created_at|tbilisi_time }}</span>
+</summary>
+<div class="pt-2 text-gray-400 text-xs">Администратор: {{ a.actor }}</div>
+<div class="break-all text-xs text-gray-500 pt-1">{{ a.details }}</div>
+</details>
+{% else %}
+<p class="text-gray-400 text-sm py-4">История пуста.</p>
+{% endfor %}
+</div>
+<p class="text-gray-500 text-xs">Последние записи. Нажмите на запись для подробностей. Очистка скрывает прошлые записи этого участника, не удаляя их из базы.</p>
+</section>
 </main><script>document.getElementById('grant-type').addEventListener('change',function(){const d=document.getElementById('end-date');d.disabled=this.value==='lifetime';if(d.disabled)d.value='';});const ct=document.getElementById('renew-custom-toggle'),cd=document.getElementById('renew-custom-days'),dd=document.getElementById('renew-days');
 ct.addEventListener('change',()=>{cd.classList.toggle('hidden',!ct.checked);if(ct.checked){dd.innerHTML='<option value="30">30 дней</option>';dd.hidden=true;cd.required=true;cd.name='days';dd.removeAttribute('name');}else{dd.hidden=false;cd.required=false;cd.removeAttribute('name');dd.name='days';dd.innerHTML='<option value="30">30 дней</option><option value="90">90 дней</option><option value="365">365 дней</option><option value="7">7 дней</option>';}});</script></body></html>
