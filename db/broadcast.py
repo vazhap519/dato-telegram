@@ -128,7 +128,7 @@ async def claim_recipient():
             await session.execute(text("UPDATE broadcasts SET status='sending' WHERE id=:id"), {"id": row.broadcast_id})
             msg = (await session.execute(text("""
                 SELECT b.body, b.campaign_kind, u.first_name
-                FROM broadcasts b JOIN users u ON u.telegram_id=:uid
+                FROM broadcasts b LEFT JOIN users u ON u.telegram_id=:uid
                 WHERE b.id=:id
             """), {"id": row.broadcast_id, "uid": row.telegram_id})).one()
             body, kind, first_name = msg
