@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
-from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count
+from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, group_removal_test, set_group_removal_test
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, change_grant_expiry, extend_community_access
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
@@ -396,6 +396,7 @@ async def subscription_user_page(
     recent_invites = await latest_invites(telegram_id)
     can_invite = bool(await has_group_access(telegram_id))
     removal_test = await group_removal_test(telegram_id)
+    removal_diagnostics = await member_removal_diagnostics(telegram_id, tg_group.get('chat_id'))
     from zoneinfo import ZoneInfo
     tbilisi_tz = ZoneInfo("Asia/Tbilisi")
     return templates.TemplateResponse(
@@ -404,7 +405,8 @@ async def subscription_user_page(
             "participant":participant, "grants":grants,
             "subscriptions":subs, "audit":audit, "selection":selection,
             "tg_group":tg_group, "recent_invites":recent_invites, "can_invite":can_invite,
-            "removal_test":removal_test, "tbilisi_tz":tbilisi_tz,
+            "removal_test":removal_test, "removal_diagnostics":removal_diagnostics,
+            "tbilisi_tz":tbilisi_tz,
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
