@@ -17,7 +17,7 @@ def offer_buttons(offer_url):
 async def start_handler(message: types.Message):
     if not message.from_user:
         return
-    is_new = await register_user(message.from_user.id)
+    is_new = await register_user(message.from_user.id, username=message.from_user.username, first_name=message.from_user.first_name, last_name=message.from_user.last_name)
     settings = await get_flow_settings()
     if not settings:
         await message.answer("Настройки бота ещё не готовы.")
@@ -45,7 +45,7 @@ async def accept_offer_handler(query: types.CallbackQuery):
         await query.answer("Настройки ещё не готовы.", show_alert=True)
         return
     version = (settings.get("offer_version") or "1").strip()
-    await register_user(query.from_user.id)
+    await register_user(query.from_user.id, username=query.from_user.username, first_name=query.from_user.first_name, last_name=query.from_user.last_name)
     await accept_offer(query.from_user.id, version)
     await query.answer("Условия приняты")
     if query.message:
