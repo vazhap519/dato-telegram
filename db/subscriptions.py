@@ -86,6 +86,15 @@ async def initialize_subscriptions():
           payload JSONB NOT NULL, received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE(provider,event_key)
         )"""))
+        await db.execute(text("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS payment_url TEXT NOT NULL DEFAULT ''"))
+        await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS subscription_plan_selections (
+            telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
+            plan_id BIGINT NOT NULL REFERENCES subscription_plans(id),
+            first_selected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            selected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            selection_count INTEGER NOT NULL DEFAULT 1
+        )"""))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_grants_user ON access_grants(telegram_id,resource)"))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(telegram_id)"))
         for code,name,price,days,life in [
@@ -196,15 +205,20 @@ async def revoke_grant(telegram_id,grant_id,actor):
               VALUES (:uid,'revoke_grant',:actor,jsonb_build_object('grant_id',CAST(:gid AS BIGINT)))
             """),{"uid":telegram_id,"gid":grant_id,"actor":actor})
 
-async def update_plan(plan_id,price_amount,active):
-    if price_amount is not None and (price_amount < 0 or price_amount > 1000000):
+async def update_plan(plan_id,price_amount,active,payment_url=''):
+    if price_amount is not None and (not price_amount.is_finite() or price_amount < 0 or price_amount > 1000000):
         raise ValueError('Неверная стоимость')
+    from urllib.parse import urlsplit
+    payment_url = (payment_url or '').strip()
+    parts = urlsplit(payment_url)
+    if payment_url and (parts.scheme != 'https' or not parts.hostname or parts.username or parts.password or len(payment_url)>2000):
+        raise ValueError('Ссылка оплаты должна быть корректным HTTPS URL')
     async with SessionLocal() as s:
         async with s.begin():
             row=(await s.execute(text("""
-              UPDATE subscription_plans SET price_amount=:price,is_active=:active
+              UPDATE subscription_plans SET price_amount=:price,is_active=:active,payment_url=:payment_url
               WHERE id=:id RETURNING code
-            """),{"id":plan_id,"price":price_amount,"active":active})).first()
+            """),{"id":plan_id,"price":price_amount,"active":active,"payment_url":payment_url})).first()
             if not row: raise ValueError('Тариф не найден')
             await s.execute(text("""
               INSERT INTO subscription_audit_log(action,actor,details)
@@ -247,3 +261,44 @@ async def create_plan(name, price_amount, currency, duration_days, is_lifetime, 
                 jsonb_build_object('plan_id',CAST(:id AS BIGINT),'code',CAST(:code AS TEXT),'name',CAST(:name AS TEXT)))
             """), {'actor':actor,'id':plan_id,'code':code,'name':name})
     return plan_id
+
+
+async def available_payment_plans():
+    """Only published plans with a configured HTTPS URL and a price are selectable."""
+    async with SessionLocal() as session:
+        rows = (await session.execute(text("""
+            SELECT id, name, price_amount, currency, duration_days, is_lifetime
+            FROM subscription_plans
+            WHERE is_active=TRUE AND payment_url LIKE 'https://%'
+              AND price_amount IS NOT NULL
+            ORDER BY is_lifetime, duration_days NULLS LAST, id
+            LIMIT 30
+        """))).mappings().all()
+        return [dict(r) for r in rows]
+
+
+async def select_payment_plan(telegram_id, plan_id):
+    """Track the chosen plan, never count it as a successful payment."""
+    async with SessionLocal() as session:
+        async with session.begin():
+            accepted = (await session.execute(text("""
+                SELECT 1 FROM offer_acceptances WHERE telegram_id=:uid LIMIT 1
+            """), {"uid":telegram_id})).first()
+            if not accepted:
+                return None
+            plan = (await session.execute(text("""
+                SELECT id,name,price_amount,currency,duration_days,is_lifetime,payment_url
+                FROM subscription_plans
+                WHERE id=:plan AND is_active=TRUE
+                  AND price_amount IS NOT NULL AND payment_url LIKE 'https://%'
+            """), {"plan":plan_id})).mappings().first()
+            if not plan:
+                return None
+            await session.execute(text("""
+                INSERT INTO subscription_plan_selections(telegram_id,plan_id)
+                VALUES (:uid,:plan)
+                ON CONFLICT(telegram_id) DO UPDATE SET
+                    plan_id=EXCLUDED.plan_id, selected_at=NOW(),
+                    selection_count=subscription_plan_selections.selection_count+1
+            """), {"uid":telegram_id,"plan":plan_id})
+            return dict(plan)
