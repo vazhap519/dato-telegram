@@ -95,6 +95,13 @@ async def initialize_subscriptions():
             selected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             selection_count INTEGER NOT NULL DEFAULT 1
         )"""))
+        await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS subscription_audit_clears (
+          telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
+          cutoff_id BIGINT NOT NULL,
+          cleared_by TEXT NOT NULL,
+          cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )"""))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_grants_user ON access_grants(telegram_id,resource)"))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(telegram_id)"))
         for code,name,price,days,life in [
@@ -164,7 +171,9 @@ async def person(telegram_id):
         """),{"uid":telegram_id})).mappings()]
         audit=[dict(x) for x in (await s.execute(text("""
           SELECT action,actor,details,created_at FROM subscription_audit_log
-          WHERE telegram_id=:uid ORDER BY id DESC LIMIT 60
+          WHERE telegram_id=:uid
+            AND id > COALESCE((SELECT cutoff_id FROM subscription_audit_clears WHERE telegram_id=:uid),0)
+          ORDER BY id DESC LIMIT 60
         """),{"uid":telegram_id})).mappings()]
         selection=(await s.execute(text("""
           SELECT x.plan_id,p.name AS plan_name,x.first_selected_at,x.selected_at,x.selection_count
@@ -436,3 +445,32 @@ async def extend_community_access(telegram_id, days, reason, actor):
             """),{"uid":telegram_id,"actor":actor,"gid":grant_id,"days":days,
                   "previous":str(start),"new":str(end),"reason":reason})
             return end
+
+
+async def clear_visible_audit(telegram_id, actor):
+    """Clear this member's visible history without destroying audit evidence."""
+    async with SessionLocal() as s:
+        async with s.begin():
+            exists=(await s.execute(text(
+                "SELECT 1 FROM users WHERE telegram_id=:uid"
+            ),{"uid":telegram_id})).scalar_one_or_none()
+            if not exists:
+                raise ValueError("Участник не найден")
+            cutoff=(await s.execute(text("""
+                SELECT COALESCE(MAX(id),0)
+                FROM subscription_audit_log WHERE telegram_id=:uid
+            """),{"uid":telegram_id})).scalar_one()
+            await s.execute(text("""
+                INSERT INTO subscription_audit_clears
+                  (telegram_id,cutoff_id,cleared_by,cleared_at)
+                VALUES (:uid,:cutoff,:actor,NOW())
+                ON CONFLICT(telegram_id) DO UPDATE
+                SET cutoff_id=GREATEST(subscription_audit_clears.cutoff_id,EXCLUDED.cutoff_id),
+                    cleared_by=EXCLUDED.cleared_by,cleared_at=NOW()
+            """),{"uid":telegram_id,"cutoff":cutoff,"actor":actor})
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                VALUES(NULL,'member_audit_cleared',:actor,
+                  jsonb_build_object('target_telegram_id',CAST(:uid AS BIGINT),
+                                     'cutoff_id',CAST(:cutoff AS BIGINT)))
+            """),{"uid":telegram_id,"cutoff":cutoff,"actor":actor})
