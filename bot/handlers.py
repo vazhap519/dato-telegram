@@ -4,6 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 
 from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click
+from db.subscriptions import available_payment_plans, select_payment_plan
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +57,9 @@ async def accept_offer_handler(query: types.CallbackQuery):
     subscription_text = (settings.get("subscription_text") or "").strip()
     if not subscription_text:
         subscription_text = "Спасибо! Чтобы оформить подписку, нажмите кнопку ниже."
-    subscription_url = (settings.get("subscription_url") or "").strip()
-    buttons = None
-    if subscription_url.startswith(("https://", "http://")):
-        buttons = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")]
-        ])
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")]
+    ])
     await query.bot.send_message(query.from_user.id, subscription_text, reply_markup=buttons)
 
 async def upload_command_handler(message: types.Message):
@@ -84,25 +82,67 @@ async def upload_video_note_handler(message: types.Message):
     else:
         await message.answer("Для загрузки видеокружочка сначала создайте код в админ-панели и отправьте /upload КОД.")
 
+def plan_button_label(plan):
+    price = f"{plan['price_amount']:.2f}".rstrip("0").rstrip(".")
+    term = "навсегда" if plan["is_lifetime"] else f"{plan['duration_days']} дней"
+    return f"{plan['name']} · {price} {plan['currency']} · {term}"
+
+
 async def subscription_click_handler(query: types.CallbackQuery):
     if not query.from_user:
         return
-    settings = await get_flow_settings()
-    url = (settings.get("subscription_url") or "").strip() if settings else ""
-    if not url.startswith(("https://", "http://")):
-        await query.answer("Ссылка на подписку пока не настроена.", show_alert=True)
-        return
     if not await record_subscription_click(query.from_user.id):
-        await query.answer("Сначала необходимо принять условия публичной оферты.", show_alert=True)
+        await query.answer("Сначала примите условия публичной оферты.", show_alert=True)
         return
-    await query.answer("Ссылка отправлена")
+    plans = await available_payment_plans()
+    if not plans:
+        await query.answer("Тарифы пока не настроены. Попробуйте позже.", show_alert=True)
+        return
+    await query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=plan_button_label(plan), callback_data=f"choose_plan:{plan['id']}")]
+        for plan in plans
+    ])
     await query.bot.send_message(
         query.from_user.id,
-        "Перейдите по кнопке ниже, чтобы оформить подписку:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Перейти к оплате", url=url)]
-        ])
+        "Выберите срок участия в сообществе:",
+        reply_markup=keyboard
     )
+
+
+async def choose_plan_handler(query: types.CallbackQuery):
+    if not query.from_user:
+        return
+    try:
+        plan_id = int((query.data or "").partition(":")[2])
+    except ValueError:
+        await query.answer("Не удалось определить тариф.", show_alert=True)
+        return
+    plan = await select_payment_plan(query.from_user.id, plan_id)
+    if not plan:
+        await query.answer("Тариф недоступен или необходимо принять оферту.", show_alert=True)
+        return
+    await query.answer("Тариф выбран")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Перейти к оплате", url=plan["payment_url"])],
+        [InlineKeyboardButton(text="↩️ Выбрать другой тариф", callback_data="subscription_click")]
+    ])
+    text = (
+        f"Вы выбрали: {plan['name']}\\n"
+        f"Стоимость: {plan['price_amount']} {plan['currency']}\\n"
+        f"Срок: {'Бессрочно' if plan['is_lifetime'] else str(plan['duration_days']) + ' дней'}\\n\\n"
+        "Нажмите кнопку ниже для перехода на страницу оплаты. "
+        "Доступ будет активирован только после подтверждения платежа."
+    )
+    # Edit instead of sending a new message to avoid duplicates on repeated taps.
+    if query.message:
+        try:
+            await query.message.edit_text(text, reply_markup=keyboard)
+            return
+        except TelegramBadRequest:
+            pass
+    await query.bot.send_message(query.from_user.id, text, reply_markup=keyboard)
+
 
 from db.broadcast import opt_out, opt_in
 
