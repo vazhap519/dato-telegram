@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.queries import get_users_count, get_settings
-from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats, create_upload_code
+from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats, create_upload_code, list_onboarding_users
 from .auth import (
     verify_password,
     create_token,
@@ -241,6 +241,35 @@ async def create_video_upload(request: Request, csrf_check=Depends(verify_csrf),
             "stats": stats, "user": user,
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "upload_command": "/upload " + code
+        },
+        headers={"Cache-Control": "no-store"}
+    )
+
+
+@app.get("/users")
+async def users_page(
+    request: Request,
+    stage: str = "started",
+    search: str = "",
+    page: int = 1,
+    user=Depends(get_current_user)
+):
+    from urllib.parse import urlencode
+    if stage not in ("started", "accepted", "clicked"):
+        stage = "started"
+    page = max(1, min(page, 100000))
+    users, total = await list_onboarding_users(stage, search, page)
+    stats = await registration_stats()
+    def page_url(p):
+        return "/users?" + urlencode({"stage": stage, "search": search, "page": p})
+    return templates.TemplateResponse(
+        request=request, name="users.html",
+        context={
+            "user": user, "users": users, "total": total,
+            "stats": stats, "stage": stage, "search": search,
+            "page": page, "page_count": max(1, (total + 29) // 30),
+            "prev_url": page_url(page - 1),
+            "next_url": page_url(page + 1)
         },
         headers={"Cache-Control": "no-store"}
     )
