@@ -1,53 +1,62 @@
-"""Read-only Tribute Shop API capability check.
+"""Read-only diagnostic of Tribute Shop API endpoints.
 
-Run on the server using:
-  .venv/bin/python -m scripts.check_tribute_shop
-
-The API key is typed into a hidden prompt; it is never printed or persisted.
+No orders, charges, or changes to Tribute are made.
+The key is entered hidden and is never printed or saved.
 """
 import getpass
 import json
 import urllib.error
 import urllib.request
 
-ENDPOINT = "https://tribute.tg/api/v1/shop"
+BASE = "https://tribute.tg/api/v1/"
+
+def inspect(payload):
+    if isinstance(payload, list):
+        print("API returned a list of shops; count:", len(payload))
+        for shop in payload[:3]:
+            if isinstance(shop, dict):
+                report_shop(shop)
+        return
+    if isinstance(payload, dict):
+        if "status" in payload or "recurrent" in payload or "onlyStars" in payload:
+            report_shop(payload)
+            return
+        for field in ("shops", "data", "items"):
+            if isinstance(payload.get(field), list):
+                inspect(payload[field])
+                return
+    print("API response received, but shop status fields were not recognized.")
+
+def report_shop(shop):
+    status = shop.get("status")
+    print("Shop status (1=active, 0=inactive):", status if status in (0, 1) else "not returned")
+    print("Recurring enabled:", shop.get("recurrent") if isinstance(shop.get("recurrent"), bool) else "not returned")
+    print("Stars-only:", shop.get("onlyStars") if isinstance(shop.get("onlyStars"), bool) else "not returned")
+    callback = shop.get("callbackUrl")
+    print("Webhook configured:", bool(isinstance(callback, str) and callback.startswith("https://")))
+    print("Webhook targets our server:", bool(isinstance(callback, str) and callback.startswith("https://bot.arutyun.me/")))
 
 def main():
-    key = getpass.getpass("Tribute Shop API key (hidden): ").strip()
+    key = getpass.getpass("Tribute API key (hidden): ").strip()
     if not key:
-        print("No key provided. Aborted.")
+        print("Key not provided.")
         return
-    req = urllib.request.Request(
-        ENDPOINT,
-        headers={"Api-Key": key, "Accept": "application/json"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            payload = json.loads(resp.read(131072).decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        labels = {401: "Unauthorized: check the API key", 404: "Shop not found or not enabled"}
-        print(f"Tribute Shop API HTTP {exc.code}: {labels.get(exc.code, 'API error')}")
-        return
-    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        print(f"Unable to check Tribute Shop API: {type(exc).__name__}")
-        return
-    finally:
-        key = None
-    if not isinstance(payload, dict):
-        print("Unexpected API response type.")
-        return
-    status = payload.get("status")
-    recurrent = payload.get("recurrent")
-    only_stars = payload.get("onlyStars")
-    callback = payload.get("callbackUrl")
-    print("Tribute Shop API connection: OK")
-    print("Shop active (status=1):", status == 1)
-    print("Recurring payments enabled:", recurrent is True)
-    print("Stars-only mode:", only_stars is True)
-    print("Webhook configured:", isinstance(callback, str) and callback.startswith("https://"))
-    print("Webhook target is our server:", isinstance(callback, str) and callback.startswith("https://bot.arutyun.me/"))
-    print("No charge or order was created.")
+    for suffix in ("shop", "shops"):
+        req = urllib.request.Request(
+            BASE + suffix,
+            headers={"Api-Key": key, "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                payload = json.loads(response.read(131072).decode("utf-8"))
+                print(f"GET /api/v1/{suffix}: HTTP {response.status}")
+                inspect(payload)
+        except urllib.error.HTTPError as error:
+            print(f"GET /api/v1/{suffix}: HTTP {error.code}")
+        except (urllib.error.URLError, TimeoutError, ValueError) as error:
+            print(f"GET /api/v1/{suffix}: {type(error).__name__}")
+    print("Read-only check completed; no orders or payments created.")
 
 if __name__ == "__main__":
     main()
