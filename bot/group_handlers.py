@@ -146,8 +146,10 @@ async def managed_member_join_handler(event: types.ChatMemberUpdated):
     if record["telegram_id"] != event.new_chat_member.user.id:
         return
     if record["status"] != "issued" or not record["in_time"]:
+        await remove_invalid_direct_join(event)
         return
     if not await has_group_access(event.new_chat_member.user.id):
+        await remove_invalid_direct_join(event)
         return
     try:
         await record_managed_join(
