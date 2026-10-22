@@ -360,7 +360,21 @@ async def subscriptions_grant(
     try:
         await grant_access(telegram_id,"community",grant_type,expires,reason,user["user"])
     except ValueError as exc: raise HTTPException(400, detail=str(exc))
-    return RedirectResponse(f"/subscriptions/users/{telegram_id}",status_code=303)
+    # Grant and invitation are separate: never undo a legitimate grant if
+    # Telegram is temporarily unavailable or the participant blocked the bot.
+    import logging
+    from urllib.parse import quote
+    from aiogram import Bot
+    from bot.group_handlers import send_group_invitation
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            invite_status = await send_group_invitation(telegram, telegram_id, user["user"])
+    except Exception:
+        logging.getLogger(__name__).exception("Invitation after grant failed for %s", telegram_id)
+        invite_status = "failed"
+    return RedirectResponse(
+        f"/subscriptions/users/{telegram_id}?invite={quote(invite_status)}", status_code=303
+    )
 
 
 @app.post("/subscriptions/revoke")
@@ -440,53 +454,19 @@ async def subscriptions_send_invite(
     telegram_id: int = Form(...),
     csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
 ):
-    from datetime import datetime, timedelta, timezone
-    import os
     from aiogram import Bot
-    from aiogram.exceptions import TelegramAPIError
-    from bot.group_handlers import INVITE_PREFIX
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    if not await has_group_access(telegram_id):
-        raise HTTPException(400, detail="Сначала назначьте действующий доступ в карточке участника")
+    from bot.group_handlers import send_group_invitation
     if await subscription_person(telegram_id) is None:
         raise HTTPException(404, detail="Пользователь не найден")
-    group = await group_settings()
-    chat_id = group.get("chat_id")
-    if not chat_id:
-        raise HTTPException(400, detail="Сначала подключите супергруппу в разделе Подписки")
-    expiry = datetime.now(timezone.utc) + timedelta(hours=1)
-    async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
-        try:
-            member = await telegram.get_chat_member(chat_id, telegram_id)
-            if member.status in ("member", "administrator", "creator") or (
-                member.status == "restricted" and member.is_member
-            ):
-                return RedirectResponse(
-                    f"/subscriptions/users/{telegram_id}?invite=already_member", status_code=303
-                )
-        except TelegramAPIError:
-            # Telegram may not return a nonmember; this is not proof of membership.
-            pass
-        try:
-            invite = await telegram.create_chat_invite_link(
-                chat_id=chat_id,
-                name=f"{INVITE_PREFIX}{telegram_id}",
-                expire_date=expiry,
-                creates_join_request=True
-            )
-            await record_invite(telegram_id, chat_id, invite.invite_link, expiry, user["user"])
-            await telegram.send_message(
-                telegram_id,
-                "🔐 Вам предоставлен доступ в «Круг Души». "
-                "Нажмите кнопку ниже и отправьте заявку на вступление. "
-                "Ссылка действует 1 час.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="🚪 Вступить в сообщество", url=invite.invite_link)
-                ]])
-            )
-        except TelegramAPIError:
-            raise HTTPException(502, detail="Не удалось отправить приглашение в Telegram. Пользователь должен сначала открыть бота.")
-    return RedirectResponse(f"/subscriptions/users/{telegram_id}?invite=sent", status_code=303)
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            result = await send_group_invitation(telegram, telegram_id, user["user"])
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Manual invite failure for %s", telegram_id)
+        result = "failed"
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?invite={result}", status_code=303)
+
 
 
 @app.get("/broadcast")
