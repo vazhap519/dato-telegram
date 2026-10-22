@@ -7,6 +7,63 @@ from db.group_access import group_settings, invite_for_request, has_group_access
 log = logging.getLogger(__name__)
 INVITE_PREFIX = "dato-access-"
 
+
+async def send_group_invitation(bot, telegram_id: int, actor: str):
+    """Create a person-specific, join-request link and send it via private chat.
+
+    Returns: sent / already_member / no_access / not_configured.
+    Caller may handle TelegramAPIError (e.g. user blocked bot).
+    """
+    from datetime import datetime, timedelta, timezone
+    from aiogram.enums import ChatMemberStatus
+    from aiogram.exceptions import TelegramAPIError
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from db.group_access import record_invite
+
+    if not await has_group_access(telegram_id):
+        return "no_access"
+    config = await group_settings()
+    chat_id = config.get("chat_id")
+    if not chat_id:
+        return "not_configured"
+    try:
+        member = await bot.get_chat_member(chat_id, telegram_id)
+        if member.status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR,
+                             ChatMemberStatus.CREATOR) or (
+                member.status == ChatMemberStatus.RESTRICTED and member.is_member):
+            return "already_member"
+    except TelegramAPIError:
+        # get_chat_member may fail for users who are not members.
+        pass
+
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    invite = await bot.create_chat_invite_link(
+        chat_id=chat_id,
+        name=f"{INVITE_PREFIX}{telegram_id}",
+        expire_date=expires_at,
+        creates_join_request=True
+    )
+    try:
+        await record_invite(telegram_id, chat_id, invite.invite_link, expires_at, actor)
+        await bot.send_message(
+            telegram_id,
+            "🔐 Для вас готово приглашение в «Круг Души». "
+            "Нажмите кнопку ниже и отправьте заявку на вступление. "
+            "Ссылка персональная и действует один час.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🚪 Вступить в сообщество", url=invite.invite_link)
+            ]])
+        )
+    except Exception:
+        # Avoid leaving a usable unrecorded link if delivery fails.
+        try:
+            await bot.revoke_chat_invite_link(chat_id, invite.invite_link)
+        except TelegramAPIError:
+            log.warning("Unable to revoke undelivered group invite")
+        raise
+    return "sent"
+
+
 async def group_join_request_handler(request: types.ChatJoinRequest):
     cfg = await group_settings()
     if cfg.get("chat_id") != request.chat.id:
