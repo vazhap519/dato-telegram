@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Пользователи — Telegram</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+<main class="max-w-6xl mx-auto p-4 md:p-8">
+<header class="flex flex-wrap gap-4 justify-between items-center mb-6">
+  <div><h1 class="text-3xl font-bold">👥 Пользователи</h1>
+  <p class="text-gray-400 mt-1">Этапы подключения к закрытому сообществу</p></div>
+  <a href="/dashboard" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">← Настройки бота</a>
+</header>
+<section class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+<a href="/users?stage=started" class="p-5 rounded-xl border {{ 'border-blue-400' if stage == 'started' else 'border-gray-700' }} bg-gray-800">
+ <div class="text-sm text-gray-300">Нажали /start</div><div class="text-3xl font-bold mt-1">{{ stats.total }}</div></a>
+<a href="/users?stage=accepted" class="p-5 rounded-xl border {{ 'border-green-400' if stage == 'accepted' else 'border-gray-700' }} bg-gray-800">
+ <div class="text-sm text-gray-300">Приняли оферту</div><div class="text-3xl font-bold mt-1">{{ stats.accepted }}</div></a>
+<a href="/users?stage=clicked" class="p-5 rounded-xl border {{ 'border-indigo-400' if stage == 'clicked' else 'border-gray-700' }} bg-gray-800">
+ <div class="text-sm text-gray-300">Нажали «Оформить подписку»</div><div class="text-3xl font-bold mt-1">{{ stats.subscription_clicked }}</div></a>
+</section>
+<form action="/users" method="get" class="flex gap-2 mb-4">
+<input type="hidden" name="stage" value="{{ stage }}">
+<input type="text" name="search" value="{{ search }}" placeholder="Поиск по Telegram ID" class="flex-1 min-w-0 rounded-lg bg-gray-800 border border-gray-700 px-4 py-2">
+<button class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500">Найти</button>
+{% if search %}<a href="/users?stage={{ stage }}" class="px-3 py-2 rounded-lg bg-gray-700">Сбросить</a>{% endif %}
+</form>
+<p class="text-sm text-gray-400 mb-3">Найдено: {{ total }}. Время отображается в UTC. Повторные нажатия не увеличивают число уникальных пользователей.</p>
+<div class="overflow-x-auto bg-gray-800 rounded-xl border border-gray-700">
+<table class="w-full text-sm text-left">
+<thead class="bg-gray-700 text-gray-200"><tr>
+<th class="p-3">Telegram ID</th><th class="p-3">Первый /start</th><th class="p-3">Принял оферту</th><th class="p-3">Нажал подписку</th><th class="p-3">Нажатий</th>
+</tr></thead>
+<tbody>
+{% for u in users %}
+<tr class="border-t border-gray-700 hover:bg-gray-750">
+<td class="p-3 font-mono">{{ u.telegram_id }}</td>
+<td class="p-3 whitespace-nowrap">{{ u.created_at.strftime('%d.%m.%Y %H:%M') if u.created_at else '—' }}</td>
+<td class="p-3 whitespace-nowrap">{{ u.accepted_at.strftime('%d.%m.%Y %H:%M') if u.accepted_at else '—' }}</td>
+<td class="p-3 whitespace-nowrap">{{ u.clicked_at.strftime('%d.%m.%Y %H:%M') if u.clicked_at else '—' }}</td>
+<td class="p-3">{{ u.click_count or '—' }}</td>
+</tr>
+{% else %}
+<tr><td colspan="5" class="p-8 text-center text-gray-400">Пользователей пока нет</td></tr>
+{% endfor %}
+</tbody></table></div>
+<nav class="flex items-center justify-between mt-5">
+<div>{% if page > 1 %}<a href="{{ prev_url }}" class="bg-gray-700 rounded-lg px-4 py-2">← Назад</a>{% endif %}</div>
+<span class="text-gray-400 text-sm">Страница {{ page }} из {{ page_count }}</span>
+<div>{% if page < page_count %}<a href="{{ next_url }}" class="bg-gray-700 rounded-lg px-4 py-2">Вперёд →</a>{% endif %}</div>
+</nav>
+<p class="text-xs text-gray-500 mt-8">«Нажали подписку» означает нажатие кнопки внутри бота, а не подтверждённую оплату. Нажатия внешней ссылки Telegram не отслеживаются.</p>
+</main>
+</body></html>
