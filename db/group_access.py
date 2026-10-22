@@ -239,3 +239,27 @@ async def rearm_group_removal_on_join(telegram_id, chat_id):
                       AND (g.ends_at IS NULL OR g.ends_at>NOW())
                   )
             """), {"uid":telegram_id,"chat":chat_id})
+
+
+async def rearm_renewed_removal_tests():
+    """Repair previously completed tests whose accounts received renewed access."""
+    async with SessionLocal() as session:
+        async with session.begin():
+            await session.execute(text("""
+                UPDATE group_removal_tests AS t
+                SET status='armed',last_error=NULL,removed_at=NULL,updated_at=NOW()
+                WHERE t.enabled=TRUE AND t.status IN ('removed','already_out')
+                  AND (
+                    EXISTS (
+                      SELECT 1 FROM access_grants g
+                      WHERE g.telegram_id=t.telegram_id AND g.resource='community'
+                        AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+                        AND (g.ends_at IS NULL OR g.ends_at>NOW())
+                    )
+                    OR EXISTS (
+                      SELECT 1 FROM subscriptions s
+                      WHERE s.telegram_id=t.telegram_id AND s.status='active'
+                        AND s.paid_until>NOW()
+                    )
+                  )
+            """))
