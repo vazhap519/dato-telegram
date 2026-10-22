@@ -17,7 +17,7 @@ from db.database import SessionLocal
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, group_removal_test, set_group_removal_test
-from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, change_grant_expiry, extend_community_access, clear_visible_audit
+from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
@@ -69,6 +69,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/grant",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
+        "/subscriptions/grants/history/clear",
         "/subscriptions/grant/expiry",
         "/subscriptions/renew",
         "/subscriptions/automation",
@@ -535,6 +536,24 @@ async def subscriptions_removal_test(
             raise HTTPException(400,detail="Не удалось проверить права бота в Telegram-группе")
     await set_group_removal_test(telegram_id,group["chat_id"],enabled,user["user"])
     return RedirectResponse(f"/subscriptions/users/{telegram_id}?test={'enabled' if enabled else 'disabled'}",status_code=303)
+
+
+@app.post("/subscriptions/grants/history/clear")
+async def subscriptions_clear_grant_history(
+    telegram_id: int = Form(...),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    if confirm != "CLEAR_REVOKED_GRANTS":
+        raise HTTPException(400, detail="Подтвердите очистку истории")
+    try:
+        await clear_revoked_grant_history(telegram_id, user["user"])
+    except ValueError as exc:
+        raise HTTPException(404, detail=str(exc))
+    return RedirectResponse(
+        f"/subscriptions/users/{telegram_id}?grants=cleared", status_code=303
+    )
 
 
 @app.post("/subscriptions/audit/clear")
