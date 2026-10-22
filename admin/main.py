@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.queries import get_users_count, get_settings
+from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats
 from .auth import (
     verify_password,
     create_token,
@@ -37,11 +38,17 @@ def make_csrf_token(session_token: str) -> str:
 
 app = FastAPI()
 
+@app.on_event('startup')
+async def setup_onboarding():
+    await initialize_flow()
+
+
 # Protection against cross-origin admin requests
 @app.middleware("http")
 async def protect_admin_forms(request: Request, call_next):
     protected_paths = {
         "/update",
+        "/update-flow",
         "/change-credentials",
     }
 
@@ -262,6 +269,8 @@ async def dashboard(
 ):
     count = await get_users_count()
     settings = await get_settings()
+    flow = await get_flow_settings()
+    stats = await registration_stats()
     csrf_token = make_csrf_token(
         request.cookies.get("access_token", "")
     )
@@ -272,6 +281,8 @@ async def dashboard(
         context={
             "count": count,
             "settings": settings,
+            "flow": flow,
+            "stats": stats,
             "user": user,
             "csrf_token": csrf_token
         }
@@ -322,6 +333,45 @@ async def update_settings(
         url="/dashboard",
         status_code=302
     )
+
+
+
+# Subscription onboarding configuration (CSRF + login protected)
+@app.post("/update-flow")
+async def update_flow(
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+    video_note_file_id: str = Form(""),
+    offer_text: str = Form(""),
+    offer_url: str = Form(""),
+    offer_version: str = Form("1"),
+    subscription_text: str = Form(""),
+    subscription_url: str = Form("")
+):
+    from urllib.parse import urlparse
+    from fastapi import HTTPException
+
+    def clean_url(value):
+        value = value.strip()
+        if value:
+            parsed = urlparse(value)
+            if parsed.scheme not in ("https", "http") or not parsed.netloc:
+                raise HTTPException(status_code=400, detail="Invalid URL")
+        return value
+
+    version = offer_version.strip()
+    if not version or len(version) > 100:
+        raise HTTPException(status_code=400, detail="Invalid offer version")
+
+    await save_flow_settings({
+        "video_note_file_id": video_note_file_id.strip(),
+        "offer_text": offer_text.strip(),
+        "offer_url": clean_url(offer_url),
+        "offer_version": version,
+        "subscription_text": subscription_text.strip(),
+        "subscription_url": clean_url(subscription_url)
+    })
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 
 # 🔐 CHANGE CREDENTIALS
