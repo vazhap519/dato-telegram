@@ -71,6 +71,9 @@ async def save_flow_settings(values):
 async def register_user(telegram_id, username=None, first_name=None, last_name=None):
     """Keep unique users and their latest visible Telegram profile details."""
     async with SessionLocal() as session:
+        was_present = (await session.execute(
+            text("SELECT 1 FROM users WHERE telegram_id=:id"), {"id": telegram_id}
+        )).first() is not None
         created = (await session.execute(text("""
             INSERT INTO users (telegram_id, username, first_name, last_name)
             VALUES (:id, :username, :first_name, :last_name)
@@ -82,7 +85,7 @@ async def register_user(telegram_id, username=None, first_name=None, last_name=N
         """), {"id": telegram_id, "username": username,
                "first_name": first_name, "last_name": last_name})).scalar_one_or_none()
         await session.commit()
-        return created is not None
+        return not was_present
 
 
 async def accept_offer(telegram_id, version):
@@ -147,18 +150,22 @@ async def store_uploaded_video_note(telegram_id, file_id):
         return bool(row)
 
 async def record_subscription_click(telegram_id):
-    """Record click intention only for someone who accepted the offer."""
+    """Count first click uniquely; count repeated clicks separately."""
     async with SessionLocal() as session:
-        row = (await session.execute(text("""
-            INSERT INTO subscription_clicks (telegram_id)
-            SELECT :id
-            WHERE EXISTS (SELECT 1 FROM offer_acceptances WHERE telegram_id=:id)
-            ON CONFLICT (telegram_id) DO UPDATE SET
-              click_count=subscription_clicks.click_count+1
-            RETURNING telegram_id
+        accepted = (await session.execute(text("""
+            SELECT 1 FROM offer_acceptances
+            WHERE telegram_id=:id LIMIT 1
         """), {"id": telegram_id})).first()
+        if not accepted:
+            return False
+        await session.execute(text("""
+            INSERT INTO subscription_clicks (telegram_id, clicked_at, click_count)
+            VALUES (:id, NOW(), 1)
+            ON CONFLICT (telegram_id) DO UPDATE SET
+                click_count = subscription_clicks.click_count + 1
+        """), {"id": telegram_id})
         await session.commit()
-        return bool(row)
+        return True
 
 async def list_onboarding_users(stage="started", search="", page=1, per_page=30):
     if stage not in {"started", "accepted", "clicked"}:
