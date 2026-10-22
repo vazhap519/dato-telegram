@@ -206,3 +206,36 @@ async def finish_group_removal(telegram_id, status, error=None):
                   INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
                   VALUES (:uid,'test_group_removal','bot','{}'::jsonb)
                 """),{"uid":telegram_id})
+
+
+async def rearm_group_removal_test(telegram_id):
+    """Reset a previous successful test after access has been renewed.
+
+    Opt-in is never enabled here: only existing enabled test records are reset.
+    """
+    async with SessionLocal() as session:
+        async with session.begin():
+            await session.execute(text("""
+                UPDATE group_removal_tests
+                SET status='armed', last_error=NULL, removed_at=NULL, updated_at=NOW()
+                WHERE telegram_id=:uid AND enabled=TRUE
+                  AND status IN ('removed','already_out','skipped_admin','unban_failed')
+            """), {"uid":telegram_id})
+
+
+async def rearm_group_removal_on_join(telegram_id, chat_id):
+    """Rearm an opted-in removal test after a user rejoins the test group."""
+    async with SessionLocal() as session:
+        async with session.begin():
+            await session.execute(text("""
+                UPDATE group_removal_tests
+                SET status='armed', last_error=NULL, removed_at=NULL, updated_at=NOW()
+                WHERE telegram_id=:uid AND chat_id=:chat AND enabled=TRUE
+                  AND status IN ('removed','already_out')
+                  AND EXISTS (
+                    SELECT 1 FROM access_grants g WHERE g.telegram_id=:uid
+                      AND g.resource='community' AND g.revoked_at IS NULL
+                      AND g.starts_at<=NOW()
+                      AND (g.ends_at IS NULL OR g.ends_at>NOW())
+                  )
+            """), {"uid":telegram_id,"chat":chat_id})
