@@ -32,14 +32,31 @@ async def group_join_request_handler(request: types.ChatJoinRequest):
 
 
 async def group_id_handler(message: types.Message):
-    """Group administrators can discover the chat ID without external bots."""
+    """Reveal the group ID to real or anonymous group administrators."""
     from aiogram.enums import ChatMemberStatus
-    if not message.from_user or message.chat.type not in ("group", "supergroup"):
+    if message.chat.type not in ("group", "supergroup"):
         return
-    try:
-        member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
+    # Telegram sends anonymous admin posts as sender_chat equal to this group.
+    # In that case from_user refers to Telegram's anonymous admin service account.
+    anonymous_admin = (
+        message.sender_chat is not None
+        and message.sender_chat.id == message.chat.id
+    )
+    if not anonymous_admin:
+        if not message.from_user:
             return
-        await message.answer(f"ID группы: `{message.chat.id}`")
+        try:
+            member = await message.bot.get_chat_member(
+                message.chat.id, message.from_user.id
+            )
+        except Exception:
+            log.exception("Could not verify /chatid administrator")
+            return
+        if member.status not in (
+            ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR
+        ):
+            return
+    try:
+        await message.answer(f"ID группы: {message.chat.id}")
     except Exception:
-        log.exception("Unable to show group ID")
+        log.exception("Unable to send group ID")
