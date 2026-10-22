@@ -369,7 +369,7 @@ async def subscriptions_revoke(
 @app.post("/subscriptions/plan")
 async def subscriptions_plan(
     plan_id: int = Form(...), price: str = Form(""),
-    active: bool = Form(False),
+    payment_url: str = Form(""), active: bool = Form(False),
     csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
 ):
     from decimal import Decimal, InvalidOperation
@@ -377,9 +377,9 @@ async def subscriptions_plan(
         amount=Decimal(price) if price.strip() else None
         if amount is not None and amount.as_tuple().exponent < -2:
             raise InvalidOperation()
-        await update_plan(plan_id,amount,active)
-    except (InvalidOperation,ValueError):
-        raise HTTPException(400, detail="Цена должна быть неотрицательным числом с точностью до 2 знаков")
+        await update_plan(plan_id,amount,active,payment_url)
+    except (InvalidOperation,ValueError) as exc:
+        raise HTTPException(400, detail=str(exc) if isinstance(exc,ValueError) else "Неверная цена")
     return RedirectResponse("/subscriptions",status_code=303)
 
 
