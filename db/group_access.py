@@ -34,6 +34,17 @@ async def initialize_group_access():
             )
         """))
         await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS group_removal_tests (
+                telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
+                chat_id BIGINT NOT NULL,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                status TEXT NOT NULL DEFAULT 'armed',
+                last_error TEXT,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                removed_at TIMESTAMPTZ
+            )
+        """))
+        await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_group_invite_owner
             ON telegram_group_invites(telegram_id, created_at DESC)
         """))
@@ -126,3 +137,72 @@ async def latest_invites(telegram_id):
             ORDER BY id DESC LIMIT 10
         """),{"uid":telegram_id})).mappings()
         return [dict(x) for x in records]
+
+
+async def group_removal_test(telegram_id):
+    async with SessionLocal() as session:
+        row=(await session.execute(text("""
+            SELECT chat_id,enabled,status,last_error,updated_at,removed_at
+            FROM group_removal_tests WHERE telegram_id=:uid
+        """),{"uid":telegram_id})).mappings().first()
+        return dict(row) if row else None
+
+
+async def set_group_removal_test(telegram_id, chat_id, enabled, actor):
+    async with SessionLocal() as session:
+        async with session.begin():
+            if enabled:
+                await session.execute(text("""
+                  INSERT INTO group_removal_tests(telegram_id,chat_id,enabled,status,last_error,updated_at,removed_at)
+                  VALUES (:uid,:chat,TRUE,'armed',NULL,NOW(),NULL)
+                  ON CONFLICT(telegram_id) DO UPDATE SET chat_id=EXCLUDED.chat_id,
+                    enabled=TRUE,status='armed',last_error=NULL,updated_at=NOW(),removed_at=NULL
+                """),{"uid":telegram_id,"chat":chat_id})
+            else:
+                await session.execute(text("""
+                  UPDATE group_removal_tests
+                  SET enabled=FALSE,status='disabled',updated_at=NOW()
+                  WHERE telegram_id=:uid
+                """),{"uid":telegram_id})
+            await session.execute(text("""
+              INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+              VALUES (:uid,'group_removal_test_toggled',:actor,
+                jsonb_build_object('enabled',CAST(:enabled AS BOOLEAN),
+                                   'chat_id',CAST(:chat AS BIGINT)))
+            """),{"uid":telegram_id,"actor":actor,"enabled":enabled,"chat":chat_id})
+
+
+async def eligible_removal_tests(limit=20):
+    """Explicitly armed accounts only, whose community access has expired entirely."""
+    async with SessionLocal() as session:
+        rows=(await session.execute(text("""
+          SELECT t.telegram_id,t.chat_id FROM group_removal_tests t
+          WHERE t.enabled=TRUE AND t.status IN ('armed','error')
+            AND NOT EXISTS (
+              SELECT 1 FROM access_grants g WHERE g.telegram_id=t.telegram_id
+              AND g.resource='community' AND g.revoked_at IS NULL
+              AND g.starts_at<=NOW() AND (g.ends_at IS NULL OR g.ends_at>NOW())
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM subscriptions s WHERE s.telegram_id=t.telegram_id
+              AND s.status='active' AND s.paid_until>NOW()
+            )
+          ORDER BY t.updated_at ASC LIMIT :limit
+        """),{"limit":limit})).mappings().all()
+        return [dict(r) for r in rows]
+
+
+async def finish_group_removal(telegram_id, status, error=None):
+    async with SessionLocal() as session:
+        async with session.begin():
+            await session.execute(text("""
+                UPDATE group_removal_tests
+                SET status=:status,last_error=:error,updated_at=NOW(),
+                    removed_at=CASE WHEN :status='removed' THEN NOW() ELSE removed_at END
+                WHERE telegram_id=:uid AND enabled=TRUE
+            """),{"uid":telegram_id,"status":status,"error":error})
+            if status=='removed':
+                await session.execute(text("""
+                  INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                  VALUES (:uid,'test_group_removal','bot','{}'::jsonb)
+                """),{"uid":telegram_id})
