@@ -8,6 +8,8 @@ from db.group_access import (
     rearm_renewed_removal_tests
 )
 
+from db.subscription_automation import (automation_settings, eligible_managed_removals, mark_managed_removed)
+
 logger=logging.getLogger(__name__)
 
 
@@ -16,7 +18,15 @@ async def group_removal_test_worker(bot):
         try:
             await rearm_renewed_removal_tests()
             group=await group_settings()
-            for target in await eligible_removal_tests():
+            settings=await automation_settings()
+            targets=await eligible_removal_tests()
+            if settings["removal_enabled"]:
+                targets += await eligible_managed_removals(group.get("chat_id"),settings["grace_hours"])
+            seen=set()
+            for target in targets:
+                if target["telegram_id"] in seen:
+                    continue
+                seen.add(target["telegram_id"])
                 uid=target["telegram_id"]
                 chat_id=target["chat_id"]
                 if group.get("chat_id") != chat_id:
@@ -32,6 +42,7 @@ async def group_removal_test_worker(bot):
                     if member.status in (ChatMemberStatus.LEFT,ChatMemberStatus.KICKED) or (
                         member.status == ChatMemberStatus.RESTRICTED and not member.is_member
                     ):
+                        await mark_managed_removed(uid,chat_id)
                         await finish_group_removal(uid,"already_out")
                         continue
                     # Re-check access immediately before Telegram action.
@@ -46,7 +57,9 @@ async def group_removal_test_worker(bot):
                         logger.exception("Unban failed after test removal, uid=%s",uid)
                         await finish_group_removal(uid,"unban_failed","Участник исключён, но разблокировка не удалась. Требуется ручная проверка группы.")
                         continue
-                    await finish_group_removal(uid,"removed")
+                    await mark_managed_removed(uid,chat_id)
+                    if target in targets[:len(targets)]:
+                        await finish_group_removal(uid,"removed")
                     try:
                         await bot.send_message(uid,"⏳ Срок тестового доступа в «Круг Души» истёк, поэтому доступ к группе завершён. После продления можно получить новое приглашение через /subscription.")
                     except Exception:
