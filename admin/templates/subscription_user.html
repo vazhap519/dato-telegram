@@ -32,6 +32,12 @@
 <div class="bg-gray-700 rounded-lg p-3 text-sm space-y-1">
 <p class="font-semibold">Диагностика исключения</p>
 <p>{{ removal_diagnostics.reason }}</p>
+{% if not removal_diagnostics.test_armed and not (removal_diagnostics.global_enabled and removal_diagnostics.managed) %}
+<p class="text-amber-200 font-medium">Важно: настройка «Без задержки» сама по себе не включает исключение. Для проверки этого конкретного аккаунта включите «Тест исключения» ниже и сохраните режим. Старые участники в общую автоматизацию автоматически не добавляются.</p>
+{% endif %}
+{% if removal_diagnostics.ready %}
+<p class="text-amber-200">Все условия по срокам выполнены. Если участник всё ещё в группе, проверьте права бота и журнал его службы.</p>
+{% endif %}
 <p class="text-gray-300">Индивидуальный тест: {{ 'готов' if removal_diagnostics.test_armed else (removal_diagnostics.test_status or 'не включён') }} · Под контролем общей автоматизации: {{ 'да' if removal_diagnostics.managed else 'нет' }}</p>
 <p class="text-gray-300">Общая автоматизация: {{ 'включена' if removal_diagnostics.global_enabled else 'выключена' }} · Льготный период: {{ removal_diagnostics.grace_hours }} ч.</p>
 {% if removal_diagnostics.remove_at %}
