@@ -79,7 +79,7 @@ async def claim_expiry_alerts(limit=40):
     async with SessionLocal() as s:
         async with s.begin():
             records=(await s.execute(text(ACCESS_CTE+"""
-                SELECT e.telegram_id,e.last_expires,window.kind
+                SELECT e.telegram_id,e.last_expires,alert_window.kind
                 FROM effective e
                 CROSS JOIN LATERAL (
                     SELECT CASE
@@ -87,11 +87,22 @@ async def claim_expiry_alerts(limit=40):
                       WHEN e.last_expires<=NOW()+INTERVAL '1 day' THEN 'one_day'
                       ELSE 'three_days'
                     END AS kind
-                ) window
+                ) alert_window
                 WHERE NOT e.permanent
                   AND e.last_expires IS NOT NULL
                   AND e.last_expires>NOW()-INTERVAL '1 day'
                   AND e.last_expires<=NOW()+INTERVAL '3 days'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM subscription_expiry_notifications n
+                    WHERE n.telegram_id=e.telegram_id
+                      AND n.expires_at=e.last_expires
+                      AND n.alert_kind=alert_window.kind
+                      AND (
+                        n.status IN ('sent','pending')
+                        OR (n.status='failed'
+                            AND n.attempted_at>NOW()-INTERVAL '5 minutes')
+                      )
+                  )
                 ORDER BY e.last_expires ASC
                 LIMIT :limit
             """),{"limit":limit})).mappings().all()
