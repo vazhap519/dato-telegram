@@ -110,11 +110,11 @@ async def overview():
              WHERE revoked_at IS NULL AND starts_at<=NOW()
                AND (ends_at IS NULL OR ends_at>NOW()) AND resource='community') community_access,
            (SELECT COUNT(DISTINCT telegram_id) FROM access_grants
-             WHERE revoked_at IS NULL AND ends_at IS NULL AND grant_type='lifetime') lifetime_access,
+             WHERE resource='community' AND revoked_at IS NULL AND ends_at IS NULL AND grant_type='lifetime') lifetime_access,
            (SELECT COUNT(DISTINCT telegram_id) FROM subscriptions
              WHERE status='active' AND paid_until>NOW()) recorded_active,
            (SELECT COUNT(DISTINCT telegram_id) FROM access_grants
-             WHERE revoked_at IS NULL AND ends_at BETWEEN NOW() AND NOW()+INTERVAL '7 days') expiring
+             WHERE resource='community' AND revoked_at IS NULL AND ends_at BETWEEN NOW() AND NOW()+INTERVAL '7 days') expiring
         """))).mappings().one()
         plans=[dict(x) for x in (await s.execute(text(
           "SELECT * FROM subscription_plans ORDER BY id"
@@ -136,7 +136,7 @@ async def people(search='', page=1):
             AND g.resource='community' AND g.revoked_at IS NULL AND g.starts_at<=NOW()
             AND (g.ends_at IS NULL OR g.ends_at>NOW())) community_grants,
           (SELECT COUNT(*) FROM access_grants g WHERE g.telegram_id=u.telegram_id
-            AND g.grant_type='lifetime' AND g.revoked_at IS NULL) lifetime_grants
+            AND g.resource='community' AND g.grant_type='lifetime' AND g.revoked_at IS NULL) lifetime_grants
           FROM users u
         """+where+" ORDER BY u.created_at DESC,u.telegram_id DESC LIMIT 30 OFFSET :offset"),params)).mappings()
         return [dict(x) for x in rows],total
@@ -146,7 +146,7 @@ async def person(telegram_id):
         user=(await s.execute(text("SELECT * FROM users WHERE telegram_id=:uid"),{"uid":telegram_id})).mappings().first()
         if user is None: return None
         grants=[dict(x) for x in (await s.execute(text("""
-          SELECT * FROM access_grants WHERE telegram_id=:uid ORDER BY id DESC LIMIT 100
+          SELECT * FROM access_grants WHERE telegram_id=:uid AND resource='community' ORDER BY id DESC LIMIT 100
         """),{"uid":telegram_id})).mappings()]
         subs=[dict(x) for x in (await s.execute(text("""
           SELECT s.*,p.name plan_name FROM subscriptions s
@@ -160,7 +160,7 @@ async def person(telegram_id):
         return dict(user),grants,subs,audit
 
 async def grant_access(telegram_id,resource,grant_type,ends_at,reason,actor):
-    if resource not in {'community','library','materials'}:
+    if resource != 'community':
         raise ValueError('Неизвестный ресурс')
     if grant_type not in {'temporary','lifetime','gift','trial'}:
         raise ValueError('Неизвестный тип доступа')
@@ -210,3 +210,40 @@ async def update_plan(plan_id,price_amount,active):
               INSERT INTO subscription_audit_log(action,actor,details)
               VALUES ('plan_updated','admin',jsonb_build_object('plan_id',CAST(:id AS BIGINT),'price',CAST(:price AS NUMERIC),'active',CAST(:active AS BOOLEAN)))
             """),{"id":plan_id,"price":price_amount,"active":active})
+
+
+async def create_plan(name, price_amount, currency, duration_days, is_lifetime, actor):
+    """Create a custom, initially unpublished tariff. Existing plans are untouched."""
+    import re
+    from decimal import Decimal
+    name = (name or '').strip()
+    currency = (currency or '').strip().upper()
+    if not 2 <= len(name) <= 100:
+        raise ValueError('Название должно содержать от 2 до 100 символов')
+    if currency not in {'EUR', 'USD', 'GEL'}:
+        raise ValueError('Выберите EUR, USD или GEL')
+    if price_amount is None or not price_amount.is_finite() or not (Decimal('0') <= price_amount <= Decimal('1000000')):
+        raise ValueError('Укажите корректную цену')
+    if price_amount.as_tuple().exponent < -2:
+        raise ValueError('Цена допускает не более двух знаков после запятой')
+    if not is_lifetime and (duration_days is None or not 1 <= duration_days <= 3650):
+        raise ValueError('Срок тарифа должен быть от 1 до 3650 дней')
+    if is_lifetime:
+        duration_days = None
+    import secrets
+    code = 'custom_' + secrets.token_hex(9)
+    async with SessionLocal() as s:
+        async with s.begin():
+            plan_id = (await s.execute(text("""
+              INSERT INTO subscription_plans
+              (code,name,price_amount,currency,duration_days,is_lifetime,is_active)
+              VALUES (:code,:name,:price,:currency,:days,:life,FALSE)
+              RETURNING id
+            """), {'code':code,'name':name,'price':price_amount,'currency':currency,
+                    'days':duration_days,'life':is_lifetime})).scalar_one()
+            await s.execute(text("""
+              INSERT INTO subscription_audit_log (action,actor,details)
+              VALUES ('plan_created',:actor,
+                jsonb_build_object('plan_id',CAST(:id AS BIGINT),'code',:code,'name',:name))
+            """), {'actor':actor,'id':plan_id,'code':code,'name':name})
+    return plan_id
