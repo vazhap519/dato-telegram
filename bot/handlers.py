@@ -3,7 +3,7 @@ from aiogram import types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 
-from db.flow import register_user, get_flow_settings, accept_offer
+from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note
 
 logger = logging.getLogger(__name__)
 
@@ -63,3 +63,23 @@ async def accept_offer_handler(query: types.CallbackQuery):
             [InlineKeyboardButton(text="💳 Оформить подписку", url=subscription_url)]
         ])
     await query.bot.send_message(query.from_user.id, subscription_text, reply_markup=buttons)
+
+async def upload_command_handler(message: types.Message):
+    if not message.from_user or message.chat.type != "private":
+        return
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) != 2:
+        await message.answer("Откройте админ-панель и создайте одноразовый код загрузки.")
+        return
+    if not await authorize_video_uploader(message.from_user.id, args[1].strip()):
+        await message.answer("Код неверный, просрочен или уже используется.")
+        return
+    await message.answer("✅ Доступ подтверждён. Теперь отправьте сюда видеокружочек через Telegram (не обычный видеофайл). Код действует 15 минут.")
+
+async def upload_video_note_handler(message: types.Message):
+    if not message.from_user or message.chat.type != "private" or not message.video_note:
+        return
+    if await store_uploaded_video_note(message.from_user.id, message.video_note.file_id):
+        await message.answer("✅ Видеокружочек сохранён! Проверьте /start и обновите страницу админ-панели.")
+    else:
+        await message.answer("Для загрузки видеокружочка сначала создайте код в админ-панели и отправьте /upload КОД.")
