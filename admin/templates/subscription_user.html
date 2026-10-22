@@ -5,15 +5,15 @@
 <section class="bg-gray-800 rounded-xl p-5 space-y-4"><h2 class="text-xl font-semibold">Назначить доступ</h2>
 <form method="post" action="/subscriptions/grant" class="grid gap-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="confirm" value="GRANT">
+<p class="text-sm text-gray-300">Назначаем доступ ко всему сообществу Telegram целиком, без отдельных разрешений.</p>
 <div class="grid md:grid-cols-2 gap-3">
-<label class="text-sm">Ресурс<select name="resource" class="block bg-gray-700 p-3 rounded mt-1 w-full"><option value="community">Закрытое сообщество</option><option value="library">Библиотека</option><option value="materials">Закрытые материалы</option></select></label>
-<label class="text-sm">Тип права<select id="grant-type" name="grant_type" class="block bg-gray-700 p-3 rounded mt-1 w-full"><option value="temporary">Временный</option><option value="lifetime">Постоянный</option><option value="gift">Подарочный</option><option value="trial">Пробный</option></select></label>
+<label class="text-sm">Тип доступа<select id="grant-type" name="grant_type" class="block bg-gray-700 p-3 rounded mt-1 w-full"><option value="temporary">Временный</option><option value="lifetime">Постоянный</option><option value="gift">Подарочный</option><option value="trial">Пробный</option></select></label>
 </div><label class="text-sm">Действует по дату (включительно; Тбилиси)<input type="date" id="end-date" name="end_date" class="block bg-gray-700 p-3 rounded mt-1 w-full"></label>
 <label class="text-sm">Причина предоставления доступа<input type="text" maxlength="500" name="reason" class="block bg-gray-700 p-3 rounded mt-1 w-full" placeholder="Например, первопроходец, подарок, ручное продление"></label>
 <button onclick="return confirm('Подтвердить запись права доступа в базу?')" class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-3 justify-self-start font-semibold">Назначить доступ</button></form></section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="text-xl font-semibold">Права доступа</h2>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="text-xl font-semibold">Доступ в сообщество</h2>
 {% for g in grants %}<div class="bg-gray-700 p-4 rounded-xl grid md:grid-cols-[1fr_auto] gap-3 items-center">
-<div><div class="font-semibold">{{ {'community':'Сообщество','library':'Библиотека','materials':'Материалы'}.get(g.resource,g.resource) }} · {{ {'lifetime':'Постоянный','temporary':'Временный','gift':'Подарочный','trial':'Пробный'}.get(g.grant_type,g.grant_type) }}</div>
+<div><div class="font-semibold">{{ {'lifetime':'Постоянный','temporary':'Временный','gift':'Подарочный','trial':'Пробный'}.get(g.grant_type,g.grant_type) }}</div>
 <div class="text-sm text-gray-300">{{ 'Отозвано' if g.revoked_at else ('Истекает: '+g.ends_at.strftime('%d.%m.%Y %H:%M')+' UTC' if g.ends_at else 'Без срока') }}</div><div class="text-xs text-gray-400">Причина: {{ g.reason or 'не указана' }} · Выдал: {{ g.created_by }}</div></div>
 {% if not g.revoked_at %}<form method="post" action="/subscriptions/revoke"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="grant_id" value="{{ g.id }}"><input type="hidden" name="confirm" value="REVOKE"><button onclick="return confirm('Отозвать это право? Операция фиксируется в журнале.')" class="px-4 py-2 rounded bg-red-700">Отозвать</button></form>{% endif %}
 </div>{% else %}<p class="text-gray-400">Назначенных прав пока нет.</p>{% endfor %}</section>
