@@ -373,3 +373,66 @@ async def change_grant_expiry(telegram_id, grant_id, expires_at, actor):
                         'previous',CAST(:previous AS TEXT),'new',CAST(:new AS TEXT)))
             """), {"uid":telegram_id,"actor":actor,"gid":grant_id,
                       "previous":str(row["ends_at"]),"new":str(expires_at)})
+
+
+async def extend_community_access(telegram_id, days, reason, actor):
+    """Manually extend effective access, preserving existing paid and granted time.
+
+    This is an audited manual entitlement, not a verified payment.
+    Lock the user row to serialize simultaneous renewals.
+    """
+    from datetime import timedelta
+    if not isinstance(days, int) or not 1 <= days <= 3650:
+        raise ValueError("Срок продления: от 1 до 3650 дней")
+    reason=(reason or "").strip()
+    if len(reason)>500:
+        raise ValueError("Причина слишком длинная")
+    async with SessionLocal() as s:
+        async with s.begin():
+            user=(await s.execute(text("""
+                SELECT telegram_id FROM users WHERE telegram_id=:uid FOR UPDATE
+            """),{"uid":telegram_id})).first()
+            if not user:
+                raise ValueError("Пользователь не найден")
+            now=datetime.now(timezone.utc)
+            grants=(await s.execute(text("""
+                SELECT id, ends_at, grant_type
+                FROM access_grants
+                WHERE telegram_id=:uid AND resource='community' AND revoked_at IS NULL
+                  AND starts_at<=NOW()
+                ORDER BY ends_at DESC NULLS FIRST, id DESC FOR UPDATE
+            """),{"uid":telegram_id})).mappings().all()
+            if any(g["ends_at"] is None for g in grants):
+                raise ValueError("У пользователя уже есть постоянный доступ — продлевать нечего")
+            paid_until=(await s.execute(text("""
+                SELECT MAX(paid_until) FROM subscriptions
+                WHERE telegram_id=:uid AND status='active' AND paid_until>NOW()
+            """),{"uid":telegram_id})).scalar_one()
+            last_grant=max((g["ends_at"] for g in grants if g["ends_at"] is not None),default=None)
+            start=max((dt for dt in [now,paid_until,last_grant] if dt is not None))
+            end=start+timedelta(days=days)
+            if last_grant is not None and last_grant>=start and grants:
+                chosen=next(g for g in grants if g["ends_at"]==last_grant)
+                grant_id=chosen["id"]
+                await s.execute(text("""
+                    UPDATE access_grants SET ends_at=:end
+                    WHERE id=:gid AND telegram_id=:uid
+                """),{"end":end,"gid":grant_id,"uid":telegram_id})
+            else:
+                grant_id=(await s.execute(text("""
+                    INSERT INTO access_grants
+                      (telegram_id,resource,grant_type,ends_at,reason,created_by)
+                    VALUES (:uid,'community','temporary',:end,:reason,:actor)
+                    RETURNING id
+                """),{"uid":telegram_id,"end":end,"reason":reason,"actor":actor})).scalar_one()
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                VALUES (:uid,'manual_renewal',:actor,
+                  jsonb_build_object('grant_id',CAST(:gid AS BIGINT),
+                    'days',CAST(:days AS INTEGER),
+                    'previous_effective_until',CAST(:previous AS TEXT),
+                    'new_until',CAST(:new AS TEXT),
+                    'reason',CAST(:reason AS TEXT)))
+            """),{"uid":telegram_id,"actor":actor,"gid":grant_id,"days":days,
+                  "previous":str(start),"new":str(end),"reason":reason})
+            return end
