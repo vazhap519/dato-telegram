@@ -42,7 +42,7 @@ async def group_removal_test_worker(bot):
                         await bot.unban_chat_member(chat_id,uid,only_if_banned=True)
                     except Exception:
                         logger.exception("Unban failed after test removal, uid=%s",uid)
-                        await finish_group_removal(uid,"error","Удалён, но разблокировка не удалась")
+                        await finish_group_removal(uid,"unban_failed","Участник исключён, но разблокировка не удалась. Требуется ручная проверка группы.")
                         continue
                     await finish_group_removal(uid,"removed")
                     try:
