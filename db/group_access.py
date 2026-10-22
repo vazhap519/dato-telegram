@@ -172,12 +172,23 @@ async def set_group_removal_test(telegram_id, chat_id, enabled, actor):
             """),{"uid":telegram_id,"actor":actor,"enabled":enabled,"chat":chat_id})
 
 
-async def eligible_removal_tests(limit=20):
-    """Explicitly armed accounts only, whose community access has expired entirely."""
+async def eligible_removal_tests(grace_hours=24, limit=20):
+    """Explicit opt-in tests obey the SAME grace period as global removals."""
+    if grace_hours not in (0, 24, 72):
+        raise ValueError("Invalid grace period")
     async with SessionLocal() as session:
         rows=(await session.execute(text("""
           SELECT t.telegram_id,t.chat_id FROM group_removal_tests t
           WHERE t.enabled=TRUE AND t.status IN ('armed','error')
+            AND EXISTS (
+              SELECT 1 FROM access_grants g
+              WHERE g.telegram_id=t.telegram_id AND g.resource='community'
+                AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
+              UNION ALL
+              SELECT 1 FROM subscriptions s
+              WHERE s.telegram_id=t.telegram_id AND s.status='active'
+                AND s.paid_until IS NOT NULL
+            )
             AND NOT EXISTS (
               SELECT 1 FROM access_grants g WHERE g.telegram_id=t.telegram_id
               AND g.resource='community' AND g.revoked_at IS NULL
@@ -185,10 +196,22 @@ async def eligible_removal_tests(limit=20):
             )
             AND NOT EXISTS (
               SELECT 1 FROM subscriptions s WHERE s.telegram_id=t.telegram_id
-              AND s.status='active' AND s.paid_until>NOW()
+              AND s.status='active'
+              AND (s.paid_until IS NULL OR s.paid_until>NOW())
             )
+            AND (
+              SELECT MAX(expires) FROM (
+                SELECT g.ends_at AS expires FROM access_grants g
+                WHERE g.telegram_id=t.telegram_id AND g.resource='community'
+                  AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
+                UNION ALL
+                SELECT s.paid_until AS expires FROM subscriptions s
+                WHERE s.telegram_id=t.telegram_id AND s.status='active'
+                  AND s.paid_until IS NOT NULL
+              ) dates
+            ) + (CAST(:grace AS INTEGER)*INTERVAL '1 hour')<=NOW()
           ORDER BY t.updated_at ASC LIMIT :limit
-        """),{"limit":limit})).mappings().all()
+        """),{"grace":grace_hours,"limit":limit})).mappings().all()
         return [dict(r) for r in rows]
 
 
