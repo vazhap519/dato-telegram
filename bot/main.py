@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from dotenv import load_dotenv
 
-from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler, choose_plan_handler, back_to_subscription_handler, my_subscription_command, my_subscription_callback
+from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler, choose_plan_handler, back_to_subscription_handler, my_subscription_command, my_subscription_callback, request_group_invite_handler
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
 from db.group_access import initialize_group_access
@@ -32,6 +32,7 @@ dp.callback_query.register(subscription_click_handler, F.data == "subscription_c
 dp.callback_query.register(choose_plan_handler, F.data.startswith("choose_plan:"))
 dp.callback_query.register(back_to_subscription_handler, F.data == "back_to_subscription")
 dp.callback_query.register(my_subscription_callback, F.data == "my_subscription")
+dp.callback_query.register(request_group_invite_handler, F.data == "request_group_invite")
 dp.callback_query.register(broadcast_optout_handler, F.data == "broadcast_optout")
 dp.message.register(broadcast_optin_handler, Command("notifications"))
 dp.message.register(broadcast_stop_handler, Command("stopnotifications"))
