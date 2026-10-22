@@ -5,6 +5,8 @@ from aiogram.exceptions import TelegramBadRequest
 
 from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click, has_accepted_offer
 from db.subscriptions import available_payment_plans, select_payment_plan, subscription_snapshot
+from db.group_access import group_settings
+from bot.group_handlers import send_group_invitation
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +29,15 @@ def subscription_intro(settings):
 
 
 
-def account_keyboard(can_subscribe=True):
+def account_keyboard(can_subscribe=True, can_invite=False):
     rows = []
     if can_subscribe:
         rows.append([InlineKeyboardButton(
             text="💳 Выбрать тариф", callback_data="subscription_click"
+        )])
+    if can_invite:
+        rows.append([InlineKeyboardButton(
+            text="🚪 Получить приглашение", callback_data="request_group_invite"
         )])
     rows.append([InlineKeyboardButton(
         text="🔄 Обновить статус", callback_data="my_subscription"
@@ -56,7 +62,7 @@ async def show_subscription_account(bot, telegram_id, message=None):
                          current["ends_at"].strftime("%d.%m.%Y %H:%M") + " UTC")
         else:
             lines.append("✅ Доступ назначен администратором")
-        lines.append("ℹ️ Подключение к Telegram-группе пока выполняется отдельно.")
+        lines.append("ℹ️ Если вы ещё не в группе, получите приглашение кнопкой ниже.")
     elif paid:
         lines.append("✅ Оплаченный период учтён до: " +
                      paid["paid_until"].strftime("%d.%m.%Y %H:%M") + " UTC")
@@ -69,7 +75,8 @@ async def show_subscription_account(bot, telegram_id, message=None):
                       "Выбор тарифа не является подтверждением оплаты."])
     lines.extend(["", "Автоматическая проверка платежей Tribute ещё не подключена."])
     output = "\n".join(lines)
-    buttons = account_keyboard()
+    group = await group_settings()
+    buttons = account_keyboard(can_invite=bool(group.get("chat_id") and (current or paid)))
     if message:
         try:
             await message.edit_text(output, reply_markup=buttons)
@@ -77,6 +84,28 @@ async def show_subscription_account(bot, telegram_id, message=None):
         except TelegramBadRequest:
             pass
     await bot.send_message(telegram_id, output, reply_markup=buttons)
+
+
+async def request_group_invite_handler(query: types.CallbackQuery):
+    if not query.from_user:
+        return
+    await query.answer()
+    try:
+        status = await send_group_invitation(query.bot, query.from_user.id, "self_service")
+    except Exception:
+        logger.exception("Self-service invitation failed for %s", query.from_user.id)
+        await query.bot.send_message(
+            query.from_user.id,
+            "Не удалось отправить приглашение. Попробуйте ещё раз позже или обратитесь к администратору."
+        )
+        return
+    responses = {
+        "sent": "✅ Отправил персональное приглашение следующим сообщением.",
+        "already_member": "✅ Вы уже состоите в закрытой группе.",
+        "no_access": "У вас пока нет действующего доступа. Проверьте статус подписки.",
+        "not_configured": "Группа пока не подключена. Обратитесь к администратору.",
+    }
+    await query.bot.send_message(query.from_user.id, responses.get(status, "Не удалось получить приглашение."))
 
 
 async def my_subscription_command(message: types.Message):
