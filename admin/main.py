@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
@@ -49,6 +50,7 @@ async def setup_onboarding():
     await initialize_automation()
     await initialize_subscriptions()
     await initialize_group_access()
+    await initialize_expiry_monitor()
 
 
 # Protection against cross-origin admin requests
@@ -304,12 +306,15 @@ async def subscriptions_page(
     from urllib.parse import urlencode
     summary, plans = await subscriptions_overview()
     tg_group = await group_settings()
+    expiry_people = await expiry_overview()
+    expiry_summary = await expiry_counts()
     users, total = await subscription_people(search, page)
     page = max(1, min(page, 100000))
     return templates.TemplateResponse(
         request=request, name="subscriptions.html",
         context={
             "summary": summary, "plans": plans, "users": users, "tg_group":tg_group,
+            "expiry_people":expiry_people,"expiry_summary":expiry_summary,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
             "next_url": "/subscriptions?" + urlencode({"search":search,"page":page+1}),
