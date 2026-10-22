@@ -302,11 +302,19 @@ async def preview_broadcast(
     request: Request,
     body: str = Form(""),
     audience: str = Form("accepted"),
+    button_text: str = Form(""),
+    button_url: str = Form(""),
     csrf_check=Depends(verify_csrf),
     user=Depends(get_current_user)
 ):
     if audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
         raise HTTPException(status_code=400, detail="Введите сообщение длиной от 1 до 4000 символов и выберите аудиторию")
+    from urllib.parse import urlparse
+    button_text, button_url = button_text.strip(), button_url.strip()
+    if bool(button_text) != bool(button_url) or len(button_text) > 64:
+        raise HTTPException(400, detail="Для кнопки укажите название и ссылку")
+    if button_url and (urlparse(button_url).scheme not in ("https", "http") or not urlparse(button_url).netloc):
+        raise HTTPException(400, detail="Неверная ссылка кнопки")
     counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked")}
     return templates.TemplateResponse(
         request=request, name="broadcast.html",
@@ -315,7 +323,7 @@ async def preview_broadcast(
             "counts": counts, "campaigns": await list_broadcasts(),
             "templates": await templates(), "rules": await rules(), "triggers": TRIGGERS,
             "preview": {"body": body.strip(), "audience": audience,
-                        "recipients": counts[audience]},
+                        "recipients": counts[audience], "button_text": button_text, "button_url": button_url},
         }, headers={"Cache-Control": "no-store"}
     )
 
@@ -350,12 +358,20 @@ async def send_broadcast(
     body: str = Form(""),
     audience: str = Form(""),
     confirm: str = Form(""),
+    button_text: str = Form(""),
+    button_url: str = Form(""),
     schedule_at: str = Form(""),
     csrf_check=Depends(verify_csrf),
     user=Depends(get_current_user)
 ):
     if confirm != "SEND" or audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
         raise HTTPException(status_code=400, detail="Подтверждение отправки отсутствует")
+    from urllib.parse import urlparse
+    button_text, button_url = button_text.strip(), button_url.strip()
+    if bool(button_text) != bool(button_url) or len(button_text) > 64:
+        raise HTTPException(400, detail="Для кнопки укажите название и ссылку")
+    if button_url and (urlparse(button_url).scheme not in ("https", "http") or not urlparse(button_url).netloc):
+        raise HTTPException(400, detail="Неверная ссылка кнопки")
     from datetime import datetime, timezone, timedelta
     from zoneinfo import ZoneInfo
     scheduled_at = None
@@ -369,7 +385,7 @@ async def send_broadcast(
                 raise ValueError()
         except ValueError:
             raise HTTPException(400, detail="Укажите время Тбилиси минимум через 2 минуты")
-    await create_broadcast(body, audience, scheduled_at=scheduled_at)
+    await create_broadcast(body, audience, scheduled_at=scheduled_at, button_text=button_text, button_url=button_url)
     return RedirectResponse("/broadcast", status_code=303)
 
 
