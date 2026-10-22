@@ -180,7 +180,7 @@ async def grant_access(telegram_id,resource,grant_type,ends_at,reason,actor):
             await s.execute(text("""
               INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
               VALUES (:uid,'grant_access',:actor,
-              jsonb_build_object('grant_id',CAST(:id AS BIGINT),'resource',:res,'type',:kind,'reason',:reason))
+              jsonb_build_object('grant_id',CAST(:id AS BIGINT),'resource',CAST(:res AS TEXT),'type',CAST(:kind AS TEXT),'reason',CAST(:reason AS TEXT)))
             """),{"uid":telegram_id,"actor":actor,"id":grant_id,"res":resource,"kind":grant_type,"reason":reason})
 
 async def revoke_grant(telegram_id,grant_id,actor):
@@ -244,6 +244,6 @@ async def create_plan(name, price_amount, currency, duration_days, is_lifetime, 
             await s.execute(text("""
               INSERT INTO subscription_audit_log (action,actor,details)
               VALUES ('plan_created',:actor,
-                jsonb_build_object('plan_id',CAST(:id AS BIGINT),'code',:code,'name',:name))
+                jsonb_build_object('plan_id',CAST(:id AS BIGINT),'code',CAST(:code AS TEXT),'name',CAST(:name AS TEXT)))
             """), {'actor':actor,'id':plan_id,'code':code,'name':name})
     return plan_id
