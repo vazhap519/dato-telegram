@@ -55,7 +55,15 @@
 <h2 class="text-xl font-semibold">🔄 Продлить доступ</h2>
 <p class="text-sm text-gray-400">Если действующий доступ ещё не истёк, дни прибавляются к его окончанию. Если истёк — к текущему моменту. Продление сохраняется как ручное, не как оплата.</p>
 {% if request.query_params.get('renewed') == '1' %}
-<p class="text-green-300 text-sm">Срок доступа обновлён. Обнови «Мою подписку» в боте, чтобы увидеть новый срок.</p>
+<p class="text-green-300 text-sm">Срок доступа обновлён.</p>
+{% set notice = request.query_params.get('notice') %}
+{% if notice == 'notified' %}<p class="text-green-300 text-sm">Бот отправил участнику подтверждение продления.</p>
+{% elif notice == 'sent' %}<p class="text-green-300 text-sm">Участник был вне группы: бот отправил новую ссылку для вступления.</p>
+{% elif notice == 'already_member' %}<p class="text-green-300 text-sm">Участник уже состоит в группе.</p>
+{% elif notice == 'not_configured' %}<p class="text-amber-300 text-sm">Группа не подключена, но срок сохранён.</p>
+{% elif notice == 'no_access' %}<p class="text-amber-300 text-sm">Доступ сохранён, но действующее право не обнаружено.</p>
+{% elif notice in ['failed','message_failed'] %}<p class="text-amber-300 text-sm">Срок сохранён, но бот не смог отправить сообщение. Можно повторно отправить приглашение выше.</p>
+{% endif %}
 {% endif %}
 <form method="post" action="/subscriptions/renew" class="space-y-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
