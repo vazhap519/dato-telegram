@@ -420,6 +420,21 @@ async def subscriptions_removal_test(
     group=await group_settings()
     if not group.get("chat_id"):
         raise HTTPException(400,detail="Сначала подключите Telegram-группу")
+    if enabled:
+        from aiogram import Bot
+        from aiogram.enums import ChatMemberStatus
+        try:
+            async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+                me=await telegram.get_me()
+                admin=await telegram.get_chat_member(group["chat_id"],me.id)
+                if admin.status != ChatMemberStatus.CREATOR and not (
+                    admin.status == ChatMemberStatus.ADMINISTRATOR and admin.can_restrict_members
+                ):
+                    raise HTTPException(400,detail="Дайте боту право блокировать участников в настройках администратора группы")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(400,detail="Не удалось проверить права бота в Telegram-группе")
     await set_group_removal_test(telegram_id,group["chat_id"],enabled,user["user"])
     return RedirectResponse(f"/subscriptions/users/{telegram_id}?test={'enabled' if enabled else 'disabled'}",status_code=303)
 
