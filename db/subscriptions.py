@@ -102,6 +102,12 @@ async def initialize_subscriptions():
           cleared_by TEXT NOT NULL,
           cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )"""))
+        await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS subscription_grant_history_clears (
+          telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
+          cleared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          cleared_by TEXT NOT NULL
+        )"""))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_grants_user ON access_grants(telegram_id,resource)"))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(telegram_id)"))
         for code,name,price,days,life in [
@@ -162,7 +168,12 @@ async def person(telegram_id):
         user=(await s.execute(text("SELECT * FROM users WHERE telegram_id=:uid"),{"uid":telegram_id})).mappings().first()
         if user is None: return None
         grants=[dict(x) for x in (await s.execute(text("""
-          SELECT * FROM access_grants WHERE telegram_id=:uid AND resource='community' ORDER BY id DESC LIMIT 100
+          SELECT * FROM access_grants g
+          WHERE g.telegram_id=:uid AND g.resource='community'
+            AND (g.revoked_at IS NULL OR g.revoked_at >
+               COALESCE((SELECT cleared_at FROM subscription_grant_history_clears
+                         WHERE telegram_id=:uid),'-infinity'::timestamptz))
+          ORDER BY g.id DESC LIMIT 100
         """),{"uid":telegram_id})).mappings()]
         subs=[dict(x) for x in (await s.execute(text("""
           SELECT s.*,p.name plan_name FROM subscriptions s
@@ -474,3 +485,24 @@ async def clear_visible_audit(telegram_id, actor):
                   jsonb_build_object('target_telegram_id',CAST(:uid AS BIGINT),
                                      'cutoff_id',CAST(:cutoff AS BIGINT)))
             """),{"uid":telegram_id,"cutoff":cutoff,"actor":actor})
+
+
+async def clear_revoked_grant_history(telegram_id, actor):
+    """Hide historical revoked grants in this user's UI; retain all access records."""
+    async with SessionLocal() as s:
+        async with s.begin():
+            if not (await s.execute(text(
+                "SELECT 1 FROM users WHERE telegram_id=:uid"
+            ),{"uid":telegram_id})).first():
+                raise ValueError("Участник не найден")
+            await s.execute(text("""
+                INSERT INTO subscription_grant_history_clears
+                    (telegram_id,cleared_at,cleared_by)
+                VALUES (:uid,NOW(),:actor)
+                ON CONFLICT(telegram_id) DO UPDATE
+                SET cleared_at=NOW(),cleared_by=EXCLUDED.cleared_by
+            """),{"uid":telegram_id,"actor":actor})
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                VALUES (:uid,'revoked_grants_hidden',:actor,'{}'::jsonb)
+            """),{"uid":telegram_id,"actor":actor})
