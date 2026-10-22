@@ -340,3 +340,31 @@ async def subscription_snapshot(telegram_id):
           "subscription":dict(sub) if sub else None,
           "selection":dict(choice) if choice else None,
         }
+
+
+async def change_grant_expiry(telegram_id, grant_id, expires_at, actor):
+    """Change one finite, non-revoked manual access record and audit both timestamps."""
+    if expires_at.tzinfo is None:
+        raise ValueError("Укажите часовой пояс")
+    async with SessionLocal() as s:
+        async with s.begin():
+            row=(await s.execute(text("""
+                SELECT ends_at, grant_type FROM access_grants
+                WHERE id=:gid AND telegram_id=:uid AND resource='community'
+                  AND revoked_at IS NULL FOR UPDATE
+            """), {"gid":grant_id,"uid":telegram_id})).mappings().first()
+            if row is None:
+                raise ValueError("Право доступа не найдено или отозвано")
+            if row["grant_type"] == "lifetime":
+                raise ValueError("У постоянного доступа нельзя менять срок")
+            await s.execute(text("""
+                UPDATE access_grants SET ends_at=:expiry
+                WHERE id=:gid AND telegram_id=:uid
+            """), {"expiry":expires_at,"gid":grant_id,"uid":telegram_id})
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log (telegram_id,action,actor,details)
+                VALUES (:uid,'grant_expiry_changed',:actor,
+                    jsonb_build_object('grant_id',CAST(:gid AS BIGINT),
+                        'previous',CAST(:previous AS TEXT),'new',CAST(:new AS TEXT)))
+            """), {"uid":telegram_id,"actor":actor,"gid":grant_id,
+                      "previous":str(row["ends_at"]),"new":str(expires_at)})
