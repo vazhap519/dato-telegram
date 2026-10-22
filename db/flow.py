@@ -98,6 +98,17 @@ async def accept_offer(telegram_id, version):
         """), {"id": telegram_id, "version": version})
         await session.commit()
 
+async def has_accepted_offer(telegram_id, version):
+    """An offer is accepted only for the currently published version."""
+    async with SessionLocal() as session:
+        return (await session.execute(text("""
+            SELECT EXISTS(
+                SELECT 1 FROM offer_acceptances
+                WHERE telegram_id=:uid AND offer_version=:version
+            )
+        """), {"uid":telegram_id, "version":version})).scalar_one()
+
+
 async def registration_stats():
     async with SessionLocal() as session:
         row = (await session.execute(text("""
