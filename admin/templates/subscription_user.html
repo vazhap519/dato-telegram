@@ -50,6 +50,33 @@
 <p class="text-sm text-gray-400">Последний выбор: {{ selection.selected_at|tbilisi_time }} (Тбилиси) · Всего выборов: {{ selection.selection_count }}</p>
 {% else %}<p class="text-gray-400 text-sm">Пользователь пока не выбрал тариф.</p>{% endif %}
 <p class="text-xs text-gray-500">Выбор тарифа — не подтверждение оплаты.</p></section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<h2 class="text-xl font-semibold">🔄 Продлить доступ</h2>
+<p class="text-sm text-gray-400">Если действующий доступ ещё не истёк, дни прибавляются к его окончанию. Если истёк — к текущему моменту. Продление сохраняется как ручное, не как оплата.</p>
+{% if request.query_params.get('renewed') == '1' %}
+<p class="text-green-300 text-sm">Срок доступа обновлён. Обнови «Мою подписку» в боте, чтобы увидеть новый срок.</p>
+{% endif %}
+<form method="post" action="/subscriptions/renew" class="space-y-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="confirm" value="RENEW">
+<div class="grid md:grid-cols-2 gap-3">
+<label class="text-sm">Продлить на (дней)
+<select name="days" id="renew-days" class="mt-1 w-full rounded bg-gray-700 p-3">
+<option value="30">30 дней</option>
+<option value="90">90 дней</option>
+<option value="365">365 дней</option>
+<option value="7">7 дней</option>
+</select></label>
+<label class="text-sm">Причина (необязательно)
+<input type="text" name="reason" maxlength="500" placeholder="Например, продление вручную" class="mt-1 w-full rounded bg-gray-700 p-3"></label>
+</div>
+<p class="text-xs text-gray-400">Для произвольного срока можно заменить число дней в выпадающем списке через пункт ниже.</p>
+<label class="text-sm flex items-center gap-2"><input type="checkbox" id="renew-custom-toggle"> Указать свой срок</label>
+<input type="number" id="renew-custom-days" min="1" max="3650" placeholder="Количество дней" class="hidden w-full bg-gray-700 p-3 rounded">
+<button class="bg-green-700 px-4 py-3 rounded font-semibold" onclick="return confirm('Продлить срок доступа указанному участнику?')">Продлить доступ</button>
+</form>
+</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4"><h2 class="text-xl font-semibold">Назначить доступ</h2>
 <form method="post" action="/subscriptions/grant" class="grid gap-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="confirm" value="GRANT">
@@ -78,4 +105,5 @@
 {% for s in subscriptions %}<div class="p-3 border-t border-gray-700 text-sm">{{ s.plan_name or 'Тариф не указан' }} · {{ s.status }} · {{ s.provider }} · {{ s.paid_until|tbilisi_time('%d.%m.%Y %H:%M') if s.paid_until else 'без подтверждённого периода' }}</div>{% else %}<p class="text-gray-400">Подписок пока нет.</p>{% endfor %}</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="font-semibold text-xl">Журнал изменений</h2>
 {% for a in audit %}<div class="border-t border-gray-700 py-3 text-sm"><div class="font-medium">{{ a.action }} · {{ a.created_at|tbilisi_time }} (Тбилиси)</div><div class="text-gray-400">Администратор: {{ a.actor }}</div><div class="break-all text-xs text-gray-500">{{ a.details }}</div></div>{% else %}<p class="text-gray-400">История пуста.</p>{% endfor %}</section>
-</main><script>document.getElementById('grant-type').addEventListener('change',function(){const d=document.getElementById('end-date');d.disabled=this.value==='lifetime';if(d.disabled)d.value='';});</script></body></html>
+</main><script>document.getElementById('grant-type').addEventListener('change',function(){const d=document.getElementById('end-date');d.disabled=this.value==='lifetime';if(d.disabled)d.value='';});const ct=document.getElementById('renew-custom-toggle'),cd=document.getElementById('renew-custom-days'),dd=document.getElementById('renew-days');
+ct.addEventListener('change',()=>{cd.classList.toggle('hidden',!ct.checked);if(ct.checked){dd.innerHTML='<option value="30">30 дней</option>';dd.hidden=true;cd.required=true;cd.name='days';dd.removeAttribute('name');}else{dd.hidden=false;cd.required=false;cd.removeAttribute('name');dd.name='days';dd.innerHTML='<option value="30">30 дней</option><option value="90">90 дней</option><option value="365">365 дней</option><option value="7">7 дней</option>';}});</script></body></html>
