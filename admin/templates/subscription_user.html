@@ -2,6 +2,12 @@
 <body class="bg-gray-900 text-white"><main class="max-w-5xl mx-auto p-5 md:p-8 space-y-6">
 <header class="flex items-center justify-between gap-4"><div><h1 class="text-2xl font-bold">👤 {{ ([participant.first_name,participant.last_name]|select|join(' ')) or (participant.username or 'Участник') }}</h1><p class="text-gray-400">Telegram ID: {{ participant.telegram_id }}</p></div><a class="px-4 py-2 bg-gray-700 rounded" href="/subscriptions">← Подписки</a></header>
 <div class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Здесь ведётся только внутренний учёт прав. Добавление или отзыв права <strong>не меняет членство в Telegram</strong> и не подтверждает оплату.</div>
+<section class="bg-gray-800 rounded-xl p-5 space-y-2"><h2 class="text-xl font-semibold">Выбор тарифа в боте</h2>
+{% if selection %}
+<p>Выбран: <strong>{{ selection.plan_name }}</strong></p>
+<p class="text-sm text-gray-400">Последний выбор: {{ selection.selected_at.strftime('%d.%m.%Y %H:%M') }} UTC · Всего выборов: {{ selection.selection_count }}</p>
+{% else %}<p class="text-gray-400 text-sm">Пользователь пока не выбрал тариф.</p>{% endif %}
+<p class="text-xs text-gray-500">Выбор тарифа — не подтверждение оплаты.</p></section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4"><h2 class="text-xl font-semibold">Назначить доступ</h2>
 <form method="post" action="/subscriptions/grant" class="grid gap-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="confirm" value="GRANT">
