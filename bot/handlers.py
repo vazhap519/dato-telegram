@@ -103,3 +103,16 @@ async def subscription_click_handler(query: types.CallbackQuery):
             [InlineKeyboardButton(text="💳 Перейти к оплате", url=url)]
         ])
     )
+
+from db.broadcast import opt_out, opt_in
+
+async def broadcast_optout_handler(query: types.CallbackQuery):
+    await opt_out(query.from_user.id)
+    await query.answer('Рассылки отключены')
+    if query.message:
+        await query.message.answer('Вы отписались от информационных рассылок. Чтобы снова получать сообщения, отправьте /notifications.')
+
+async def broadcast_optin_handler(message: types.Message):
+    if message.from_user and message.chat.type == 'private':
+        await opt_in(message.from_user.id)
+        await message.answer('✅ Информационные рассылки включены. Чтобы отключить их, используйте кнопку в следующем сообщении рассылки.')
