@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
+from db.automation import initialize_automation, templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
 from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats, create_upload_code, list_onboarding_users
 from .auth import (
@@ -43,6 +44,7 @@ app = FastAPI()
 async def setup_onboarding():
     await initialize_flow()
     await initialize_broadcasts()
+    await initialize_automation()
 
 
 # Protection against cross-origin admin requests
@@ -54,6 +56,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/create-video-upload",
         "/broadcast/preview",
         "/broadcast/send",
+        "/broadcast/template",
+        "/broadcast/rule",
         "/change-credentials",
     }
 
@@ -288,6 +292,7 @@ async def broadcast_page(request: Request, user=Depends(get_current_user)):
         context={
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "counts": counts, "campaigns": campaigns, "preview": None,
+            "templates": await templates(), "rules": await rules(), "triggers": TRIGGERS,
         }, headers={"Cache-Control": "no-store"}
     )
 
@@ -308,10 +313,35 @@ async def preview_broadcast(
         context={
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "counts": counts, "campaigns": await list_broadcasts(),
+            "templates": await templates(), "rules": await rules(), "triggers": TRIGGERS,
             "preview": {"body": body.strip(), "audience": audience,
                         "recipients": counts[audience]},
         }, headers={"Cache-Control": "no-store"}
     )
+
+
+@app.post("/broadcast/template")
+async def save_template(
+    template_id: int = Form(0), title: str = Form(""), body: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    try:
+        await upsert_template(template_id, title, body)
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    return RedirectResponse("/broadcast", status_code=303)
+
+
+@app.post("/broadcast/rule")
+async def save_rule(
+    trigger: str = Form(""), enabled: bool = Form(False), body: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    try:
+        await set_rule(trigger, enabled, body)
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    return RedirectResponse("/broadcast", status_code=303)
 
 
 @app.post("/broadcast/send")
@@ -320,12 +350,26 @@ async def send_broadcast(
     body: str = Form(""),
     audience: str = Form(""),
     confirm: str = Form(""),
+    schedule_at: str = Form(""),
     csrf_check=Depends(verify_csrf),
     user=Depends(get_current_user)
 ):
     if confirm != "SEND" or audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
         raise HTTPException(status_code=400, detail="Подтверждение отправки отсутствует")
-    await create_broadcast(body, audience)
+    from datetime import datetime, timezone, timedelta
+    from zoneinfo import ZoneInfo
+    scheduled_at = None
+    if schedule_at.strip():
+        try:
+            local_dt = datetime.fromisoformat(schedule_at)
+            if local_dt.tzinfo is not None:
+                raise ValueError()
+            scheduled_at = local_dt.replace(tzinfo=ZoneInfo("Asia/Tbilisi")).astimezone(timezone.utc)
+            if scheduled_at < datetime.now(timezone.utc) + timedelta(minutes=2):
+                raise ValueError()
+        except ValueError:
+            raise HTTPException(400, detail="Укажите время Тбилиси минимум через 2 минуты")
+    await create_broadcast(body, audience, scheduled_at=scheduled_at)
     return RedirectResponse("/broadcast", status_code=303)
 
 
