@@ -583,7 +583,9 @@ async def subscriptions_revoke(
     if confirm != "REVOKE": raise HTTPException(400,detail="Подтвердите отзыв")
     try: await revoke_grant(telegram_id,grant_id,user["user"])
     except ValueError as exc: raise HTTPException(400, detail=str(exc))
-    return RedirectResponse(f"/subscriptions/users/{telegram_id}",status_code=303)
+    from admin.revocation_removal import remove_after_revoke
+    result = await remove_after_revoke(telegram_id)
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?revoke_result={result}",status_code=303)
 
 
 @app.post("/subscriptions/plan")
