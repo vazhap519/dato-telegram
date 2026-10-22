@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.queries import get_users_count, get_settings
-from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats
+from db.flow import initialize_flow, get_flow_settings, save_flow_settings, registration_stats, create_upload_code
 from .auth import (
     verify_password,
     create_token,
@@ -49,6 +49,7 @@ async def protect_admin_forms(request: Request, call_next):
     protected_paths = {
         "/update",
         "/update-flow",
+        "/create-video-upload",
         "/change-credentials",
     }
 
@@ -98,70 +99,6 @@ async def login_page(request: Request):
     )
 
 
-# 🔐 LOGIN LOGIC
-# @app.post("/login")
-# async def login(
-#     request: Request,
-#     username: str = Form(...),
-#     password: str = Form(...)
-# ):
-#     async with SessionLocal() as session:
-
-#         # ✅ CREATE DEFAULT ADMIN IF NOT EXISTS
-#         result = await session.execute(
-#             text("SELECT * FROM admins LIMIT 1")
-#         )
-
-#         admin_exists = result.fetchone()
-
-#         if not admin_exists:
-#             await session.execute(
-#                 text("""
-#                     INSERT INTO admins (username, password)
-#                     VALUES (:u, :p)
-#                 """),
-#                 {
-#                     "u": "dato",
-#                     "p": hash_password("Godsmotivator1")
-#                 }
-#             )
-
-#             await session.commit()
-
-#         # ✅ LOGIN CHECK
-#         result = await session.execute(
-#             text("SELECT * FROM admins WHERE username=:u"),
-#             {"u": username}
-#         )
-
-#         user = result.fetchone()
-
-#     if user:
-#         user = user._mapping
-
-#     if not user or not verify_password(password, user["password"]):
-#         return templates.TemplateResponse(
-#             request=request,
-#             name="login.html",
-#             context={
-#                 "error": "Wrong credentials"
-#             }
-#         )
-
-#     token = create_token({"user": username})
-
-#     response = RedirectResponse(
-#         url="/dashboard",
-#         status_code=302
-#     )
-
-#     response.set_cookie(
-#         key="access_token",
-#         value=token,
-#         httponly=True
-#     )
-
-#     return response
 # 🔐 LOGIN LOGIC
 @app.post("/login")
 async def login(
@@ -286,6 +223,26 @@ async def dashboard(
             "user": user,
             "csrf_token": csrf_token
         }
+    )
+
+
+@app.post("/create-video-upload")
+async def create_video_upload(request: Request, csrf_check=Depends(verify_csrf), user=Depends(get_current_user)):
+    import secrets
+    code = secrets.token_urlsafe(24)
+    await create_upload_code(code)
+    settings = await get_settings()
+    flow = await get_flow_settings()
+    stats = await registration_stats()
+    return templates.TemplateResponse(
+        request=request, name="index.html",
+        context={
+            "count": stats["total"], "settings": settings, "flow": flow,
+            "stats": stats, "user": user,
+            "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
+            "upload_command": "/upload " + code
+        },
+        headers={"Cache-Control": "no-store"}
     )
 
 
