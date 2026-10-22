@@ -96,6 +96,21 @@ async def protect_admin_forms(request: Request, call_next):
 
 templates = Jinja2Templates(directory="admin/templates")
 
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+SITE_TZ = ZoneInfo("Asia/Tbilisi")
+
+def tbilisi_time(value, pattern="%d.%m.%Y %H:%M"):
+    """Convert persisted UTC-aware timestamps to the site's local time."""
+    if value is None:
+        return "—"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(SITE_TZ).strftime(pattern)
+
+templates.env.filters["tbilisi_time"] = tbilisi_time
+
 
 # 🔐 AUTH
 def get_current_user(access_token: str = Cookie(None)):
