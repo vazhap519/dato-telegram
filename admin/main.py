@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
-from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan
+from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
@@ -63,6 +63,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/grant",
         "/subscriptions/revoke",
         "/subscriptions/plan",
+        "/subscriptions/plan/create",
         "/change-credentials",
     }
 
@@ -332,7 +333,7 @@ async def subscription_user_page(
 
 @app.post("/subscriptions/grant")
 async def subscriptions_grant(
-    telegram_id: int = Form(...), resource: str = Form(...),
+    telegram_id: int = Form(...),
     grant_type: str = Form(...), end_date: str = Form(""),
     reason: str = Form(""), confirm: str = Form(""),
     csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
@@ -348,7 +349,7 @@ async def subscriptions_grant(
                                tzinfo=ZoneInfo("Asia/Tbilisi")).astimezone(timezone.utc)
         except ValueError: raise HTTPException(400, detail="Укажите дату окончания")
     try:
-        await grant_access(telegram_id,resource,grant_type,expires,reason,user["user"])
+        await grant_access(telegram_id,"community",grant_type,expires,reason,user["user"])
     except ValueError as exc: raise HTTPException(400, detail=str(exc))
     return RedirectResponse(f"/subscriptions/users/{telegram_id}",status_code=303)
 
@@ -380,6 +381,22 @@ async def subscriptions_plan(
     except (InvalidOperation,ValueError):
         raise HTTPException(400, detail="Цена должна быть неотрицательным числом с точностью до 2 знаков")
     return RedirectResponse("/subscriptions",status_code=303)
+
+
+@app.post("/subscriptions/plan/create")
+async def subscriptions_plan_create(
+    name: str = Form(""), price: str = Form(""),
+    currency: str = Form("EUR"), duration_days: int = Form(30),
+    is_lifetime: bool = Form(False),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user),
+):
+    from decimal import Decimal, InvalidOperation
+    try:
+        amount = Decimal(price.strip())
+        await create_plan(name, amount, currency, duration_days, is_lifetime, user["user"])
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(400, detail=str(exc) if isinstance(exc, ValueError) else "Неверная цена")
+    return RedirectResponse("/subscriptions", status_code=303)
 
 
 @app.get("/broadcast")
