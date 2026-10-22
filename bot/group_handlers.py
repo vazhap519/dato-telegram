@@ -118,3 +118,30 @@ async def group_id_handler(message: types.Message):
         await message.answer(f"ID группы: {message.chat.id}")
     except Exception:
         log.exception("Unable to send group ID")
+
+
+async def managed_member_join_handler(event: types.ChatMemberUpdated):
+    """Observe bot-issued direct-link joins; never auto-enroll legacy members."""
+    from aiogram.enums import ChatMemberStatus
+    from db.subscription_automation import record_managed_join
+    previous=event.old_chat_member.status
+    current=event.new_chat_member.status
+    if current not in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR):
+        return
+    if previous not in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED):
+        if previous != ChatMemberStatus.RESTRICTED:
+            return
+        if event.old_chat_member.is_member:
+            return
+    group=await group_settings()
+    if group.get("chat_id") != event.chat.id:
+        return
+    invite=event.invite_link
+    if not invite or not (invite.name or "").startswith("dato-direct-"):
+        return
+    try:
+        await record_managed_join(
+            event.new_chat_member.user.id,event.chat.id,invite.invite_link
+        )
+    except Exception:
+        log.exception("Failed to record managed membership")
