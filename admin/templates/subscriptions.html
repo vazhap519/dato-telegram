@@ -10,7 +10,7 @@
 </section>
 <p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Учтённые права в базе пока <strong>не предоставляют и не отзывают доступ автоматически</strong> в Telegram и на сайте. Нажатие кнопки оплаты не считается платежом. Сведения Tribute будут подключены отдельно.</p>
 <section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Тарифы</h2>
-<p class="text-gray-400 text-sm">Тарифы пока существуют только в нашем реестре. Цены не публикуются и не списываются.</p>
+<p class="text-gray-400 text-sm">В боте показываются только активные тарифы с ценой и HTTPS-ссылкой оплаты. Переход по ссылке не подтверждает оплату.</p>
 <form action="/subscriptions/plan/create" method="post" class="bg-gray-700 rounded-xl p-4 grid gap-3 mb-5">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <h3 class="text-lg font-semibold">➕ Добавить тариф</h3>
@@ -31,6 +31,7 @@
 <div class="font-semibold">{{ p.name }} <span class="text-gray-400 text-xs">({{ p.code }})</span></div>
 <div class="text-sm text-gray-300">{{ 'Без срока' if p.is_lifetime else ((p.duration_days|string)+' дней') }}</div>
 <label class="block text-sm">Цена, {{ p.currency }} (необязательно)<input type="number" min="0" max="1000000" step="0.01" name="price" class="w-full rounded bg-gray-800 p-2 mt-1" value="{{ p.price_amount if p.price_amount is not none else '' }}"></label>
+<label class="block text-sm">Ссылка оплаты для этого тарифа<input type="url" name="payment_url" maxlength="2000" placeholder="https://..." value="{{ p.payment_url or '' }}" class="w-full rounded bg-gray-800 p-2 mt-1"></label>
 <label class="flex gap-2 items-center text-sm"><input type="checkbox" name="active" value="true" {{ 'checked' if p.is_active else '' }}> Активен в реестре</label>
 <button class="bg-indigo-600 px-4 py-2 rounded">Сохранить тариф</button>
 </form>
