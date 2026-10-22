@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler, choose_plan_handler, back_to_subscription_handler, my_subscription_command, my_subscription_callback
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
+from db.group_access import initialize_group_access
+from bot.group_handlers import group_join_request_handler
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
 from bot.broadcast_worker import broadcast_worker
@@ -19,6 +21,7 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=os.environ["BOT_TOKEN"])
 dp = Dispatcher()
+dp.chat_join_request.register(group_join_request_handler)
 dp.message.register(start_handler, CommandStart())
 dp.message.register(my_subscription_command, Command('subscription', 'my_subscription'))
 dp.message.register(upload_command_handler, Command('upload'))
@@ -35,6 +38,7 @@ dp.message.register(broadcast_stop_handler, Command("stopnotifications"))
 async def main():
     await initialize_flow()
     await initialize_subscriptions()
+    await initialize_group_access()
     await initialize_broadcasts()
     await initialize_automation()
     async def reminder_scheduler():
