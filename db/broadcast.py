@@ -142,7 +142,10 @@ async def claim_recipient():
                       WHEN :trigger='no_offer_24h' THEN NOT EXISTS (
                         SELECT 1 FROM offer_acceptances WHERE telegram_id=:uid
                       )
-                      WHEN :trigger='no_click_24h' THEN NOT EXISTS (
+                      WHEN :trigger='no_click_24h' THEN
+                        EXISTS (SELECT 1 FROM offer_acceptances WHERE telegram_id=:uid)
+                        AND NOT EXISTS (SELECT 1 FROM subscription_clicks WHERE telegram_id=:uid)
+                      WHEN :trigger='clicked_24h' THEN EXISTS (
                         SELECT 1 FROM subscription_clicks WHERE telegram_id=:uid
                       )
                       ELSE FALSE END
