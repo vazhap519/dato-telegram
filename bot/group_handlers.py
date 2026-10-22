@@ -9,7 +9,7 @@ INVITE_PREFIX = "dato-access-"
 
 
 async def send_group_invitation(bot, telegram_id: int, actor: str):
-    """Create a person-specific, join-request link and send it via private chat.
+    """Create a one-use, short-lived direct invite and send it in private chat.
 
     Returns: sent / already_member / no_access / not_configured.
     Caller may handle TelegramAPIError (e.g. user blocked bot).
@@ -36,20 +36,21 @@ async def send_group_invitation(bot, telegram_id: int, actor: str):
         # get_chat_member may fail for users who are not members.
         pass
 
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=20)
     invite = await bot.create_chat_invite_link(
         chat_id=chat_id,
-        name=f"{INVITE_PREFIX}{telegram_id}",
+        name=f"dato-direct-{telegram_id}",
         expire_date=expires_at,
-        creates_join_request=True
+        member_limit=1,
+        creates_join_request=False
     )
     try:
         await record_invite(telegram_id, chat_id, invite.invite_link, expires_at, actor)
         await bot.send_message(
             telegram_id,
             "🔐 Для вас готово приглашение в «Круг Души». "
-            "Нажмите кнопку ниже и отправьте заявку на вступление. "
-            "Ссылка персональная и действует один час.",
+            "Нажмите кнопку ниже — вступление произойдёт сразу, без заявки. "
+            "Ссылка рассчитана на одно вступление и действует 20 минут.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="🚪 Вступить в сообщество", url=invite.invite_link)
             ]])
