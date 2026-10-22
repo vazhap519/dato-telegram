@@ -114,7 +114,6 @@ async def enqueue_reminders():
                         SELECT u.telegram_id, r.body
                         FROM users u JOIN reminder_rules r ON r.trigger=:trigger
                         WHERE r.enabled
-                          AND u.created_at >= r.enabled_at
                           AND NOT EXISTS (SELECT 1 FROM broadcast_opt_out o WHERE o.telegram_id=u.telegram_id)
                           AND NOT EXISTS (
                               SELECT 1 FROM reminder_deliveries d
@@ -122,6 +121,7 @@ async def enqueue_reminders():
                           )
                           AND (
                             (:trigger='no_offer_24h'
+                             AND u.created_at >= r.enabled_at
                              AND u.created_at <= NOW() - INTERVAL '24 hours'
                              AND NOT EXISTS (SELECT 1 FROM offer_acceptances a WHERE a.telegram_id=u.telegram_id))
                             OR
