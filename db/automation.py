@@ -28,6 +28,7 @@ async def initialize_automation():
             CREATE TABLE IF NOT EXISTS reminder_rules (
                 trigger TEXT PRIMARY KEY,
                 enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                enabled_at TIMESTAMPTZ,
                 body TEXT NOT NULL
             )
         """))
@@ -40,6 +41,7 @@ async def initialize_automation():
                 PRIMARY KEY (trigger, telegram_id)
             )
         """))
+        await conn.execute(text("ALTER TABLE reminder_rules ADD COLUMN IF NOT EXISTS enabled_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ"))
         await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS campaign_kind TEXT NOT NULL DEFAULT 'manual'"))
         await conn.execute(text("ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS recipient_id BIGINT"))
@@ -93,7 +95,7 @@ async def set_rule(trigger, enabled, body):
         raise ValueError("Неверные параметры сценария")
     async with SessionLocal() as s:
         await s.execute(text("""
-            UPDATE reminder_rules SET enabled=:enabled, body=:body
+            UPDATE reminder_rules SET enabled=:enabled, body=:body,\n              enabled_at=CASE WHEN :enabled AND NOT enabled THEN NOW() WHEN NOT :enabled THEN NULL ELSE enabled_at END
             WHERE trigger=:trigger
         """), {"trigger": trigger, "enabled": enabled, "body": body.strip()})
         await s.commit()
@@ -112,7 +114,7 @@ async def enqueue_reminders():
                         SELECT u.telegram_id, r.body
                         FROM users u JOIN reminder_rules r ON r.trigger=:trigger
                         WHERE r.enabled
-                          AND u.created_at >= NOW() - INTERVAL '7 days'
+                          AND u.created_at >= r.enabled_at
                           AND NOT EXISTS (SELECT 1 FROM broadcast_opt_out o WHERE o.telegram_id=u.telegram_id)
                           AND NOT EXISTS (
                               SELECT 1 FROM reminder_deliveries d
@@ -127,7 +129,7 @@ async def enqueue_reminders():
                              AND EXISTS (SELECT 1 FROM offer_acceptances a
                                          WHERE a.telegram_id=u.telegram_id
                                            AND a.accepted_at <= NOW() - INTERVAL '24 hours'
-                                           AND a.accepted_at >= NOW() - INTERVAL '7 days')
+                                           AND a.accepted_at >= r.enabled_at)
                              AND NOT EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id))
                           )
                         ORDER BY u.telegram_id LIMIT 100
