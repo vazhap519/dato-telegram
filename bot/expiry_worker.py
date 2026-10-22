@@ -1,0 +1,38 @@
+"""Scheduled entitlement reminders; no group kicks or payment changes."""
+import asyncio
+import logging
+from db.expiry_monitor import claim_expiry_alerts, finish_expiry_alert
+
+logger=logging.getLogger(__name__)
+
+async def expiry_worker(bot):
+    # Re-check hourly. Each user/end-date/stage can be sent only once.
+    while True:
+        try:
+            alerts=await claim_expiry_alerts()
+            for alert in alerts:
+                kind=alert["alert_kind"]
+                if kind=="three_days":
+                    msg=("⏳ Доступ в «Круг Души» скоро закончится. "
+                         "До окончания осталось не более трёх дней. "
+                         "Посмотреть статус и выбрать новый тариф можно через /subscription.")
+                elif kind=="one_day":
+                    msg=("⏳ Доступ в «Круг Души» заканчивается в ближайшие 24 часа. "
+                         "Посмотреть статус подписки: /subscription.")
+                else:
+                    msg=("ℹ️ По данным нашей системы срок доступа в «Круг Души» истёк. "
+                         "Если вы уже продлили подписку, обратитесь к администратору: "
+                         "автоматическое подтверждение платежей пока не подключено. "
+                         "Посмотреть статус: /subscription. "
+                         "Это уведомление не означает исключения из группы.")
+                try:
+                    await bot.send_message(alert["telegram_id"],msg)
+                    await finish_expiry_alert(alert["id"],True)
+                except Exception:
+                    logger.exception("Expiry notification failed for %s",alert["telegram_id"])
+                    await finish_expiry_alert(alert["id"],False)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Expiry monitoring cycle failed")
+        await asyncio.sleep(3600)
