@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
-from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
+from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
@@ -341,13 +341,52 @@ async def support_inbox(request: Request, status: str="", search: str="", page: 
     })
 
 
+@app.get("/support/media/{message_id}")
+async def support_media_download(message_id:int,user=Depends(get_current_user)):
+    """Serve only authenticated admins; never expose the Telegram bot token."""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    from aiogram import Bot
+    media=await support_media_record(message_id)
+    if not media: raise HTTPException(404,detail="Вложение не найдено")
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            info=await bot.get_file(media["file_id"])
+            stream=BytesIO()
+            await bot.download_file(info.file_path,destination=stream)
+            stream.seek(0)
+        content_types={"photo":"image/jpeg","voice":"audio/ogg","document":"application/octet-stream"}
+        return StreamingResponse(iter([stream.getvalue()]),
+            media_type=content_types.get(media["media_type"],"application/octet-stream"),
+            headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
+    except Exception:
+        import logging
+        logging.exception("Support attachment load failed %s",message_id)
+        raise HTTPException(502,detail="Вложение не удалось загрузить")
+
+
+@app.get("/support/{ticket_id}/messages")
+async def support_new_messages(ticket_id:int,after:int=0,user=Depends(get_current_user)):
+    from fastapi.responses import JSONResponse
+    ticket,messages=await ticket_detail(ticket_id)
+    if not ticket: raise HTTPException(404,detail="Диалог не найден")
+    return JSONResponse({"status":ticket["status"],"messages":[{
+        "id":m["id"],"actor":m["actor"],"body":m["body"],
+        "media_type":m.get("media_type","text"),
+        "has_file":bool(m.get("file_id")),
+        "delivery_status":m["delivery_status"],
+        "time":tbilisi_time(m["created_at"])
+    } for m in messages if m["id"]>max(0,after)]})
+
+
 @app.get("/support/{ticket_id}")
 async def support_thread(request: Request,ticket_id:int,
                          user=Depends(get_current_user)):
     ticket,messages=await ticket_detail(ticket_id)
     if not ticket: raise HTTPException(404,detail="Обращение не найдено")
+    chats,_=await list_tickets(page=1)
     return templates.TemplateResponse(request=request,name="support_ticket.html",context={
-        "ticket":ticket,"messages":messages,
+        "ticket":ticket,"messages":messages,"chats":chats,
         "categories":SUPPORT_CATEGORIES,"statuses":SUPPORT_STATUSES,
         "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
     })
@@ -365,9 +404,8 @@ async def support_admin_reply(ticket_id:int,body:str=Form(...),
     try:
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
             await bot.send_message(uid,
-                format_staff_reply(ticket_id, body),
-                parse_mode="HTML",
-                reply_markup=reply_keyboard(ticket_id))
+                body.strip(),
+                parse_mode=None)
             sent=True
     except Exception:
         import logging
@@ -389,9 +427,8 @@ async def support_retry_failed_message(ticket_id:int,message_id:int,
         from bot.support_messages import format_staff_reply,reply_keyboard
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
             await bot.send_message(failed["telegram_id"],
-                format_staff_reply(ticket_id, failed["body"]),
-                parse_mode="HTML",
-                reply_markup=reply_keyboard(ticket_id))
+                failed["body"],
+                parse_mode=None)
         sent=True
     except Exception:
         import logging
