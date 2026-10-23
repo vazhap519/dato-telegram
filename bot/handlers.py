@@ -55,8 +55,6 @@ def account_keyboard(can_subscribe=True, can_invite=False):
 
 
 async def show_subscription_account(bot, telegram_id, message=None):
-    from db.support import stop_support_chat
-    await stop_support_chat(telegram_id)
     snapshot = await subscription_snapshot(telegram_id)
     current = snapshot["grant"]
     paid = snapshot["subscription"]
@@ -132,8 +130,6 @@ async def my_subscription_callback(query: types.CallbackQuery):
 async def start_handler(message: types.Message):
     if not message.from_user:
         return
-    from db.support import stop_support_chat
-    await stop_support_chat(message.from_user.id)
     is_new = await register_user(message.from_user.id, username=message.from_user.username, first_name=message.from_user.first_name, last_name=message.from_user.last_name)
     settings = await get_flow_settings()
     if not settings:
