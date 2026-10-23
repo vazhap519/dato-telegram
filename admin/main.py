@@ -381,8 +381,22 @@ async def support_admin_reply(ticket_id:int,body:str=Form(...),
 async def support_change_status(ticket_id:int,status:str=Form(...),
                                 csrf_check=Depends(verify_csrf),
                                 user=Depends(get_current_user)):
-    try: await set_ticket_status(ticket_id,status)
+    try: uid=await set_ticket_status(ticket_id,status)
     except ValueError as exc: raise HTTPException(400,detail=str(exc))
+    if status == "closed":
+        try:
+            from aiogram import Bot
+            from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
+            async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+                await bot.send_message(uid,
+                    f"✅ Обращение #{ticket_id} закрыто. Если появится новый вопрос, "
+                    "воспользуйтесь разделом «Помощь».",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="🛟 Помощь",callback_data="help_menu")
+                    ]]))
+        except Exception:
+            import logging
+            logging.exception("Support closure notice not delivered for %s",ticket_id)
     return RedirectResponse(f"/support/{ticket_id}?status=ok",status_code=303)
 
 
