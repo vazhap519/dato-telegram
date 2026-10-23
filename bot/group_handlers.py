@@ -121,43 +121,58 @@ async def group_id_handler(message: types.Message):
 
 
 async def managed_member_join_handler(event: types.ChatMemberUpdated):
-    """Observe bot-issued direct-link joins; never auto-enroll legacy members."""
+    """Guard bot invites and managed-account rejoins, never legacy members."""
     from aiogram.enums import ChatMemberStatus
-    from db.subscription_automation import record_managed_join
-    previous=event.old_chat_member.status
-    current=event.new_chat_member.status
-    if current not in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR):
-        return
-    if previous not in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED):
-        if previous != ChatMemberStatus.RESTRICTED:
-            return
-        if event.old_chat_member.is_member:
-            return
-    group=await group_settings()
-    if group.get("chat_id") != event.chat.id:
-        return
-    invite=event.invite_link
-    if not invite or not (invite.name or "").startswith("dato-direct-"):
-        return
+    from db.subscription_automation import record_managed_join, managed_rejoin_policy
     from db.group_access import direct_invite_owner
-    record = await direct_invite_owner(event.chat.id, invite.invite_link)
-    if not record:
+
+    before = event.old_chat_member.status
+    after = event.new_chat_member.status
+    if after not in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR):
         return
-    if record["telegram_id"] != event.new_chat_member.user.id:
+    if before not in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED):
+        if before != ChatMemberStatus.RESTRICTED or event.old_chat_member.is_member:
+            return
+    cfg = await group_settings()
+    if cfg.get("chat_id") != event.chat.id:
+        return
+
+    uid = event.new_chat_member.user.id
+    link = event.invite_link
+    our_link = bool(link and (link.name or "").startswith("dato-direct-"))
+    if our_link:
+        record = await direct_invite_owner(event.chat.id, link.invite_link)
+        if record is None:
+            log.warning("Unrecognized bot-named invitation chat=%s user=%s",event.chat.id,uid)
+            return
+        if record["telegram_id"] != uid:
+            await remove_invalid_direct_join(event)
+            return
+        if record["status"] == "issued" and record["in_time"] and await has_group_access(uid):
+            try:
+                if await record_managed_join(uid,event.chat.id,link.invite_link):
+                    return
+            except Exception:
+                log.exception("Unable to register managed join uid=%s",uid)
+                return
+        # A duplicate Telegram update may report the same single-use invite
+        # after it was already recorded as joined; don't evict valid users.
+        if record["status"] == "joined" and await has_group_access(uid):
+            return
         await remove_invalid_direct_join(event)
         return
-    if record["status"] != "issued" or not record["in_time"]:
-        await remove_invalid_direct_join(event)
-        return
-    if not await has_group_access(event.new_chat_member.user.id):
-        await remove_invalid_direct_join(event)
-        return
-    try:
-        await record_managed_join(
-            event.new_chat_member.user.id,event.chat.id,invite.invite_link
-        )
-    except Exception:
-        log.exception("Failed to record managed membership")
+
+    # Other links (or admin additions): protect grandfathered/unknown users.
+    # Only accounts ALREADY enrolled by our bot can be considered for eviction.
+    policy = await managed_rejoin_policy(uid,event.chat.id)
+    if policy in ("revoked","expired"):
+        # Right before action, repeat the check to avoid racing a renewal.
+        if await managed_rejoin_policy(uid,event.chat.id) == policy:
+            await remove_invalid_direct_join(event)
+    elif policy == "legacy":
+        log.info("Legacy group join left unmanaged uid=%s",uid)
+    elif policy == "unknown":
+        log.warning("Managed user has no known entitlement; no automatic action uid=%s",uid)
 
 
 async def remove_invalid_direct_join(event: types.ChatMemberUpdated):
