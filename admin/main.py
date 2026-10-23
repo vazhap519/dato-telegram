@@ -449,8 +449,9 @@ async def support_change_status(ticket_id:int,status:str=Form(...),
             from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
             async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
                 await bot.send_message(uid,
-                    "✅ Разговор с поддержкой завершён. Спасибо, что написали! "
-                    "Если понадобится помощь снова, нажмите кнопку ниже.",
+                    "✅ Предыдущий вопрос закрыт. Спасибо, что написали! "
+                    "Если возникнут новые вопросы, просто отправьте сообщение сюда — "
+                    "мы продолжим общение.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                         InlineKeyboardButton(text="🛟 Помощь",callback_data="help_menu")
                     ]]))
