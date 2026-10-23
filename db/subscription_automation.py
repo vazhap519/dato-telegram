@@ -227,3 +227,54 @@ async def member_removal_diagnostics(telegram_id, chat_id):
             data["ready"]=True
             data["reason"]="Срок и льготный период истекли; аккаунт ожидает проверки членства ботом."
     return data
+
+
+async def managed_rejoin_policy(telegram_id, chat_id):
+    """Read-only decision for an account previously enrolled through our bot.
+
+    Unknown/legacy users are NEVER candidates for automatic rejoin eviction.
+    Future grants and current subscriptions always protect from removal.
+    """
+    from db.group_access import has_group_access
+    settings = await automation_settings()
+    async with SessionLocal() as session:
+        row=(await session.execute(text("""
+            SELECT
+              EXISTS(
+                SELECT 1 FROM subscription_managed_members
+                WHERE telegram_id=:uid AND chat_id=:chat
+              ) AS ever_managed,
+              EXISTS(
+                SELECT 1 FROM access_grants
+                WHERE telegram_id=:uid AND resource='community'
+                  AND revoked_at IS NULL AND starts_at>NOW()
+              ) AS future_access,
+              (SELECT MAX(expires) FROM (
+                SELECT ends_at AS expires FROM access_grants
+                WHERE telegram_id=:uid AND resource='community'
+                  AND revoked_at IS NULL AND starts_at<=NOW()
+                  AND ends_at IS NOT NULL
+                UNION ALL
+                SELECT paid_until AS expires FROM subscriptions
+                WHERE telegram_id=:uid AND status='active'
+                  AND paid_until IS NOT NULL
+              ) effective) AS last_expiry,
+              EXISTS(
+                SELECT 1 FROM access_grants
+                WHERE telegram_id=:uid AND resource='community'
+                  AND revoked_at IS NOT NULL
+              ) AS has_revoked_grant,
+              NOW() AS checked_at
+        """),{"uid":telegram_id,"chat":chat_id})).mappings().one()
+    if not row["ever_managed"]:
+        return "legacy"
+    if row["future_access"] or await has_group_access(telegram_id):
+        return "allowed"
+    if row["last_expiry"] is not None:
+        from datetime import timedelta
+        if row["last_expiry"] + timedelta(hours=settings["grace_hours"]) > row["checked_at"]:
+            return "grace"
+        return "expired"
+    if row["has_revoked_grant"]:
+        return "revoked"
+    return "unknown"
