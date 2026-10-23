@@ -264,11 +264,16 @@ async def managed_rejoin_policy(telegram_id, chat_id):
                 WHERE telegram_id=:uid AND resource='community'
                   AND revoked_at IS NOT NULL
               ) AS has_revoked_grant,
+              EXISTS(
+                SELECT 1 FROM subscriptions
+                WHERE telegram_id=:uid AND status='active'
+                  AND paid_until IS NULL
+              ) AS perpetual_subscription,
               NOW() AS checked_at
         """),{"uid":telegram_id,"chat":chat_id})).mappings().one()
     if not row["ever_managed"]:
         return "legacy"
-    if row["future_access"] or await has_group_access(telegram_id):
+    if row["future_access"] or row["perpetual_subscription"] or await has_group_access(telegram_id):
         return "allowed"
     if row["last_expiry"] is not None:
         from datetime import timedelta
