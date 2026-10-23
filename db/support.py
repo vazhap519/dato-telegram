@@ -48,6 +48,10 @@ async def initialize_support():
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )"""))
         await c.execute(text("""
+        ALTER TABLE support_chat_modes
+        ADD COLUMN IF NOT EXISTS paused_by_user BOOLEAN NOT NULL DEFAULT FALSE
+        """))
+        await c.execute(text("""
         ALTER TABLE support_messages
         ADD COLUMN IF NOT EXISTS media_type TEXT NOT NULL DEFAULT 'text'
         """))
@@ -216,11 +220,6 @@ async def set_ticket_status(ticket_id,status):
                 WHERE id=:ticket RETURNING telegram_id
             """),{"ticket":ticket_id,"status":status})).first()
             if not row: raise ValueError("Обращение не найдено")
-            if status == "closed":
-                await s.execute(text("""
-                    UPDATE support_chat_modes SET active=FALSE,updated_at=NOW()
-                    WHERE telegram_id=:uid AND ticket_id=:ticket
-                """),{"uid":row[0],"ticket":ticket_id})
             return row[0]
 
 
@@ -257,7 +256,8 @@ async def start_support_chat(uid, ticket_id=None):
                 INSERT INTO support_chat_modes(telegram_id,active,ticket_id)
                 VALUES (:uid,TRUE,:ticket)
                 ON CONFLICT(telegram_id) DO UPDATE
-                  SET active=TRUE,ticket_id=EXCLUDED.ticket_id,updated_at=NOW()
+                  SET active=TRUE,ticket_id=EXCLUDED.ticket_id,
+                      paused_by_user=FALSE,updated_at=NOW()
             """),{"uid":uid,"ticket":ticket_id})
             await s.execute(text("DELETE FROM support_drafts WHERE telegram_id=:uid"),{"uid":uid})
             return ticket_id
@@ -267,18 +267,50 @@ async def stop_support_chat(uid):
     async with SessionLocal() as s:
         async with s.begin():
             await s.execute(text("""
-                UPDATE support_chat_modes SET active=FALSE,updated_at=NOW()
+                UPDATE support_chat_modes
+                SET active=FALSE,paused_by_user=TRUE,updated_at=NOW()
                 WHERE telegram_id=:uid
             """),{"uid":uid})
             await s.execute(text("DELETE FROM support_drafts WHERE telegram_id=:uid"),{"uid":uid})
 
 
 async def chat_is_active(uid):
+    """Recover historical sessions accidentally paused by bot navigation.
+
+    Only an intentional user exit prevents automatic recovery.
+    """
     async with SessionLocal() as s:
-        return bool((await s.execute(text("""
-            SELECT 1 FROM support_chat_modes
-            WHERE telegram_id=:uid AND active=TRUE
-        """),{"uid":uid})).first())
+        async with s.begin():
+            mode=(await s.execute(text("""
+                SELECT active,paused_by_user,ticket_id FROM support_chat_modes
+                WHERE telegram_id=:uid FOR UPDATE
+            """),{"uid":uid})).mappings().first()
+            if mode:
+                if mode["active"]: return True
+                if mode["paused_by_user"]: return False
+                if mode["ticket_id"] is None: return False
+                ticket=(await s.execute(text("""
+                    SELECT 1 FROM support_tickets
+                    WHERE id=:ticket AND telegram_id=:uid AND status<>'closed'
+                """),{"uid":uid,"ticket":mode["ticket_id"]})).first()
+                if not ticket: return False
+                await s.execute(text("""
+                    UPDATE support_chat_modes SET active=TRUE,updated_at=NOW()
+                    WHERE telegram_id=:uid AND paused_by_user=FALSE
+                """),{"uid":uid})
+                return True
+            # Older support users have open tickets but no chat-mode record.
+            ticket=(await s.execute(text("""
+                SELECT id FROM support_tickets WHERE telegram_id=:uid
+                AND status<>'closed' ORDER BY updated_at DESC LIMIT 1
+            """),{"uid":uid})).first()
+            if not ticket: return False
+            await s.execute(text("""
+                INSERT INTO support_chat_modes(telegram_id,active,ticket_id,paused_by_user)
+                VALUES (:uid,TRUE,:ticket,FALSE)
+                ON CONFLICT(telegram_id) DO NOTHING
+            """),{"uid":uid,"ticket":ticket[0]})
+            return True
 
 
 async def add_support_chat_message(uid,body,media_type="text",file_id=None):
