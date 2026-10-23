@@ -1,106 +1,119 @@
-"""Private Telegram support flow with menu, categories and ticket history."""
+"""Simple support chat inside a private conversation with the bot."""
 import logging
 from aiogram import types
-from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
-from db.support import (CATEGORIES,STATUSES,start_draft,cancel_draft,save_user_message,
-                        draft_exists,user_tickets,ticket_detail)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from db.support import (start_support_chat, stop_support_chat, chat_is_active,
+                        add_support_chat_message, user_tickets, ticket_detail)
 
 log=logging.getLogger(__name__)
 
 def menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✍️ Новое обращение",callback_data="help_new")],
-        [InlineKeyboardButton(text="📂 Мои обращения",callback_data="help_list")],
+        [InlineKeyboardButton(text="💬 Написать в поддержку",callback_data="help_chat")],
+        [InlineKeyboardButton(text="📂 История переписки",callback_data="help_list")],
         [InlineKeyboardButton(text="👤 Моя подписка",callback_data="my_subscription")],
     ])
 
+def chat_controls():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Завершить разговор",callback_data="help_exit")],
+        [InlineKeyboardButton(text="📂 История",callback_data="help_list")],
+    ])
+
+async def register_contact(who):
+    from db.flow import register_user
+    await register_user(who.id,username=who.username,
+                        first_name=who.first_name,last_name=who.last_name)
+
 async def support_start(message:types.Message):
-    if message.chat.type!="private": return
-    if message.from_user:
-        from db.flow import register_user
-        await register_user(message.from_user.id,username=message.from_user.username,
-                            first_name=message.from_user.first_name,last_name=message.from_user.last_name)
-    await message.answer("🛟 Помощник «Круга Души»\n\nЗдесь можно задать вопрос о доступе, оплате или работе бота. Ваше обращение получит номер, а ответ придёт сюда в Telegram.",reply_markup=menu())
+    if message.chat.type!="private" or not message.from_user:return
+    await register_contact(message.from_user)
+    await message.answer("🛟 Поддержка «Круга Души»\n\nНапишите нам прямо здесь — ответ придёт в этот чат. Можно отправлять текст, фото и голосовые сообщения.",reply_markup=menu())
 
 async def support_callback(query:types.CallbackQuery):
-    uid=query.from_user.id
-    if not query.message or query.message.chat.type!="private": 
-        await query.answer()
-        return
-    data=query.data or ""
-    from db.flow import register_user
-    await register_user(uid,username=query.from_user.username,
-                        first_name=query.from_user.first_name,last_name=query.from_user.last_name)
+    if not query.message or query.message.chat.type!="private":return
+    await register_contact(query.from_user)
     await query.answer()
-    if data=="help_menu":
-        await cancel_draft(uid)
-        await query.message.answer("🛟 Чем помочь?",reply_markup=menu())
-    elif data=="help_new":
-        await cancel_draft(uid)
-        await query.message.answer("Выберите тему обращения:",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=label,callback_data="help_cat:"+key)]
-            for key,label in CATEGORIES.items()
-        ]+[[InlineKeyboardButton(text="↩️ Назад",callback_data="help_menu")]]))
-    elif data.startswith("help_cat:"):
-        category=data.split(":",1)[1]
-        if category not in CATEGORIES: return
-        await start_draft(uid,category=category)
+    uid=query.from_user.id
+    data=query.data or ""
+    if data in ("help_chat","help_new","help_menu"):
+        if data=="help_menu":
+            await stop_support_chat(uid)
+            await query.message.answer("🛟 Поддержка «Круга Души»",reply_markup=menu())
+            return
+        await start_support_chat(uid)
         await query.message.answer(
-            "📝 "+CATEGORIES[category]+"\n\nНапишите одним сообщением, что случилось. "
-            "Укажите важные детали, но не отправляйте пароли, коды или данные банковской карты. "
-            "Максимум 3000 символов.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="❌ Отмена",callback_data="help_menu")
-            ]]))
+            "💬 Вы на связи с поддержкой.\n\nПросто пишите сообщения, отправляйте фото или голосовые — всё попадёт в один диалог.\n\nЧтобы вернуться к обычным функциям бота, нажмите «Завершить разговор».",
+            reply_markup=chat_controls())
+    elif data=="help_exit":
+        await stop_support_chat(uid)
+        await query.message.answer("✅ Разговор завершён. История сохранена. Если понадобится помощь, возвращайтесь сюда.",reply_markup=menu())
     elif data=="help_list":
-        await cancel_draft(uid)
         tickets=await user_tickets(uid)
         if not tickets:
-            await query.message.answer("Пока нет обращений.",reply_markup=menu())
+            await query.message.answer("История пока пуста.",reply_markup=menu())
             return
-        rows=[[InlineKeyboardButton(text=f"#{t['id']} · {CATEGORIES.get(t['category'],t['category'])} · {STATUSES.get(t['status'],t['status'])}",callback_data=f"help_ticket:{t['id']}")] for t in tickets]
-        rows.append([InlineKeyboardButton(text="➕ Новое обращение",callback_data="help_new")])
-        await query.message.answer("📂 Ваши последние обращения:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        rows=[[InlineKeyboardButton(
+            text=f"💬 Диалог #{t['id']} · {('Закрыт' if t['status']=='closed' else 'Активен')}",
+            callback_data=f"help_ticket:{t['id']}")] for t in tickets]
+        rows.append([InlineKeyboardButton(text="💬 Написать",callback_data="help_chat")])
+        await query.message.answer("📂 История переписки:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     elif data.startswith("help_ticket:"):
-        await cancel_draft(uid)
-        try: ticket_id=int(data.split(":",1)[1])
+        try:tid=int(data.split(":",1)[1])
         except ValueError:return
-        ticket,msgs=await ticket_detail(ticket_id,uid=uid)
+        ticket,messages=await ticket_detail(tid,uid=uid)
         if not ticket:
-            await query.message.answer("Обращение не найдено.")
+            await query.message.answer("Диалог не найден.")
             return
-        history="\n".join(("👤 Вы: " if m["actor"]=="user" else "🛟 Поддержка: ")+m["body"][:500] for m in msgs[-8:])
-        lines=[f"📨 Обращение #{ticket_id}",CATEGORIES.get(ticket["category"],ticket["category"]),
-               "Статус: "+STATUSES.get(ticket["status"],ticket["status"]),"",history or "Сообщений нет."]
-        if len("\n".join(lines))>3500:
-            lines=lines[:4]+["\n".join(lines[4:])[-3000:]]
+        history=[]
+        for m in messages[-8:]:
+            prefix="Вы" if m["actor"]=="user" else "Поддержка"
+            content=m["body"] or {"photo":"📷 Фото","voice":"🎤 Голосовое","document":"📎 Файл"}.get(m.get("media_type"),"Вложение")
+            history.append(f"{prefix}: {content[:400]}")
         buttons=[]
         if ticket["status"]!="closed":
-            buttons.append([InlineKeyboardButton(text="✍️ Дополнить обращение",callback_data=f"help_reply:{ticket_id}")])
-        buttons.append([InlineKeyboardButton(text="📂 Все обращения",callback_data="help_list")])
-        await query.message.answer("\n".join(lines),reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+            buttons.append([InlineKeyboardButton(text="💬 Продолжить диалог",callback_data=f"help_reply:{tid}")])
+        buttons.append([InlineKeyboardButton(text="← История",callback_data="help_list")])
+        await query.message.answer("💬 Диалог #"+str(tid)+"\n\n"+("\n\n".join(history) or "Нет сообщений.")[:3400],
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     elif data.startswith("help_reply:"):
-        try: ticket_id=int(data.split(":",1)[1])
+        try:tid=int(data.split(":",1)[1])
         except ValueError:return
-        try: await start_draft(uid,ticket_id=ticket_id)
+        try:await start_support_chat(uid,ticket_id=tid)
         except ValueError:
-            await query.message.answer("Обращение закрыто. Создайте новое.",reply_markup=menu())
+            await query.message.answer("Диалог закрыт. Откройте новый.",reply_markup=menu())
             return
-        await query.message.answer(f"✍️ Напишите дополнение к обращению #{ticket_id} (до 3000 символов).",reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="❌ Отмена",callback_data="help_menu")
-        ]]))
+        await query.message.answer("💬 Пишите сообщение — оно сразу попадёт в переписку.",reply_markup=chat_controls())
 
 async def support_text(message:types.Message):
     if message.chat.type!="private" or not message.from_user:return
     uid=message.from_user.id
-    if not await draft_exists(uid):return
-    if not message.text or message.text.startswith("/"):
-        await message.answer("Пришлите текст сообщения, либо нажмите «Отмена».")
+    if not await chat_is_active(uid):return
+    if message.text and message.text.startswith("/"):return
+    kind="text"
+    file_id=None
+    body=message.text or message.caption or ""
+    if message.photo:
+        kind="photo"
+        file_id=message.photo[-1].file_id
+    elif message.voice:
+        kind="voice"
+        file_id=message.voice.file_id
+    elif message.document:
+        kind="document"
+        if message.document.file_size and message.document.file_size>20*1024*1024:
+            await message.answer("Файл слишком большой. Максимальный размер — 20 МБ.")
+            return
+        file_id=message.document.file_id
+        body=body or (message.document.file_name or "Документ")
+    elif not message.text:
+        await message.answer("Пока можно отправлять текст, фотографии, голосовые и документы.")
         return
     try:
-        tid=await save_user_message(uid,message.text)
+        ticket_id=await add_support_chat_message(uid,body,kind,file_id)
     except ValueError as exc:
         await message.answer(str(exc))
         return
-    if tid:
-        await message.answer(f"✅ Сообщение принято! Обращение #{tid}.\n\nОтвет поддержки появится здесь. Вы можете дополнить обращение через «Мои обращения».",reply_markup=menu())
+    if ticket_id:
+        # The user's own message remains in their Telegram chat; no repetitive confirmation.
+        log.info("Support chat message saved uid=%s ticket=%s kind=%s",uid,ticket_id,kind)
