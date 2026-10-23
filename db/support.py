@@ -41,6 +41,21 @@ async def initialize_support():
           ON support_messages(ticket_id,id)
         """))
         await c.execute(text("""
+        CREATE TABLE IF NOT EXISTS support_chat_modes (
+          telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
+          active BOOLEAN NOT NULL DEFAULT FALSE,
+          ticket_id BIGINT REFERENCES support_tickets(id),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )"""))
+        await c.execute(text("""
+        ALTER TABLE support_messages
+        ADD COLUMN IF NOT EXISTS media_type TEXT NOT NULL DEFAULT 'text'
+        """))
+        await c.execute(text("""
+        ALTER TABLE support_messages
+        ADD COLUMN IF NOT EXISTS file_id TEXT
+        """))
+        await c.execute(text("""
         CREATE TABLE IF NOT EXISTS support_drafts (
           telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
           category TEXT,
@@ -213,4 +228,101 @@ async def failed_support_message(ticket_id,message_id):
             WHERE m.id=:message AND m.ticket_id=:ticket
               AND m.actor LIKE 'admin:%' AND m.delivery_status='failed'
         """),{"message":message_id,"ticket":ticket_id})).mappings().first()
+        return dict(row) if row else None
+
+
+async def start_support_chat(uid, ticket_id=None):
+    """One active conversation at a time; old tickets remain browsable."""
+    async with SessionLocal() as s:
+        async with s.begin():
+            if ticket_id is not None:
+                row=(await s.execute(text("""
+                    SELECT id FROM support_tickets
+                    WHERE id=:ticket AND telegram_id=:uid AND status<>'closed'
+                """),{"uid":uid,"ticket":ticket_id})).first()
+                if not row: raise ValueError("Диалог закрыт")
+            else:
+                row=(await s.execute(text("""
+                    SELECT id FROM support_tickets
+                    WHERE telegram_id=:uid AND status<>'closed'
+                    ORDER BY updated_at DESC LIMIT 1
+                """),{"uid":uid})).first()
+                ticket_id=row[0] if row else None
+            await s.execute(text("""
+                INSERT INTO support_chat_modes(telegram_id,active,ticket_id)
+                VALUES (:uid,TRUE,:ticket)
+                ON CONFLICT(telegram_id) DO UPDATE
+                  SET active=TRUE,ticket_id=EXCLUDED.ticket_id,updated_at=NOW()
+            """),{"uid":uid,"ticket":ticket_id})
+            await s.execute(text("DELETE FROM support_drafts WHERE telegram_id=:uid"),{"uid":uid})
+            return ticket_id
+
+
+async def stop_support_chat(uid):
+    async with SessionLocal() as s:
+        async with s.begin():
+            await s.execute(text("""
+                UPDATE support_chat_modes SET active=FALSE,updated_at=NOW()
+                WHERE telegram_id=:uid
+            """),{"uid":uid})
+            await s.execute(text("DELETE FROM support_drafts WHERE telegram_id=:uid"),{"uid":uid})
+
+
+async def chat_is_active(uid):
+    async with SessionLocal() as s:
+        return bool((await s.execute(text("""
+            SELECT 1 FROM support_chat_modes
+            WHERE telegram_id=:uid AND active=TRUE
+        """),{"uid":uid})).first())
+
+
+async def add_support_chat_message(uid,body,media_type="text",file_id=None):
+    body=(body or "").strip()
+    if media_type not in ("text","photo","voice","document"):
+        raise ValueError("Неподдерживаемый формат")
+    if len(body)>3000:
+        raise ValueError("Сообщение слишком длинное — максимум 3000 символов")
+    if media_type=="text" and not body:
+        raise ValueError("Напишите сообщение")
+    if media_type!="text" and not file_id:
+        raise ValueError("Не найден вложенный файл")
+    async with SessionLocal() as s:
+        async with s.begin():
+            mode=(await s.execute(text("""
+                SELECT ticket_id FROM support_chat_modes
+                WHERE telegram_id=:uid AND active=TRUE FOR UPDATE
+            """),{"uid":uid})).mappings().first()
+            if not mode: return None
+            ticket_id=mode["ticket_id"]
+            if ticket_id is not None:
+                ticket=(await s.execute(text("""
+                    SELECT id FROM support_tickets WHERE id=:ticket AND telegram_id=:uid
+                    AND status<>'closed' FOR UPDATE
+                """),{"uid":uid,"ticket":ticket_id})).first()
+                if not ticket: ticket_id=None
+            if ticket_id is None:
+                ticket_id=(await s.execute(text("""
+                    INSERT INTO support_tickets(telegram_id,category,status)
+                    VALUES (:uid,'other','open') RETURNING id
+                """),{"uid":uid})).scalar_one()
+                await s.execute(text("""
+                    UPDATE support_chat_modes SET ticket_id=:ticket WHERE telegram_id=:uid
+                """),{"uid":uid,"ticket":ticket_id})
+            await s.execute(text("""
+                INSERT INTO support_messages(ticket_id,actor,body,media_type,file_id)
+                VALUES (:ticket,'user',:body,:kind,:file)
+            """),{"ticket":ticket_id,"body":body,"kind":media_type,"file":file_id})
+            await s.execute(text("""
+                UPDATE support_tickets SET status='open',last_actor='user',
+                    updated_at=NOW() WHERE id=:ticket
+            """),{"ticket":ticket_id})
+            return ticket_id
+
+
+async def support_media_record(message_id):
+    async with SessionLocal() as s:
+        row=(await s.execute(text("""
+            SELECT file_id,media_type FROM support_messages
+            WHERE id=:id AND file_id IS NOT NULL AND actor='user'
+        """),{"id":message_id})).mappings().first()
         return dict(row) if row else None
