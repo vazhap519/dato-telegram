@@ -123,7 +123,7 @@ async def ticket_detail(ticket_id, uid=None):
         row=(await s.execute(text("""
             SELECT t.*,u.username,u.first_name FROM support_tickets t
             LEFT JOIN users u ON u.telegram_id=t.telegram_id
-            WHERE t.id=:ticket AND (:uid IS NULL OR t.telegram_id=:uid)
+            WHERE t.id=:ticket AND (CAST(:uid AS BIGINT) IS NULL OR t.telegram_id=:uid)
         """),{"ticket":ticket_id,"uid":uid})).mappings().first()
         if not row: return None,None
         messages=(await s.execute(text("""
