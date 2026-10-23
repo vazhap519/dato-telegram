@@ -16,6 +16,10 @@ def menu():
 
 async def support_start(message:types.Message):
     if message.chat.type!="private": return
+    if message.from_user:
+        from db.flow import register_user
+        await register_user(message.from_user.id,username=message.from_user.username,
+                            first_name=message.from_user.first_name,last_name=message.from_user.last_name)
     await message.answer("🛟 Помощник «Круга Души»\n\nЗдесь можно задать вопрос о доступе, оплате или работе бота. Ваше обращение получит номер, а ответ придёт сюда в Telegram.",reply_markup=menu())
 
 async def support_callback(query:types.CallbackQuery):
@@ -24,6 +28,9 @@ async def support_callback(query:types.CallbackQuery):
         await query.answer()
         return
     data=query.data or ""
+    from db.flow import register_user
+    await register_user(uid,username=query.from_user.username,
+                        first_name=query.from_user.first_name,last_name=query.from_user.last_name)
     await query.answer()
     if data=="help_menu":
         await cancel_draft(uid)
