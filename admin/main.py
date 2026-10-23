@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
-from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
+from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
@@ -374,6 +374,31 @@ async def support_admin_reply(ticket_id:int,body:str=Form(...),
         import logging
         logging.exception("Support reply delivery failed for ticket %s",ticket_id)
     await mark_delivery(mid,sent)
+    return RedirectResponse(f"/support/{ticket_id}?sent={'ok' if sent else 'fail'}",status_code=303)
+
+
+@app.post("/support/{ticket_id}/retry/{message_id}")
+async def support_retry_failed_message(ticket_id:int,message_id:int,
+                                      csrf_check=Depends(verify_csrf),
+                                      user=Depends(get_current_user)):
+    failed=await failed_support_message(ticket_id,message_id)
+    if not failed:
+        raise HTTPException(400,detail="Неудачное сообщение не найдено")
+    sent=False
+    try:
+        from aiogram import Bot
+        from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            await bot.send_message(failed["telegram_id"],
+                f"🛟 Ответ поддержки по обращению #{ticket_id}:\\n\\n{failed['body']}",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="✍️ Ответить",callback_data=f"help_reply:{ticket_id}")
+                ]]))
+        sent=True
+    except Exception:
+        import logging
+        logging.exception("Retry support delivery failed for ticket %s",ticket_id)
+    await mark_delivery(message_id,sent)
     return RedirectResponse(f"/support/{ticket_id}?sent={'ok' if sent else 'fail'}",status_code=303)
 
 
