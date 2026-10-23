@@ -17,7 +17,8 @@ def offer_buttons(offer_url):
     rows = []
     if offer_url and offer_url.startswith(("https://", "http://")):
         rows.append([InlineKeyboardButton(text="📄 Ознакомиться с офертой", url=offer_url)])
-    rows.append([InlineKeyboardButton(text="✅ Принимаю условия", callback_data="accept_offer")])
+    rows.append([InlineKeyboardButton(text="✅ Принимаю условия", callback_data="accept_offer")],
+        [InlineKeyboardButton(text="🛟 Помощь", callback_data="help_menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def subscription_intro(settings):
@@ -27,7 +28,8 @@ def subscription_intro(settings):
         message_text = "Вы уже приняли условия. Выберите подходящий тариф для участия в сообществе."
     return message_text, InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")],
-        [InlineKeyboardButton(text="👤 Моя подписка", callback_data="my_subscription")]
+        [InlineKeyboardButton(text="👤 Моя подписка", callback_data="my_subscription")],
+        [InlineKeyboardButton(text="🛟 Помощь", callback_data="help_menu")]
     ])
 
 
@@ -45,6 +47,7 @@ def account_keyboard(can_subscribe=True, can_invite=False):
     rows.append([InlineKeyboardButton(
         text="🔄 Обновить статус", callback_data="my_subscription"
     )])
+    rows.append([InlineKeyboardButton(text="🛟 Помощь",callback_data="help_menu")])
     rows.append([InlineKeyboardButton(
         text="⬅️ Назад", callback_data="back_to_subscription"
     )])
