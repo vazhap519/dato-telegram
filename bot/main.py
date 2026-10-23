@@ -45,7 +45,7 @@ dp.callback_query.register(request_group_invite_handler, F.data == "request_grou
 dp.callback_query.register(broadcast_optout_handler, F.data == "broadcast_optout")
 dp.message.register(broadcast_optin_handler, Command("notifications"))
 dp.message.register(broadcast_stop_handler, Command("stopnotifications"))
-dp.message.register(support_text, F.text & ~F.text.startswith("/"))
+dp.message.register(support_text)
 
 async def main():
     await initialize_flow()
