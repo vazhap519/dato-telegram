@@ -283,3 +283,18 @@ async def managed_rejoin_policy(telegram_id, chat_id):
     if row["has_revoked_grant"]:
         return "revoked"
     return "unknown"
+
+
+async def reactivate_known_member(telegram_id, chat_id):
+    """Track a legitimate rejoin using a non-bot link, only for known members."""
+    from db.group_access import has_group_access
+    if not await has_group_access(telegram_id):
+        return False
+    async with SessionLocal() as session:
+        async with session.begin():
+            result = await session.execute(text("""
+                UPDATE subscription_managed_members
+                SET removed_at=NULL,last_joined_at=NOW()
+                WHERE telegram_id=:uid AND chat_id=:chat
+            """),{"uid":telegram_id,"chat":chat_id})
+            return result.rowcount > 0
