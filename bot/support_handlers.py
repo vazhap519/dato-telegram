@@ -28,6 +28,7 @@ async def register_contact(who):
 async def support_start(message:types.Message):
     if message.chat.type!="private" or not message.from_user:return
     await register_contact(message.from_user)
+    await stop_support_chat(message.from_user.id)
     await message.answer("🛟 Поддержка «Круга Души»\n\nНапишите нам прямо здесь — ответ придёт в этот чат. Можно отправлять текст, фото и голосовые сообщения.",reply_markup=menu())
 
 async def support_callback(query:types.CallbackQuery):
@@ -36,7 +37,7 @@ async def support_callback(query:types.CallbackQuery):
     await query.answer()
     uid=query.from_user.id
     data=query.data or ""
-    if data in ("help_chat","help_new","help_menu"):
+    if data in ("help_chat","help_new","help_menu") or data.startswith("help_cat:"):
         if data=="help_menu":
             await stop_support_chat(uid)
             await query.message.answer("🛟 Поддержка «Круга Души»",reply_markup=menu())
