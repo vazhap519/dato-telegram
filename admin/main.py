@@ -358,19 +358,16 @@ async def support_admin_reply(ticket_id:int,body:str=Form(...),
                               csrf_check=Depends(verify_csrf),
                               user=Depends(get_current_user)):
     from aiogram import Bot
+    from bot.support_messages import format_staff_reply, reply_keyboard
     try: uid,mid=await admin_reply(ticket_id,user["user"],body)
     except ValueError as exc: raise HTTPException(400,detail=str(exc))
     sent=False
     try:
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
             await bot.send_message(uid,
-                f"🛟 Ответ поддержки по обращению #{ticket_id}:\\n\\n{body.strip()}",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="✍️ Ответить поддержке",callback_data=f"help_reply:{ticket_id}")
-                ],[
-                    InlineKeyboardButton(text="📂 Мои обращения",callback_data="help_list")
-                ]]))
+                format_staff_reply(ticket_id, body),
+                parse_mode="HTML",
+                reply_markup=reply_keyboard(ticket_id))
             sent=True
     except Exception:
         import logging
@@ -389,13 +386,12 @@ async def support_retry_failed_message(ticket_id:int,message_id:int,
     sent=False
     try:
         from aiogram import Bot
-        from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
+        from bot.support_messages import format_staff_reply,reply_keyboard
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
             await bot.send_message(failed["telegram_id"],
-                f"🛟 Ответ поддержки по обращению #{ticket_id}:\\n\\n{failed['body']}",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="✍️ Ответить",callback_data=f"help_reply:{ticket_id}")
-                ]]))
+                format_staff_reply(ticket_id, failed["body"]),
+                parse_mode="HTML",
+                reply_markup=reply_keyboard(ticket_id))
         sent=True
     except Exception:
         import logging
