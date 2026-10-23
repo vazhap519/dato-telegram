@@ -36,6 +36,7 @@ async def support_callback(query:types.CallbackQuery):
         await cancel_draft(uid)
         await query.message.answer("🛟 Чем помочь?",reply_markup=menu())
     elif data=="help_new":
+        await cancel_draft(uid)
         await query.message.answer("Выберите тему обращения:",reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=label,callback_data="help_cat:"+key)]
             for key,label in CATEGORIES.items()
@@ -52,6 +53,7 @@ async def support_callback(query:types.CallbackQuery):
                 InlineKeyboardButton(text="❌ Отмена",callback_data="help_menu")
             ]]))
     elif data=="help_list":
+        await cancel_draft(uid)
         tickets=await user_tickets(uid)
         if not tickets:
             await query.message.answer("Пока нет обращений.",reply_markup=menu())
@@ -60,6 +62,7 @@ async def support_callback(query:types.CallbackQuery):
         rows.append([InlineKeyboardButton(text="➕ Новое обращение",callback_data="help_new")])
         await query.message.answer("📂 Ваши последние обращения:",reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     elif data.startswith("help_ticket:"):
+        await cancel_draft(uid)
         try: ticket_id=int(data.split(":",1)[1])
         except ValueError:return
         ticket,msgs=await ticket_detail(ticket_id,uid=uid)
