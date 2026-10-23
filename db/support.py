@@ -202,3 +202,15 @@ async def set_ticket_status(ticket_id,status):
             """),{"ticket":ticket_id,"status":status})).first()
             if not row: raise ValueError("Обращение не найдено")
             return row[0]
+
+
+async def failed_support_message(ticket_id,message_id):
+    """Only retry a previously failed admin reply, never a delivered message."""
+    async with SessionLocal() as s:
+        row=(await s.execute(text("""
+            SELECT m.body,t.telegram_id
+            FROM support_messages m JOIN support_tickets t ON t.id=m.ticket_id
+            WHERE m.id=:message AND m.ticket_id=:ticket
+              AND m.actor LIKE 'admin:%' AND m.delivery_status='failed'
+        """),{"message":message_id,"ticket":ticket_id})).mappings().first()
+        return dict(row) if row else None
