@@ -216,6 +216,11 @@ async def set_ticket_status(ticket_id,status):
                 WHERE id=:ticket RETURNING telegram_id
             """),{"ticket":ticket_id,"status":status})).first()
             if not row: raise ValueError("Обращение не найдено")
+            if status == "closed":
+                await s.execute(text("""
+                    UPDATE support_chat_modes SET active=FALSE,updated_at=NOW()
+                    WHERE telegram_id=:uid AND ticket_id=:ticket
+                """),{"uid":row[0],"ticket":ticket_id})
             return row[0]
 
 
