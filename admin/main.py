@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
@@ -47,6 +48,7 @@ app = FastAPI()
 @app.on_event('startup')
 async def setup_onboarding():
     await initialize_flow()
+    await initialize_support()
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
@@ -80,8 +82,11 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/group",
         "/subscriptions/invite",
         "/change-credentials",
+        "/support/reply",
     }
 
+    if request.method == "POST" and request.url.path.startswith("/support/"):
+        protected_paths.add(request.url.path)
     if (
         request.method == "POST"
         and request.url.path in protected_paths
@@ -322,6 +327,65 @@ async def users_page(
 
 # Independent subscription registry. Phase 1: administrative records only,
 # intentionally no payment creation, invitation, or group member removal.
+@app.get("/support")
+async def support_inbox(request: Request, status: str="", search: str="", page: int=1,
+                        user=Depends(get_current_user)):
+    page=max(1,page)
+    rows,total=await list_tickets(status,search,page)
+    counts=await support_counts()
+    return templates.TemplateResponse(request=request,name="support.html",context={
+        "tickets":rows,"total":total,"page":page,"status":status,"search":search,
+        "counts":counts,"statuses":SUPPORT_STATUSES,"categories":SUPPORT_CATEGORIES,
+    })
+
+
+@app.get("/support/{ticket_id}")
+async def support_thread(request: Request,ticket_id:int,
+                         user=Depends(get_current_user)):
+    ticket,messages=await ticket_detail(ticket_id)
+    if not ticket: raise HTTPException(404,detail="Обращение не найдено")
+    return templates.TemplateResponse(request=request,name="support_ticket.html",context={
+        "ticket":ticket,"messages":messages,
+        "categories":SUPPORT_CATEGORIES,"statuses":SUPPORT_STATUSES,
+        "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
+    })
+
+
+@app.post("/support/{ticket_id}/reply")
+async def support_admin_reply(ticket_id:int,body:str=Form(...),
+                              csrf_check=Depends(verify_csrf),
+                              user=Depends(get_current_user)):
+    from aiogram import Bot
+    try: uid,mid=await admin_reply(ticket_id,user["user"],body)
+    except ValueError as exc: raise HTTPException(400,detail=str(exc))
+    sent=False
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            await bot.send_message(uid,
+                f"🛟 Ответ поддержки по обращению #{ticket_id}:\\n\\n{body.strip()}",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="✍️ Ответить поддержке",callback_data=f"help_reply:{ticket_id}")
+                ],[
+                    InlineKeyboardButton(text="📂 Мои обращения",callback_data="help_list")
+                ]]))
+            sent=True
+    except Exception:
+        import logging
+        logging.exception("Support reply delivery failed for ticket %s",ticket_id)
+    await mark_delivery(mid,sent)
+    return RedirectResponse(f"/support/{ticket_id}?sent={'ok' if sent else 'fail'}",status_code=303)
+
+
+@app.post("/support/{ticket_id}/status")
+async def support_change_status(ticket_id:int,status:str=Form(...),
+                                csrf_check=Depends(verify_csrf),
+                                user=Depends(get_current_user)):
+    try: await set_ticket_status(ticket_id,status)
+    except ValueError as exc: raise HTTPException(400,detail=str(exc))
+    return RedirectResponse(f"/support/{ticket_id}?status=ok",status_code=303)
+
+
 @app.get("/subscriptions")
 async def subscriptions_page(
     request: Request, search: str = "", page: int = 1,
