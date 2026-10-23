@@ -179,6 +179,9 @@ async def managed_member_join_handler(event: types.ChatMemberUpdated):
         # Right before action, repeat the check to avoid racing a renewal.
         if await managed_rejoin_policy(uid,event.chat.id) == policy:
             await remove_invalid_direct_join(event)
+    elif policy == "allowed":
+        from db.subscription_automation import reactivate_known_member
+        await reactivate_known_member(uid,event.chat.id)
     elif policy == "legacy":
         log.info("Legacy group join left unmanaged uid=%s",uid)
     elif policy == "unknown":
