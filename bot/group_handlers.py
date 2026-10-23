@@ -71,7 +71,17 @@ async def group_join_request_handler(request: types.ChatJoinRequest):
         return
     link = request.invite_link
     if not link or not (link.name or "").startswith(INVITE_PREFIX):
-        # Leave unrelated manual/Tribute requests alone.
+        # Protect only users already enrolled through our system.
+        # Legacy members and unrelated requests stay untouched.
+        from db.subscription_automation import managed_rejoin_policy
+        policy = await managed_rejoin_policy(request.from_user.id,request.chat.id)
+        if policy in ("revoked","expired"):
+            if await managed_rejoin_policy(request.from_user.id,request.chat.id) == policy:
+                try:
+                    await request.bot.decline_chat_join_request(request.chat.id,request.from_user.id)
+                    log.info("Denied managed-account rejoin request uid=%s",request.from_user.id)
+                except Exception:
+                    log.exception("Could not decline unauthorized join request")
         return
     uid = request.from_user.id
     valid = await invite_for_request(uid, request.chat.id, link.invite_link)
