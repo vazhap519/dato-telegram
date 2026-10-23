@@ -28,7 +28,6 @@ async def register_contact(who):
 async def support_start(message:types.Message):
     if message.chat.type!="private" or not message.from_user:return
     await register_contact(message.from_user)
-    await stop_support_chat(message.from_user.id)
     await message.answer("🛟 Поддержка «Круга Души»\n\nНапишите нам прямо здесь — ответ придёт в этот чат. Можно отправлять текст, фото и голосовые сообщения.",reply_markup=menu())
 
 async def support_callback(query:types.CallbackQuery):
@@ -39,16 +38,15 @@ async def support_callback(query:types.CallbackQuery):
     data=query.data or ""
     if data in ("help_chat","help_new","help_menu") or data.startswith("help_cat:"):
         if data=="help_menu":
-            await stop_support_chat(uid)
             await query.message.answer("🛟 Поддержка «Круга Души»",reply_markup=menu())
             return
         await start_support_chat(uid)
         await query.message.answer(
-            "💬 Вы на связи с поддержкой.\n\nПросто пишите сообщения, отправляйте фото или голосовые — всё попадёт в один диалог.\n\nЧтобы вернуться к обычным функциям бота, нажмите «Завершить разговор».",
+            "💬 Чат поддержки открыт.\n\nПишите сюда в любое время — даже если мы ответим не сразу. Все сообщения сохраняются и попадут в переписку.\n\nЧтобы отключить приём сообщений поддержкой, нажмите «Завершить разговор».",
             reply_markup=chat_controls())
     elif data=="help_exit":
         await stop_support_chat(uid)
-        await query.message.answer("✅ Разговор завершён. История сохранена. Если понадобится помощь, возвращайтесь сюда.",reply_markup=menu())
+        await query.message.answer("✅ Вы вышли из чата поддержки. История сохранена. Чтобы снова написать, нажмите «Написать в поддержку».",reply_markup=menu())
     elif data=="help_list":
         tickets=await user_tickets(uid)
         if not tickets:
