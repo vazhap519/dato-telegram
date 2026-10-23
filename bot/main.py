@@ -7,6 +7,8 @@ from aiogram.filters import CommandStart, Command
 from dotenv import load_dotenv
 
 from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler, choose_plan_handler, back_to_subscription_handler, my_subscription_command, my_subscription_callback, request_group_invite_handler
+from db.support import initialize_support
+from bot.support_handlers import support_start, support_callback, support_text
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
 from db.group_access import initialize_group_access
@@ -28,6 +30,8 @@ dp = Dispatcher()
 dp.chat_join_request.register(group_join_request_handler)
 dp.chat_member.register(managed_member_join_handler)
 dp.message.register(start_handler, CommandStart())
+dp.message.register(support_start, Command("help", "support"))
+dp.callback_query.register(support_callback, F.data.startswith("help_"))
 dp.message.register(group_id_handler, Command("chatid"))
 dp.message.register(my_subscription_command, Command('subscription', 'my_subscription'))
 dp.message.register(upload_command_handler, Command('upload'))
@@ -41,9 +45,11 @@ dp.callback_query.register(request_group_invite_handler, F.data == "request_grou
 dp.callback_query.register(broadcast_optout_handler, F.data == "broadcast_optout")
 dp.message.register(broadcast_optin_handler, Command("notifications"))
 dp.message.register(broadcast_stop_handler, Command("stopnotifications"))
+dp.message.register(support_text, F.text & ~F.text.startswith("/"))
 
 async def main():
     await initialize_flow()
+    await initialize_support()
     await initialize_subscriptions()
     await initialize_group_access()
     await initialize_expiry_monitor()
