@@ -257,6 +257,7 @@ async def dashboard(
     settings = await get_settings()
     flow = await get_flow_settings()
     stats = await registration_stats()
+    support_summary = await support_counts()
     csrf_token = make_csrf_token(
         request.cookies.get("access_token", "")
     )
@@ -269,6 +270,7 @@ async def dashboard(
             "settings": settings,
             "flow": flow,
             "stats": stats,
+            "support_summary": support_summary,
             "user": user,
             "csrf_token": csrf_token
         }
