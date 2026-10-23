@@ -1,0 +1,14 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Обращения • Круг Души</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 text-gray-100"><main class="max-w-6xl mx-auto p-4 md:p-8 space-y-6">
+<header class="flex flex-wrap justify-between items-center gap-3"><div><h1 class="text-3xl font-bold">🛟 Поддержка</h1><p class="text-sm text-gray-400">Обращения участников «Круга Души»</p></div><a class="bg-gray-700 px-4 py-2 rounded-lg" href="/dashboard">← Админка</a></header>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+{% for key,label in statuses.items() %}<a href="/support?status={{ key }}" class="bg-gray-800 rounded-xl p-4 hover:bg-gray-700"><div class="text-gray-400 text-sm">{{ label }}</div><div class="text-2xl font-bold">{{ counts.get(key,0) }}</div></a>{% endfor %}
+</div>
+<form method="get" action="/support" class="flex flex-wrap gap-2 bg-gray-800 p-4 rounded-xl"><input type="search" name="search" value="{{ search }}" placeholder="Номер обращения, Telegram ID или имя" class="flex-1 min-w-52 bg-gray-900 px-3 py-2 rounded"><select name="status" class="bg-gray-900 px-3 py-2 rounded"><option value="">Все статусы</option>{% for key,label in statuses.items() %}<option value="{{ key }}" {% if key==status %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="bg-indigo-600 rounded px-4 py-2">Найти</button></form>
+<section class="bg-gray-800 rounded-xl divide-y divide-gray-700">
+{% for t in tickets %}
+<a href="/support/{{ t.id }}" class="block p-4 hover:bg-gray-700"><div class="flex flex-wrap items-center justify-between gap-2"><div class="font-semibold">#{{ t.id }} · {{ categories.get(t.category,t.category) }}</div><span class="text-sm {% if t.status=='open' %}text-amber-300{% elif t.status=='answered' %}text-green-300{% else %}text-gray-400{% endif %}">{{ statuses.get(t.status,t.status) }}</span></div><div class="text-gray-400 text-sm mt-1">{{ t.first_name or t.username or 'Участник' }} · ID {{ t.telegram_id }} · Сообщений: {{ t.message_count }} · {{ t.updated_at|tbilisi_time }}</div></a>
+{% else %}<p class="p-6 text-gray-400">Обращений пока нет.</p>{% endfor %}
+</section>
+<div class="flex gap-3 items-center">{% if page>1 %}<a href="/support?status={{ status }}&search={{ search|urlencode }}&page={{ page-1 }}" class="bg-gray-700 rounded px-3 py-2">← Назад</a>{% endif %}<span class="text-gray-400 text-sm">Страница {{ page }} · Всего {{ total }}</span>{% if page*30<total %}<a href="/support?status={{ status }}&search={{ search|urlencode }}&page={{ page+1 }}" class="bg-gray-700 rounded px-3 py-2">Далее →</a>{% endif %}</div>
+</main></body></html>
