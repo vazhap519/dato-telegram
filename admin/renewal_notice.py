@@ -20,8 +20,8 @@ async def notify_renewal(telegram_id, new_expiry, actor):
                     await bot.send_message(
                         telegram_id,
                         "✅ Доступ в «Круг Души» продлён до "
-                        + local.strftime("%d.%m.%Y %H:%M")
-                        + " (Тбилиси). Вы остаётесь участником сообщества."
+                        + local.strftime("%d.%m.%Y")
+                        + ". Вы остаётесь участником сообщества."
                     )
                 except Exception:
                     log.exception("Renewal confirmation not delivered to %s", telegram_id)
@@ -33,8 +33,8 @@ async def notify_renewal(telegram_id, new_expiry, actor):
                     await bot.send_message(
                         telegram_id,
                         "✅ Доступ в «Круг Души» продлён до "
-                        + local.strftime("%d.%m.%Y %H:%M")
-                        + " (Тбилиси). Приглашение уже отправлено выше."
+                        + local.strftime("%d.%m.%Y")
+                        + ". Приглашение уже отправлено выше."
                     )
                 except Exception:
                     log.exception("Renewal date confirmation not delivered to %s",telegram_id)
