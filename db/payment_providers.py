@@ -49,8 +49,12 @@ async def providers():
 
 async def save_provider(code,public_url,notes,enabled,actor):
     from urllib.parse import urlparse
-    if code not in KNOWN:
-        raise ValueError("Новый провайдер требует отдельной интеграции API")
+    async with SessionLocal() as s:
+        known=(await s.execute(text(
+            "SELECT 1 FROM payment_provider_settings WHERE code=:code"
+        ),{"code":code})).first()
+    if not known:
+        raise ValueError("Платёжная система не найдена")
     public_url=(public_url or "").strip()
     if len(public_url)>1000 or len(notes or "")>500:
         raise ValueError("Слишком длинное значение")
@@ -71,4 +75,30 @@ async def save_provider(code,public_url,notes,enabled,actor):
             await s.execute(text("""
                 INSERT INTO payment_provider_audit(code,actor,action)
                 VALUES (:code,:actor,'settings_saved')
+            """),{"code":code,"actor":actor})
+
+
+async def register_provider(code,name,actor):
+    """Register future provider as inactive metadata, not a payment integration."""
+    import re
+    code=(code or "").strip().lower()
+    name=(name or "").strip()
+    if not re.fullmatch(r"[a-z0-9_-]{2,40}",code):
+        raise ValueError("Код: 2–40 латинских букв, цифр, дефисов или подчёркиваний")
+    if not 2<=len(name)<=80:
+        raise ValueError("Название: от 2 до 80 символов")
+    async with SessionLocal() as s:
+        async with s.begin():
+            exists=(await s.execute(text("""
+                SELECT 1 FROM payment_provider_settings WHERE code=:code
+            """),{"code":code})).first()
+            if exists: raise ValueError("Провайдер с таким кодом уже существует")
+            await s.execute(text("""
+                INSERT INTO payment_provider_settings
+                    (code,display_name,enabled,integration_status,updated_by)
+                VALUES (:code,:name,FALSE,'planned',:actor)
+            """),{"code":code,"name":name,"actor":actor})
+            await s.execute(text("""
+                INSERT INTO payment_provider_audit(code,actor,action)
+                VALUES (:code,:actor,'registered')
             """),{"code":code,"actor":actor})
