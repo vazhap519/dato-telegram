@@ -14,7 +14,7 @@
 <div><h2 class="font-semibold text-xl">💳 Платёжные системы</h2><p class="text-gray-400 text-sm mt-1">Независимые настройки провайдеров. Интеграции API подключаются отдельно.</p></div>
 <span class="rounded-full border border-amber-700 bg-amber-900/30 px-3 py-1 text-xs text-amber-200">API пока не подключён</span>
 </div>
-{% if request.query_params.get('provider')=='saved' %}<p class="text-green-300 text-sm">Настройки провайдера сохранены.</p>{% endif %}
+{% if request.query_params.get('provider')=='saved' %}<p class="text-green-300 text-sm">Настройки провайдера сохранены.</p>{% elif request.query_params.get('provider')=='added' %}<p class="text-green-300 text-sm">Платёжная система добавлена в реестр (пока без API).</p>{% endif %}
 <div class="grid md:grid-cols-2 gap-3">
 {% for provider in payment_providers %}
 <form method="post" action="/subscriptions/provider" class="bg-gray-700/60 border border-gray-600 rounded-xl p-4 space-y-3">
@@ -33,11 +33,14 @@
 <p class="text-xs text-amber-200">Переключатель сохраняет предпочтение. Пока нет проверки API и вебхуков, оплата и автоматическая выдача доступа через этот провайдер выключены.</p>
 <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg">Сохранить настройки</button>
 </form>{% endfor %}
-<div class="rounded-xl border border-dashed border-gray-600 p-5 flex flex-col justify-center gap-2">
-<h3 class="font-semibold">➕ Другие платёжные системы</h3>
-<p class="text-gray-400 text-sm">Структура поддерживает несколько провайдеров. Новую систему подключим отдельным модулем с проверкой её API и вебхуков — без изменений учёта действующих подписок.</p>
-<p class="text-xs text-gray-500">Секретные API-ключи не вводятся в эту форму и не сохраняются в базе в открытом виде.</p>
-</div>
+<form method="post" action="/subscriptions/provider/add" class="rounded-xl border border-dashed border-gray-600 p-5 flex flex-col gap-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<h3 class="font-semibold">➕ Добавить платёжную систему</h3>
+<label class="text-sm">Название<input name="name" required minlength="2" maxlength="80" placeholder="Например, Stripe" class="w-full mt-1 p-3 rounded-lg bg-gray-800"></label>
+<label class="text-sm">Внутренний код<input name="code" required minlength="2" maxlength="40" pattern="[a-zA-Z0-9_-]+" placeholder="stripe" class="w-full mt-1 p-3 rounded-lg bg-gray-800"></label>
+<p class="text-gray-400 text-xs">Добавится как неподключённая система. Для реальной оплаты позже понадобится отдельная API-интеграция и проверка вебхуков.</p>
+<button class="rounded-lg px-4 py-2 bg-indigo-600 hover:bg-indigo-500 self-start">Добавить</button>
+</form>
 </div>
 </section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscription-automation">
