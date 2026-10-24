@@ -131,3 +131,40 @@ async def finish_expiry_alert(alert_id, success):
                 UPDATE subscription_expiry_notifications
                 SET status=:status, attempted_at=NOW() WHERE id=:id
             """),{"id":alert_id,"status":"sent" if success else "failed"})
+
+
+async def expiry_alert_still_valid(alert):
+    """Revalidate pending alert immediately before delivery, including renewals."""
+    async with SessionLocal() as s:
+        match=(await s.execute(text(ACCESS_CTE+"""
+            SELECT 1 FROM effective e
+            WHERE e.telegram_id=:uid
+              AND e.permanent=FALSE
+              AND e.last_expires=:expires
+              AND (
+                (:kind='three_days' AND e.last_expires>NOW()+INTERVAL '1 day'
+                  AND e.last_expires<=NOW()+INTERVAL '3 days')
+                OR (:kind='one_day' AND e.last_expires>NOW()
+                  AND e.last_expires<=NOW()+INTERVAL '1 day')
+                OR (:kind='expired' AND e.last_expires<=NOW()
+                  AND e.last_expires>NOW()-INTERVAL '1 day')
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM access_grants g
+                WHERE g.telegram_id=e.telegram_id AND g.resource='community'
+                  AND g.revoked_at IS NULL AND g.starts_at>NOW()
+              )
+        """),{"uid":alert["telegram_id"],"expires":alert["expires_at"],
+               "kind":alert["alert_kind"]})).first()
+        return bool(match)
+
+
+async def skip_expiry_alert(alert_id):
+    """Remember that a queued notice was superseded, without claiming delivery."""
+    async with SessionLocal() as s:
+        async with s.begin():
+            await s.execute(text("""
+                UPDATE subscription_expiry_notifications
+                SET status='skipped',attempted_at=NOW()
+                WHERE id=:id AND status='pending'
+            """),{"id":alert_id})
