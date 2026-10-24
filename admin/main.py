@@ -19,7 +19,7 @@ from db.support import initialize_support, list_tickets, ticket_detail, support_
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
-from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
+from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
 from db.queries import get_users_count, get_settings
@@ -85,6 +85,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/removal-test",
         "/subscriptions/plan",
         "/subscriptions/plan/create",
+        "/subscriptions/plan/delete",
         "/subscriptions/group",
         "/subscriptions/invite",
         "/change-credentials",
@@ -859,6 +860,22 @@ async def subscriptions_plan(
     except (InvalidOperation,ValueError) as exc:
         raise HTTPException(400, detail=str(exc) if isinstance(exc,ValueError) else "Неверная цена")
     return RedirectResponse("/subscriptions",status_code=303)
+
+
+@app.post("/subscriptions/plan/delete")
+async def subscriptions_plan_delete(
+    plan_id: int = Form(...),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    if confirm != "DELETE_PLAN":
+        raise HTTPException(400, detail="Подтвердите удаление тарифа")
+    try:
+        await archive_plan(plan_id,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    return RedirectResponse("/subscriptions?plan=deleted#subscription-plans",status_code=303)
 
 
 @app.post("/subscriptions/plan/create")
