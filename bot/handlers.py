@@ -65,13 +65,13 @@ async def show_subscription_account(bot, telegram_id, message=None):
             lines.append("✅ Доступ: постоянный")
         elif current["ends_at"]:
             lines.append("✅ Внутренний доступ действителен до: " +
-                         current["ends_at"].astimezone(TBILISI_TZ).strftime("%d.%m.%Y %H:%M") + " (Тбилиси)")
+                         current["ends_at"].astimezone(TBILISI_TZ).strftime("%d.%m.%Y"))
         else:
             lines.append("✅ Доступ назначен администратором")
         lines.append("ℹ️ Если вы ещё не в группе, получите приглашение кнопкой ниже.")
     elif paid:
         lines.append("✅ Оплаченный период учтён до: " +
-                     paid["paid_until"].astimezone(TBILISI_TZ).strftime("%d.%m.%Y %H:%M") + " (Тбилиси)")
+                     paid["paid_until"].astimezone(TBILISI_TZ).strftime("%d.%m.%Y"))
         if paid["plan_name"]:
             lines.append("Тариф: " + paid["plan_name"])
     else:
