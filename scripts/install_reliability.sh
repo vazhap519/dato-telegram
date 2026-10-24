@@ -9,7 +9,7 @@ BACKUPS="${DATO_BACKUP_DIR:-/var/backups/dato-telegram}"
 STATE="/var/lib/dato-reliability"
 
 if [[ "$EUID" -ne 0 ]]; then
-  echo "Run as root: sudo bash $SCRIPT_DIR/install_reliability.sh" >&2
+  echo "Run as root: sudo bash $APP_DIR/scripts/install_reliability.sh" >&2
   exit 1
 fi
 for executable in python3 pg_dump pg_restore pg_isready systemctl; do
