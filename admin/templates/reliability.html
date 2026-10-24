@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Резервные копии и мониторинг</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 text-white min-h-screen">
+<main class="max-w-4xl mx-auto p-5 md:p-8 space-y-5">
+<header class="flex flex-wrap items-center justify-between gap-3">
+<div><h1 class="text-2xl md:text-3xl font-bold">🛡 Резервные копии и мониторинг</h1>
+<p class="text-sm text-gray-400 mt-2">Настройки предупреждений и безопасность базы «Круга Души»</p></div>
+<a class="bg-gray-700 hover:bg-gray-600 rounded-lg px-4 py-2" href="/dashboard">← Админка</a></header>
+<section class="grid sm:grid-cols-2 gap-3">
+<div class="bg-gray-800 rounded-xl p-4"><div class="font-semibold">💾 Резервное копирование</div>
+<p class="text-gray-300 text-sm mt-2">Ежедневно, ориентировочно 06:20 по Тбилиси. Хранятся последние 14 успешных архивов.</p>
+<p class="text-amber-200 text-xs mt-2">Расписание выполняется на Vultr через systemd. Эта страница не проверяет состояние таймера на сервере.</p></div>
+<div class="bg-gray-800 rounded-xl p-4"><div class="font-semibold">📡 Мониторинг</div>
+<p class="text-gray-300 text-sm mt-2">Примерно каждые 15 минут: PostgreSQL, свежесть копии, доступность админ-панели.</p>
+<p class="text-amber-200 text-xs mt-2">Имена служб бота и панели добавляются отдельно в серверный конфигурационный файл.</p></div>
+</section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-4">
+<h2 class="text-xl font-semibold">🔔 Уведомления администратору</h2>
+{% if request.query_params.get('saved') %}<p class="text-green-300 bg-green-900/20 rounded-lg p-3">Настройки сохранены. Следующие проверки будут использовать выбранный Telegram ID.</p>{% endif %}
+{% if request.query_params.get('test')=='sent' %}<p class="text-green-300 bg-green-900/20 rounded-lg p-3">Тестовое уведомление успешно отправлено через Telegram API.</p>
+{% elif request.query_params.get('test')=='failed' %}<p class="text-amber-300 bg-amber-900/20 rounded-lg p-3">Не удалось доставить сообщение. Убедитесь, что администратор запустил бота в личном чате и ID указан верно.</p>
+{% elif request.query_params.get('test')=='disabled' %}<p class="text-amber-300 bg-amber-900/20 rounded-lg p-3">Сначала укажите Telegram ID и включите уведомления.</p>{% endif %}
+<p class="text-sm text-gray-300">Укажи <strong>числовой Telegram ID</strong> личного аккаунта. Перед тестом открой своего бота и нажми /start. Имя пользователя (@username) сюда не подходит.</p>
+<form method="post" action="/reliability/settings" class="space-y-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label class="block text-sm">Telegram ID администратора
+<input type="number" min="1" max="9999999999999" step="1" name="telegram_chat_id"
+value="{{ settings.telegram_chat_id or '' }}" placeholder="Например, 123456789"
+class="mt-2 block w-full bg-gray-700 rounded-lg p-3"></label>
+<label class="flex items-center gap-3"><input type="checkbox" name="enabled" value="true" {{ 'checked' if settings.enabled else '' }}>
+<span>Присылать мне сообщения о проблемах с сервером и восстановлении</span></label>
+<div class="flex flex-wrap gap-2">
+<button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3 font-semibold">💾 Сохранить</button>
+</div></form>
+<form method="post" action="/reliability/test">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<button type="submit" class="bg-emerald-700 hover:bg-emerald-600 rounded-lg px-4 py-3 font-semibold">✉️ Отправить тестовое уведомление</button>
+</form>
+<p class="text-xs text-gray-400">Тест отправляет только сообщение — он не создаёт сбой, не восстанавливает базу и не запускает резервное копирование.</p>
+</section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<h2 class="text-xl font-semibold">🔐 Проверка восстановления</h2>
+<p class="text-sm text-gray-300">Резервная копия хранится в приватной папке сервера. Проверка формата проводится при её создании. Для полноценного испытания выполняется восстановление в отдельную временную базу.</p>
+<code class="block bg-gray-950 p-3 rounded-lg text-sm overflow-x-auto">sudo python3 /opt/dato-telegram/scripts/reliability.py restore-test</code>
+<p class="text-xs text-amber-200">Команда требует права CREATEDB у PostgreSQL-пользователя. Рабочая база не перезаписывается.</p>
+</section></main></body></html>
