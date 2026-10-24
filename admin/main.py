@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
-from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider
+from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
@@ -468,6 +468,7 @@ async def support_change_status(ticket_id:int,status:str=Form(...),
 @app.get("/subscriptions")
 async def subscriptions_page(
     request: Request, search: str = "", page: int = 1, status: str = "all",
+    payment_provider: str = "all", buyers_only: bool = False,
     user=Depends(get_current_user),
 ):
     from urllib.parse import urlencode
@@ -475,24 +476,31 @@ async def subscriptions_page(
         status="all"
     summary, plans = await subscriptions_overview()
     payment_providers = await list_payment_providers()
+    provider_counts = await payment_provider_counts()
+    valid_providers={p["code"] for p in payment_providers}
+    if payment_provider not in valid_providers:
+        payment_provider="all"
+    if payment_provider!="all":
+        buyers_only=True
     tg_group = await group_settings()
     automation = await automation_settings()
     managed_total = await managed_count(tg_group.get('chat_id'))
     expiry_people = await expiry_overview()
     expiry_summary = await expiry_counts()
-    users, total = await subscription_people(search, page, status)
+    users, total = await subscription_people(search, page, status, payment_provider, buyers_only)
     page = max(1, min(page, 100000))
     return templates.TemplateResponse(
         request=request, name="subscriptions.html",
         context={
             "summary": summary, "plans": plans, "users": users, "tg_group":tg_group,
-            "payment_providers":payment_providers,"access_filter":status,
+            "payment_providers":payment_providers,"provider_counts":provider_counts,
+            "payment_provider_filter":payment_provider,"buyers_only":buyers_only,"access_filter":status,
             "subscription_automation":automation,"managed_total":managed_total,
             "expiry_people":expiry_people,"expiry_summary":expiry_summary,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
-            "next_url": "/subscriptions?" + urlencode({"search":search,"status":status,"page":page+1}),
-            "prev_url": "/subscriptions?" + urlencode({"search":search,"status":status,"page":page-1}),
+            "next_url": "/subscriptions?" + urlencode({"search":search,"status":status,"payment_provider":payment_provider,"buyers_only":buyers_only,"page":page+1}),
+            "prev_url": "/subscriptions?" + urlencode({"search":search,"status":status,"payment_provider":payment_provider,"buyers_only":buyers_only,"page":page-1}),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
