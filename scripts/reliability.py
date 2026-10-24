@@ -116,6 +116,39 @@ def backup():
             partial.unlink(missing_ok=True)
 
 
+
+def restore_test(archive=None):
+    """Restore into a new temporary sibling database, NEVER into production."""
+    import secrets
+    file = Path(archive) if archive else latest_backup()
+    if file is None:
+        raise RuntimeError("No archive for restore test")
+    verify(file)
+    env = postgres_environment()
+    dbname = "dato_restore_test_" + secrets.token_hex(5)
+    if not dbname.startswith("dato_restore_test_"):
+        raise RuntimeError("Unsafe test database name")
+    # The DB role must have CREATEDB to perform this optional test.
+    created = False
+    try:
+        run(["createdb", "--template=template0", dbname], env=env, timeout=40)
+        created = True
+        restored_env = env.copy()
+        restored_env["PGDATABASE"] = dbname
+        run(["pg_restore", "--exit-on-error", "--no-owner", "--no-privileges",
+             "--dbname", dbname, str(file)], env=restored_env, timeout=300)
+        check = run(["psql", "-X", "-A", "-t", "-c",
+                     "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'"],
+                    env=restored_env, timeout=30)
+        tables = int(check.stdout.strip() or b"0")
+        if tables < 1:
+            raise RuntimeError("Restored database contains no application tables")
+        print("Restore test PASSED into temporary DB:", dbname, "tables:", tables)
+    finally:
+        if created:
+            run(["dropdb", "--if-exists", dbname], env=env, timeout=40)
+            print("Temporary restore database removed:", dbname)
+
 def health():
     issues = []
     try:
@@ -199,7 +232,7 @@ def monitor():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("backup","verify","monitor"))
+    parser.add_argument("command", choices=("backup","verify","restore-test","monitor"))
     parser.add_argument("archive", nargs="?")
     args = parser.parse_args()
     load_env()
@@ -212,6 +245,8 @@ def main():
         verify(path)
         print("Archive manifest is readable:", path)
         print("Note: verifying an archive does not replace a test restore to a separate database.")
+    elif args.command == "restore-test":
+        restore_test(args.archive)
     else:
         return monitor()
     return 0
