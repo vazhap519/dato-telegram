@@ -1,7 +1,7 @@
 """Scheduled entitlement reminders; no group kicks or payment changes."""
 import asyncio
 import logging
-from db.expiry_monitor import claim_expiry_alerts, finish_expiry_alert
+from db.expiry_monitor import claim_expiry_alerts, finish_expiry_alert, expiry_alert_still_valid, skip_expiry_alert
 from db.subscription_automation import automation_settings
 
 logger=logging.getLogger(__name__)
@@ -15,6 +15,11 @@ async def expiry_worker(bot):
                 continue
             alerts=await claim_expiry_alerts()
             for alert in alerts:
+                # A renewal or access revocation may have happened after queueing.
+                if not await expiry_alert_still_valid(alert):
+                    await skip_expiry_alert(alert["id"])
+                    logger.info("Skipped superseded expiry notice uid=%s",alert["telegram_id"])
+                    continue
                 kind=alert["alert_kind"]
                 if kind=="three_days":
                     msg=("⏳ Доступ в «Круг Души» скоро закончится. "
@@ -37,6 +42,10 @@ async def expiry_worker(bot):
 
                     )
                 try:
+                    # Check once more immediately before the Telegram API call.
+                    if not await expiry_alert_still_valid(alert):
+                        await skip_expiry_alert(alert["id"])
+                        continue
                     await bot.send_message(alert["telegram_id"],msg)
                     await finish_expiry_alert(alert["id"],True)
                 except Exception:
