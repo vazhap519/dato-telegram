@@ -98,7 +98,9 @@ async def claim_expiry_alerts(limit=40):
                       AND n.expires_at=e.last_expires
                       AND n.alert_kind=alert_window.kind
                       AND (
-                        n.status IN ('sent','pending','skipped')
+                        n.status IN ('sent','skipped')
+                        OR (n.status='pending'
+                            AND n.attempted_at>NOW()-INTERVAL '10 minutes')
                         OR (n.status='failed'
                             AND n.attempted_at>NOW()-INTERVAL '5 minutes')
                       )
@@ -110,13 +112,22 @@ async def claim_expiry_alerts(limit=40):
             for rec in records:
                 inserted=(await s.execute(text("""
                     INSERT INTO subscription_expiry_notifications
-                      (telegram_id,alert_kind,expires_at)
-                    VALUES (:uid,:kind,:exp)
+                      (telegram_id,alert_kind,expires_at,attempted_at)
+                    VALUES (:uid,:kind,:exp,NOW())
                     ON CONFLICT(telegram_id,alert_kind,expires_at)
-                    DO UPDATE SET status='pending'
-                    WHERE subscription_expiry_notifications.status='failed'
-                      AND subscription_expiry_notifications.attempted_at
-                          <NOW()-INTERVAL '5 minutes'
+                    DO UPDATE SET status='pending',attempted_at=NOW()
+                    WHERE (
+                        subscription_expiry_notifications.status='failed'
+                        AND subscription_expiry_notifications.attempted_at
+                            <NOW()-INTERVAL '5 minutes'
+                    ) OR (
+                        subscription_expiry_notifications.status='pending'
+                        AND (
+                            subscription_expiry_notifications.attempted_at IS NULL
+                            OR subscription_expiry_notifications.attempted_at
+                                <NOW()-INTERVAL '10 minutes'
+                        )
+                    )
                     RETURNING id
                 """),{"uid":rec["telegram_id"],"kind":rec["kind"],"exp":rec["last_expires"]})).scalar_one_or_none()
                 if inserted is not None:
