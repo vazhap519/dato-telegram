@@ -12,7 +12,7 @@ if [[ "$EUID" -ne 0 ]]; then
   echo "Run as root: sudo bash $APP_DIR/scripts/install_reliability.sh" >&2
   exit 1
 fi
-for executable in python3 pg_dump pg_restore pg_isready systemctl; do
+for executable in python3 pg_dump pg_restore pg_isready psql createdb dropdb systemctl; do
   if ! command -v "$executable" >/dev/null 2>&1; then
     echo "Missing $executable. Install PostgreSQL client tools first." >&2
     exit 1
