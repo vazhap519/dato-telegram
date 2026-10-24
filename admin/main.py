@@ -607,10 +607,10 @@ async def subscriptions_grant(
                 if expires is None:
                     notice = "✅ Вам предоставлен постоянный доступ в «Круг Души». Вы уже состоите в группе."
                 else:
-                    date_label = expires.astimezone(ZoneInfo("Asia/Tbilisi")).strftime("%d.%m.%Y %H:%M")
+                    date_label = expires.astimezone(ZoneInfo("Asia/Tbilisi")).strftime("%d.%m.%Y")
                     notice = (
                         "✅ Доступ в «Круг Души» подтверждён до "
-                        + date_label + " (Тбилиси). Вы уже состоите в группе."
+                        + date_label + ". Вы уже состоите в группе."
                     )
                 try:
                     await telegram.send_message(telegram_id, notice)
