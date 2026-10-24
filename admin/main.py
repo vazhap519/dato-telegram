@@ -602,6 +602,23 @@ async def subscriptions_grant(
     try:
         async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
             invite_status = await send_group_invitation(telegram, telegram_id, user["user"])
+            if invite_status == "already_member":
+                from zoneinfo import ZoneInfo
+                if expires is None:
+                    notice = "✅ Вам предоставлен постоянный доступ в «Круг Души». Вы уже состоите в группе."
+                else:
+                    date_label = expires.astimezone(ZoneInfo("Asia/Tbilisi")).strftime("%d.%m.%Y %H:%M")
+                    notice = (
+                        "✅ Доступ в «Круг Души» подтверждён до "
+                        + date_label + " (Тбилиси). Вы уже состоите в группе."
+                    )
+                try:
+                    await telegram.send_message(telegram_id, notice)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Grant confirmation not delivered for %s", telegram_id
+                    )
+                    invite_status = "message_failed"
     except Exception:
         logging.getLogger(__name__).exception("Invitation after grant failed for %s", telegram_id)
         invite_status = "failed"
