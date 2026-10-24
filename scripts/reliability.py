@@ -180,7 +180,7 @@ def health():
         service = service.strip()
         if service:
             import re
-            if not re.fullmatch(r"[A-Za-z0-9@_.-]{1,100}\\.service",service):
+            if not re.fullmatch(r"[A-Za-z0-9@_.-]{1,100}\.service",service):
                 issues.append("Invalid configured systemd service name")
                 continue
             try:
