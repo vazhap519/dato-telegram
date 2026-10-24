@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
-from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider
+from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
@@ -79,6 +79,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/renew",
         "/subscriptions/automation",
         "/subscriptions/provider",
+        "/subscriptions/provider/add",
         "/subscriptions/removal-test",
         "/subscriptions/plan",
         "/subscriptions/plan/create",
@@ -495,6 +496,19 @@ async def subscriptions_page(
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
+
+
+@app.post("/subscriptions/provider/add")
+async def add_payment_provider(
+    code: str = Form(...), name: str = Form(...),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    try:
+        await register_provider(code,name,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/subscriptions?provider=added#payment-providers",status_code=303)
 
 
 @app.post("/subscriptions/provider")
