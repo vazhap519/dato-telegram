@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
@@ -52,6 +53,7 @@ async def setup_onboarding():
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
+    await initialize_payment_providers()
     await initialize_group_access()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
@@ -76,6 +78,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/grant/expiry",
         "/subscriptions/renew",
         "/subscriptions/automation",
+        "/subscriptions/provider",
         "/subscriptions/removal-test",
         "/subscriptions/plan",
         "/subscriptions/plan/create",
@@ -463,31 +466,52 @@ async def support_change_status(ticket_id:int,status:str=Form(...),
 
 @app.get("/subscriptions")
 async def subscriptions_page(
-    request: Request, search: str = "", page: int = 1,
+    request: Request, search: str = "", page: int = 1, status: str = "all",
     user=Depends(get_current_user),
 ):
     from urllib.parse import urlencode
+    if status not in ("all","active","lifetime","expiring","expired","none"):
+        status="all"
     summary, plans = await subscriptions_overview()
+    payment_providers = await list_payment_providers()
     tg_group = await group_settings()
     automation = await automation_settings()
     managed_total = await managed_count(tg_group.get('chat_id'))
     expiry_people = await expiry_overview()
     expiry_summary = await expiry_counts()
-    users, total = await subscription_people(search, page)
+    users, total = await subscription_people(search, page, status)
     page = max(1, min(page, 100000))
     return templates.TemplateResponse(
         request=request, name="subscriptions.html",
         context={
             "summary": summary, "plans": plans, "users": users, "tg_group":tg_group,
+            "payment_providers":payment_providers,"access_filter":status,
             "subscription_automation":automation,"managed_total":managed_total,
             "expiry_people":expiry_people,"expiry_summary":expiry_summary,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
-            "next_url": "/subscriptions?" + urlencode({"search":search,"page":page+1}),
-            "prev_url": "/subscriptions?" + urlencode({"search":search,"page":page-1}),
+            "next_url": "/subscriptions?" + urlencode({"search":search,"status":status,"page":page+1}),
+            "prev_url": "/subscriptions?" + urlencode({"search":search,"status":status,"page":page-1}),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
+
+
+@app.post("/subscriptions/provider")
+async def update_payment_provider(
+    code: str = Form(...), public_url: str = Form(""),
+    notes: str = Form(""), enabled: bool = Form(False),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    if confirm != "SAVE_PAYMENT_PROVIDER":
+        raise HTTPException(400, detail="Подтвердите настройки системы")
+    try:
+        await save_provider(code,public_url,notes,enabled,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/subscriptions?provider=saved#payment-providers",status_code=303)
 
 
 @app.post("/subscriptions/automation")
