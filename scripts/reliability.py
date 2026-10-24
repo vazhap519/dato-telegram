@@ -202,11 +202,32 @@ def health():
     return issues
 
 
+
+def configured_alert_chat():
+    """Read dashboard-selected alert recipient from PostgreSQL.
+
+    This makes admin settings available to root-owned systemd monitoring
+    without granting the web server permission to edit /etc config files.
+    """
+    env = postgres_environment()
+    query = ("SELECT COALESCE(telegram_chat_id::text,'') "
+             "FROM reliability_alert_settings WHERE id=1 AND enabled=TRUE")
+    try:
+        result = run(["psql","-X","-A","-t","-q","-c",query],env=env,timeout=10)
+        value = result.stdout.decode("utf-8").strip()
+        if value.isdecimal() and 0 < len(value) <= 13:
+            return value
+    except Exception:
+        # Preserve optional legacy /etc recipient on database outages.
+        pass
+    return os.getenv("DATO_ALERT_CHAT_ID","").strip()
+
+
 def notify(message):
     token = os.getenv("BOT_TOKEN", "")
-    chat = os.getenv("DATO_ALERT_CHAT_ID", "")
+    chat = configured_alert_chat()
     if not token or not chat:
-        print("Telegram alert not configured (set DATO_ALERT_CHAT_ID)", file=sys.stderr)
+        print("Telegram alert not configured (set recipient in /reliability)", file=sys.stderr)
         return False
     encoded = urllib.parse.urlencode({"chat_id":chat, "text":message}).encode()
     req = urllib.request.Request("https://api.telegram.org/bot" + token +
