@@ -142,11 +142,12 @@
 <p class="text-xs text-gray-400">Чтобы узнать ID группы, можно переслать сообщение из супергруппы в бота для просмотра ID либо использовать административные инструменты Telegram. Добавьте нашего бота администратором с правом приглашать пользователей. До проверки ничего не изменится.</p>
 </div>
 </details>
-<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="new-plan-days">
+<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="subscription-plans">
 <summary class="cursor-pointer list-none select-none p-4 md:p-5 flex items-center justify-between gap-3 hover:bg-gray-700/50">
 <span class="text-lg font-semibold">Тарифы</span><span class="text-gray-400 group-open:rotate-180 transition-transform">⌄</span>
 </summary>
 <div class="p-4 md:p-5 space-y-4"><h2 class="font-semibold text-xl">Тарифы</h2>
+{% if request.query_params.get('plan') == 'deleted' %}<p class="text-sm text-green-300 rounded bg-emerald-900/30 p-3">Тариф удалён из списка. Действующие права и история платежей сохранены.</p>{% endif %}
 <p class="text-gray-400 text-sm">В боте показываются только активные тарифы с ценой и HTTPS-ссылкой оплаты. Переход по ссылке не подтверждает оплату.</p>
 <form action="/subscriptions/plan/create" method="post" class="bg-gray-700 rounded-xl p-4 grid gap-3 mb-5">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -163,7 +164,7 @@
 </form>
 <div class="grid md:grid-cols-2 gap-3">
 {% for p in plans %}
-<form action="/subscriptions/plan" method="post" class="bg-gray-700 rounded-xl p-4 space-y-2">
+<div class="bg-gray-700 rounded-xl p-4 space-y-3"><form action="/subscriptions/plan" method="post" class="space-y-2">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="plan_id" value="{{ p.id }}">
 <div class="font-semibold">{{ p.name }} <span class="text-gray-400 text-xs">({{ p.code }})</span></div>
 <div class="text-sm text-gray-300">{{ 'Без срока' if p.is_lifetime else ((p.duration_days|string)+' дней') }}</div>
@@ -172,6 +173,12 @@
 <label class="flex gap-2 items-center text-sm"><input type="checkbox" name="active" value="true" {{ 'checked' if p.is_active else '' }}> Активен в реестре</label>
 <button class="bg-indigo-600 px-4 py-2 rounded">Сохранить тариф</button>
 </form>
+<form method="post" action="/subscriptions/plan/delete" onsubmit="return confirm('Удалить тариф «{{ p.name }}»? Он исчезнет из списка и бота. Уже выданные подписки и история платежей сохранятся.')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="plan_id" value="{{ p.id }}">
+<input type="hidden" name="confirm" value="DELETE_PLAN">
+<button type="submit" class="text-sm text-red-300 hover:text-red-100 border border-red-800 rounded-lg px-3 py-2">🗑 Удалить тариф</button>
+</form></div>
 {% endfor %}</div></div>
 </details>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscribers">
