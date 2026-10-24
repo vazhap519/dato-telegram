@@ -17,7 +17,12 @@
   <div class="rounded-lg bg-gray-800 p-4"><div class="text-gray-400 text-xs">Приняли оферту</div><div class="text-2xl font-bold">{{ counts.accepted }}</div></div>
   <div class="rounded-lg bg-gray-800 p-4"><div class="text-gray-400 text-xs">Нажали подписку</div><div class="text-2xl font-bold">{{ counts.clicked }}</div></div>
 </section>
-<section class="bg-gray-800 p-5 rounded-xl space-y-4">
+<details id="new-broadcast" open class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden group">
+<summary class="cursor-pointer select-none list-none flex items-center justify-between gap-4 p-4 md:p-5 hover:bg-gray-700/50">
+<span class="font-semibold text-lg">✉️ Новая рассылка</span>
+<span class="text-gray-400 text-xl group-open:rotate-180 transition-transform" aria-hidden="true">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
   <h2 class="text-xl font-semibold">Новая рассылка</h2>
   <p class="text-sm text-gray-400">Сообщения отправляются только пользователям, которые взаимодействовали с ботом и не отписались. Не используйте для нежелательной рекламы.</p>
   <form method="post" action="/broadcast/preview" class="space-y-4">
@@ -49,9 +54,15 @@
     </div>
     <button class="bg-blue-600 hover:bg-blue-500 px-5 py-3 rounded-lg font-semibold">Предварительный просмотр →</button>
   </form>
-</section>
+</div>
+</details>
 {% if preview %}
-<section class="border border-amber-600 bg-gray-800 p-5 rounded-xl space-y-4">
+<details id="broadcast-preview" open class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden group">
+<summary class="cursor-pointer select-none list-none flex items-center justify-between gap-4 p-4 md:p-5 hover:bg-gray-700/50">
+<span class="font-semibold text-lg">✅ Проверка перед отправкой</span>
+<span class="text-gray-400 text-xl group-open:rotate-180 transition-transform" aria-hidden="true">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
   <h2 class="text-xl font-semibold">Проверка перед отправкой</h2>
   <p>Получателей сейчас: <strong>{{ preview.recipients }}</strong>. При окончательной отправке список будет сформирован заново.</p>
   <div class="max-w-xl whitespace-pre-wrap rounded-xl bg-gray-700 p-4 text-sm">{{ preview.body }}</div>
@@ -69,9 +80,15 @@
     <p class="text-amber-300 text-sm">После подтверждения рассылка попадёт в очередь. Отмены в этой версии нет.</p>
     <button class="bg-amber-600 hover:bg-amber-500 px-5 py-3 rounded-lg font-semibold">Подтвердить отправку</button>
   </form>
-</section>
+</div>
+</details>
 {% endif %}
-<section class="bg-gray-800 p-5 rounded-xl space-y-4">
+<details id="broadcast-templates" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden group">
+<summary class="cursor-pointer select-none list-none flex items-center justify-between gap-4 p-4 md:p-5 hover:bg-gray-700/50">
+<span class="font-semibold text-lg">📝 Библиотека шаблонов</span>
+<span class="text-gray-400 text-xl group-open:rotate-180 transition-transform" aria-hidden="true">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
   <h2 class="text-xl font-semibold">Библиотека шаблонов</h2>
   <p class="text-sm text-gray-400">Редактируй тексты здесь; затем скопируй нужный шаблон в форму рассылки выше. Сохранение само по себе ничего не отправляет.</p>
   <form method="post" action="/broadcast/template" class="grid gap-2 border border-gray-700 rounded-xl p-3">
@@ -89,8 +106,14 @@
     <button class="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded justify-self-start">Сохранить шаблон</button>
   </form>
   {% endfor %}
-</section>
-<section class="bg-gray-800 p-5 rounded-xl space-y-4">
+</div>
+</details>
+<details id="broadcast-automation" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden group">
+<summary class="cursor-pointer select-none list-none flex items-center justify-between gap-4 p-4 md:p-5 hover:bg-gray-700/50">
+<span class="font-semibold text-lg">⚙️ Автоматические напоминания</span>
+<span class="text-gray-400 text-xl group-open:rotate-180 transition-transform" aria-hidden="true">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
   <h2 class="text-xl font-semibold">Автоматические напоминания</h2>
   <p class="text-sm text-gray-400">Три последовательных сценария включаются автоматически после обновления. Каждый этап отправляется максимум один раз и только если пользователь ещё не совершил следующее действие. События до включения не запускают старые напоминания. Оплату пока невозможно проверить без интеграции Tribute.</p>
   {% for rule in rules %}
@@ -103,8 +126,14 @@
     <button class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded justify-self-start">Сохранить сценарий</button>
   </form>
   {% endfor %}
-</section>
-<section class="bg-gray-800 p-5 rounded-xl space-y-4">
+</div>
+</details>
+<details id="broadcast-history" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden group">
+<summary class="cursor-pointer select-none list-none flex items-center justify-between gap-4 p-4 md:p-5 hover:bg-gray-700/50">
+<span class="font-semibold text-lg">🕘 История рассылок</span>
+<span class="text-gray-400 text-xl group-open:rotate-180 transition-transform" aria-hidden="true">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
  <div class="flex flex-wrap justify-between gap-2 items-center">
  <h2 class="text-xl font-semibold">История рассылок</h2>
  <a class="text-blue-300 underline text-sm" href="/broadcast">Обновить статистику</a></div>
@@ -125,10 +154,18 @@
  {% endfor %}
  </tbody></table></div>
  <p class="text-xs text-gray-400">Сообщение считается доставленным после успешного ответа Telegram API. Это не означает, что пользователь его прочитал.</p>
-</section>
+</div>
+</details>
 </main>
 <script>
 const savedTemplates = {{ templates | tojson }};
+function openBroadcastSectionFromHash() {
+  const id = decodeURIComponent(window.location.hash.substring(1));
+  const el = id && document.getElementById(id);
+  if (el && el.tagName === "DETAILS") el.open = true;
+}
+window.addEventListener("hashchange", openBroadcastSectionFromHash);
+openBroadcastSectionFromHash();
 document.getElementById("template-picker").addEventListener("change", function () {
   const chosen = savedTemplates.find(t => String(t.id) === this.value);
   if (!chosen) return;
