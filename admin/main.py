@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts, archive_provider, archived_providers, restore_provider
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
@@ -54,6 +55,7 @@ async def setup_onboarding():
     await initialize_automation()
     await initialize_subscriptions()
     await initialize_payment_providers()
+    await initialize_reliability_settings()
     await initialize_group_access()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
@@ -70,6 +72,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/broadcast/send",
         "/broadcast/template",
         "/broadcast/rule",
+        "/reliability/settings",
+        "/reliability/test",
         "/subscriptions/grant",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
@@ -282,6 +286,51 @@ async def dashboard(
             "csrf_token": csrf_token
         }
     )
+
+
+@app.get("/reliability")
+async def reliability_page(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(
+        request=request, name="reliability.html", context={
+            "settings": await get_reliability_settings(),
+            "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
+        }, headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.post("/reliability/settings")
+async def reliability_save(
+    telegram_chat_id: str = Form(""), enabled: bool = Form(False),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    try:
+        chat_id = int(telegram_chat_id.strip()) if telegram_chat_id.strip() else None
+        await save_reliability_settings(chat_id, enabled, user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/reliability?saved=1",status_code=303)
+
+
+@app.post("/reliability/test")
+async def reliability_test_alert(
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    config = await get_reliability_settings()
+    if not config["enabled"] or not config["telegram_chat_id"]:
+        return RedirectResponse("/reliability?test=disabled",status_code=303)
+    from aiogram import Bot
+    import logging
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            await telegram.send_message(
+                config["telegram_chat_id"],
+                "✅ Круг Души: тестовое уведомление мониторинга доставлено. "
+                "Теперь сюда будут приходить предупреждения о сбоях сервера."
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("Reliability test alert failed")
+        return RedirectResponse("/reliability?test=failed",status_code=303)
+    return RedirectResponse("/reliability?test=sent",status_code=303)
 
 
 @app.post("/create-video-upload")
