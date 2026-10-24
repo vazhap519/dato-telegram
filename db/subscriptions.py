@@ -87,6 +87,7 @@ async def initialize_subscriptions():
           UNIQUE(provider,event_key)
         )"""))
         await db.execute(text("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS payment_url TEXT NOT NULL DEFAULT ''"))
+        await db.execute(text("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ"))
         await db.execute(text("""
         CREATE TABLE IF NOT EXISTS subscription_plan_selections (
             telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
@@ -139,7 +140,7 @@ async def overview():
              WHERE resource='community' AND revoked_at IS NULL AND ends_at BETWEEN NOW() AND NOW()+INTERVAL '7 days') expiring
         """))).mappings().one()
         plans=[dict(x) for x in (await s.execute(text(
-          "SELECT * FROM subscription_plans ORDER BY id"
+          "SELECT * FROM subscription_plans WHERE archived_at IS NULL ORDER BY id"
         ))).mappings()]
         return dict(summary),plans
 
@@ -315,7 +316,7 @@ async def update_plan(plan_id,price_amount,active,payment_url=''):
         async with s.begin():
             row=(await s.execute(text("""
               UPDATE subscription_plans SET price_amount=:price,is_active=:active,payment_url=:payment_url
-              WHERE id=:id RETURNING code
+              WHERE id=:id AND archived_at IS NULL RETURNING code
             """),{"id":plan_id,"price":price_amount,"active":active,"payment_url":payment_url})).first()
             if not row: raise ValueError('Тариф не найден')
             await s.execute(text("""
@@ -361,13 +362,36 @@ async def create_plan(name, price_amount, currency, duration_days, is_lifetime, 
     return plan_id
 
 
+async def archive_plan(plan_id, actor):
+    """Hide tariff from sales and admin list without damaging existing subscriptions.
+
+    A selected plan retains its foreign key, and all payment history remains intact.
+    """
+    async with SessionLocal() as s:
+        async with s.begin():
+            row=(await s.execute(text("""
+                UPDATE subscription_plans
+                SET is_active=FALSE,archived_at=NOW()
+                WHERE id=:id AND archived_at IS NULL
+                RETURNING name,code
+            """),{"id":plan_id})).mappings().first()
+            if row is None: raise ValueError("Тариф не найден или уже удалён")
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log(action,actor,details)
+                VALUES ('plan_archived',:actor,
+                  jsonb_build_object('plan_id',CAST(:id AS BIGINT),
+                                     'name',CAST(:name AS TEXT),
+                                     'code',CAST(:code AS TEXT)))
+            """),{"id":plan_id,"actor":actor,"name":row["name"],"code":row["code"]})
+
+
 async def available_payment_plans():
     """Only published plans with a configured HTTPS URL and a price are selectable."""
     async with SessionLocal() as session:
         rows = (await session.execute(text("""
             SELECT id, name, price_amount, currency, duration_days, is_lifetime
             FROM subscription_plans
-            WHERE is_active=TRUE AND payment_url LIKE 'https://%'
+            WHERE is_active=TRUE AND archived_at IS NULL AND payment_url LIKE 'https://%'
               AND price_amount IS NOT NULL
             ORDER BY is_lifetime, duration_days NULLS LAST, id
             LIMIT 30
@@ -387,7 +411,7 @@ async def select_payment_plan(telegram_id, plan_id):
             plan = (await session.execute(text("""
                 SELECT id,name,price_amount,currency,duration_days,is_lifetime,payment_url
                 FROM subscription_plans
-                WHERE id=:plan AND is_active=TRUE
+                WHERE id=:plan AND is_active=TRUE AND archived_at IS NULL
                   AND price_amount IS NOT NULL AND payment_url LIKE 'https://%'
             """), {"plan":plan_id})).mappings().first()
             if not plan:
