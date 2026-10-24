@@ -27,6 +27,18 @@ async def notify_renewal(telegram_id, new_expiry, actor):
                     log.exception("Renewal confirmation not delivered to %s", telegram_id)
                     return "message_failed"
                 return "notified"
+            if status == "sent":
+                try:
+                    local = new_expiry.astimezone(ZoneInfo("Asia/Tbilisi"))
+                    await bot.send_message(
+                        telegram_id,
+                        "✅ Доступ в «Круг Души» продлён до "
+                        + local.strftime("%d.%m.%Y %H:%M")
+                        + " (Тбилиси). Приглашение уже отправлено выше."
+                    )
+                except Exception:
+                    log.exception("Renewal date confirmation not delivered to %s",telegram_id)
+                    return "message_failed"
             return status
     except Exception:
         log.exception("Renewal Telegram action failed for %s", telegram_id)
