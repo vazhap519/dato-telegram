@@ -98,7 +98,7 @@ async def claim_expiry_alerts(limit=40):
                       AND n.expires_at=e.last_expires
                       AND n.alert_kind=alert_window.kind
                       AND (
-                        n.status IN ('sent','pending')
+                        n.status IN ('sent','pending','skipped')
                         OR (n.status='failed'
                             AND n.attempted_at>NOW()-INTERVAL '5 minutes')
                       )
