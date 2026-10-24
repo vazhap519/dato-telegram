@@ -9,6 +9,37 @@
 <div class="bg-gray-800 rounded-xl p-4">Истекают за 7 дней<div class="text-2xl font-semibold">{{ summary.expiring }}</div></div>
 </section>
 <p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Доступ выдаётся и продлевается через бота. Автоматическое исключение настраивается ниже и распространяется только на учтённых ботом участников. Нажатие кнопки оплаты не считается платежом — подтверждение Tribute подключим отдельно.</p>
+<section class="bg-gray-800 rounded-xl p-5 space-y-4" id="payment-providers">
+<div class="flex flex-wrap items-center justify-between gap-3">
+<div><h2 class="font-semibold text-xl">💳 Платёжные системы</h2><p class="text-gray-400 text-sm mt-1">Независимые настройки провайдеров. Интеграции API подключаются отдельно.</p></div>
+<span class="rounded-full border border-amber-700 bg-amber-900/30 px-3 py-1 text-xs text-amber-200">API пока не подключён</span>
+</div>
+{% if request.query_params.get('provider')=='saved' %}<p class="text-green-300 text-sm">Настройки провайдера сохранены.</p>{% endif %}
+<div class="grid md:grid-cols-2 gap-3">
+{% for provider in payment_providers %}
+<form method="post" action="/subscriptions/provider" class="bg-gray-700/60 border border-gray-600 rounded-xl p-4 space-y-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="confirm" value="SAVE_PAYMENT_PROVIDER"><input type="hidden" name="code" value="{{ provider.code }}">
+<div class="flex flex-wrap justify-between items-center gap-2">
+<div><h3 class="font-semibold text-lg">{{ provider.display_name }}</h3><p class="text-gray-400 text-xs">Код: {{ provider.code }}</p></div>
+<span class="bg-amber-900/40 text-amber-200 rounded-full px-3 py-1 text-xs">Ожидается API</span>
+</div>
+<label class="text-sm block">Публичная HTTPS-ссылка провайдера
+<input class="mt-1 w-full bg-gray-800 rounded-lg p-3" type="url" name="public_url" maxlength="1000" placeholder="https://..." value="{{ provider.public_url }}">
+</label>
+<label class="text-sm block">Заметки для администратора
+<textarea name="notes" rows="2" maxlength="500" class="mt-1 w-full bg-gray-800 rounded-lg p-3" placeholder="Например, заявка на Shop API ожидает ответа">{{ provider.notes }}</textarea>
+</label>
+<label class="flex items-center gap-3 text-sm"><input type="checkbox" name="enabled" value="true" {{ 'checked' if provider.enabled else '' }}><span>Разрешить использовать провайдера после подключения API</span></label>
+<p class="text-xs text-amber-200">Переключатель сохраняет предпочтение. Пока нет проверки API и вебхуков, оплата и автоматическая выдача доступа через этот провайдер выключены.</p>
+<button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg">Сохранить настройки</button>
+</form>{% endfor %}
+<div class="rounded-xl border border-dashed border-gray-600 p-5 flex flex-col justify-center gap-2">
+<h3 class="font-semibold">➕ Другие платёжные системы</h3>
+<p class="text-gray-400 text-sm">Структура поддерживает несколько провайдеров. Новую систему подключим отдельным модулем с проверкой её API и вебхуков — без изменений учёта действующих подписок.</p>
+<p class="text-xs text-gray-500">Секретные API-ключи не вводятся в эту форму и не сохраняются в базе в открытом виде.</p>
+</div>
+</div>
+</section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscription-automation">
 <h2 class="font-semibold text-xl">⚙️ Автоматизация подписок</h2>
 <p class="text-sm text-gray-400">Автоматизация работает только с участниками, вступление которых бот зафиксировал по собственной ссылке. Старые участники сообщества не добавляются в этот список автоматически.</p>
@@ -94,14 +125,30 @@
 <button class="bg-indigo-600 px-4 py-2 rounded">Сохранить тариф</button>
 </form>
 {% endfor %}</div></section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Участники</h2>
-<form class="flex gap-2" method="get"><input name="search" value="{{ search }}" class="min-w-0 flex-1 bg-gray-700 rounded px-3 py-2" placeholder="Поиск по Telegram ID, имени, @username"><button class="bg-blue-600 rounded px-4 py-2">Найти</button></form>
-<p class="text-sm text-gray-400">Найдено: {{ total }}</p><div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Участник</th><th>ID</th><th>Доступ к сообществу</th><th>Постоянный доступ</th><th></th></tr></thead><tbody>
-{% for u in users %}<tr class="border-t border-gray-700"><td class="py-3">{{ ([u.first_name,u.last_name]|select|join(' ')) or (u.username or 'Имя не указано') }}</td><td class="font-mono">{{ u.telegram_id }}</td><td>{{ 'Есть учтённые права' if u.community_grants else 'Нет' }}</td><td>{{ 'Есть' if u.lifetime_grants else 'Нет' }}</td><td><a class="text-blue-300 underline" href="/subscriptions/users/{{ u.telegram_id }}">Карточка →</a></td></tr>
-{% else %}<tr><td colspan="5" class="p-5 text-gray-400">Пользователи не найдены</td></tr>{% endfor %}
+<section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscribers">
+<div class="flex flex-wrap justify-between gap-2 items-center"><h2 class="font-semibold text-xl">👥 Участники</h2><span class="text-gray-400 text-sm">Найдено: {{ total }}</span></div>
+<form class="grid sm:grid-cols-[1fr_auto_auto] gap-3" method="get" action="/subscriptions#subscribers">
+<input name="search" value="{{ search }}" class="min-w-0 bg-gray-700 rounded-lg px-3 py-2" placeholder="Telegram ID, имя, @username">
+<select name="status" class="bg-gray-700 rounded-lg px-3 py-2">
+{% for key,label in [('all','Все участники'),('active','С действующим доступом'),('lifetime','Постоянный доступ'),('expiring','Истекает за 7 дней'),('expired','Срок истёк'),('none','Без действующего доступа')] %}
+<option value="{{ key }}" {% if access_filter==key %}selected{% endif %}>{{ label }}</option>
+{% endfor %}
+</select>
+<button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-2">Показать</button>
+</form>
+<p class="text-gray-400 text-xs">Статусы рассчитаны по правам в нашей базе, а не по факту оплаты или нахождения в Telegram-группе.</p>
+<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Участник</th><th>ID</th><th>Состояние доступа</th><th>Окончание</th><th></th></tr></thead><tbody>
+{% for u in users %}
+<tr class="border-t border-gray-700">
+<td class="py-3">{{ ([u.first_name,u.last_name]|select|join(' ')) or (u.username or 'Имя не указано') }}</td>
+<td class="font-mono text-xs">{{ u.telegram_id }}</td>
+<td>{% if u.access_status=='lifetime' %}<span class="text-green-300">Постоянный</span>{% elif u.access_status=='active' %}<span class="text-green-300">Действует</span>{% elif u.access_status=='expiring' %}<span class="text-amber-300">Скоро истечёт</span>{% elif u.access_status=='scheduled' %}<span class="text-blue-300">Запланирован</span>{% elif u.access_status=='expired' %}<span class="text-red-300">Истёк</span>{% else %}<span class="text-gray-400">Нет доступа</span>{% endif %}</td>
+<td class="text-gray-300 whitespace-nowrap">{{ u.expiry|tbilisi_time('%d.%m.%Y') if u.expiry and u.access_status not in ['lifetime','none'] else '—' }}</td>
+<td><a class="text-blue-300 underline whitespace-nowrap" href="/subscriptions/users/{{ u.telegram_id }}">Карточка →</a></td>
+</tr>
+{% else %}<tr><td colspan="5" class="p-5 text-gray-400">По выбранным условиям участников нет.</td></tr>{% endfor %}
 </tbody></table></div>
-<nav class="flex justify-between items-center text-sm">
-<div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}">Далее →</a>{% endif %}</div></nav>
+<nav class="flex justify-between items-center text-sm"><div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}#subscribers">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}#subscribers">Далее →</a>{% endif %}</div></nav>
 </section></main><script>
 const lifetime = document.getElementById("new-plan-lifetime");
 const days = document.getElementById("new-plan-days");
