@@ -29,6 +29,30 @@ async def initialize_payment_providers():
             VALUES ('tribute','Tribute') ON CONFLICT(code) DO NOTHING
         """))
         await c.execute(text("""
+            CREATE TABLE IF NOT EXISTS verified_payment_receipts (
+                id BIGSERIAL PRIMARY KEY,
+                provider TEXT NOT NULL REFERENCES payment_provider_settings(code),
+                provider_payment_id TEXT NOT NULL,
+                telegram_id BIGINT NOT NULL REFERENCES users(telegram_id),
+                subscription_id BIGINT REFERENCES subscriptions(id),
+                amount NUMERIC(12,2),
+                currency TEXT,
+                payment_status TEXT NOT NULL DEFAULT 'paid',
+                verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                source TEXT NOT NULL DEFAULT 'verified_webhook',
+                UNIQUE(provider,provider_payment_id),
+                CHECK (payment_status IN ('paid','refunded','chargeback'))
+            )
+        """))
+        await c.execute(text("""
+            CREATE INDEX IF NOT EXISTS verified_payment_receipts_user_idx
+            ON verified_payment_receipts(telegram_id,verified_at DESC)
+        """))
+        await c.execute(text("""
+            CREATE INDEX IF NOT EXISTS verified_payment_receipts_provider_idx
+            ON verified_payment_receipts(provider,verified_at DESC)
+        """))
+        await c.execute(text("""
             CREATE TABLE IF NOT EXISTS payment_provider_audit (
                 id BIGSERIAL PRIMARY KEY,
                 code TEXT NOT NULL,
@@ -102,3 +126,53 @@ async def register_provider(code,name,actor):
                 INSERT INTO payment_provider_audit(code,actor,action)
                 VALUES (:code,:actor,'registered')
             """),{"code":code,"actor":actor})
+
+
+async def record_verified_payment(provider,payment_id,telegram_id,
+                                  amount=None,currency=None,subscription_id=None):
+    """Internal-only entry point. Call AFTER provider-specific signature and payment checks.
+
+    No public unauthenticated endpoint should call this without verification.
+    Same payment event is idempotent; manual grants do not become purchases.
+    """
+    if not provider or not payment_id or len(str(payment_id))>255:
+        raise ValueError("Недопустимый идентификатор платежа")
+    async with SessionLocal() as s:
+        async with s.begin():
+            provider_row=(await s.execute(text("""
+                SELECT code FROM payment_provider_settings WHERE code=:provider
+            """),{"provider":provider})).first()
+            if not provider_row: raise ValueError("Неизвестный провайдер")
+            user=(await s.execute(text("""
+                SELECT 1 FROM users WHERE telegram_id=:uid
+            """),{"uid":telegram_id})).first()
+            if not user: raise ValueError("Неизвестный Telegram ID покупателя")
+            result=(await s.execute(text("""
+                INSERT INTO verified_payment_receipts
+                  (provider,provider_payment_id,telegram_id,subscription_id,amount,currency)
+                VALUES (:provider,:payment,:uid,:subscription,:amount,:currency)
+                ON CONFLICT(provider,provider_payment_id) DO NOTHING
+                RETURNING id
+            """),{"provider":provider,"payment":str(payment_id),"uid":telegram_id,
+                  "subscription":subscription_id,"amount":amount,"currency":currency})).scalar_one_or_none()
+            if result is None:
+                existing=(await s.execute(text("""
+                    SELECT telegram_id FROM verified_payment_receipts
+                    WHERE provider=:provider AND provider_payment_id=:payment
+                """),{"provider":provider,"payment":str(payment_id)})).scalar_one()
+                if existing!=telegram_id:
+                    raise ValueError("Платёж уже привязан к другому покупателю")
+            return result is not None
+
+
+async def payment_provider_counts():
+    async with SessionLocal() as s:
+        return [dict(x) for x in (await s.execute(text("""
+            SELECT p.code,p.display_name,
+              COUNT(DISTINCT v.telegram_id) FILTER (WHERE v.payment_status='paid') buyers,
+              COUNT(v.id) FILTER (WHERE v.payment_status='paid') payments
+            FROM payment_provider_settings p
+            LEFT JOIN verified_payment_receipts v ON v.provider=p.code
+            GROUP BY p.code,p.display_name
+            ORDER BY p.display_name
+        """))).mappings().all()]
