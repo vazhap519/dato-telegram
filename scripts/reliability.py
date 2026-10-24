@@ -179,12 +179,26 @@ def health():
     for service in os.getenv("DATO_MONITOR_SERVICES", "").split(","):
         service = service.strip()
         if service:
+            import re
+            if not re.fullmatch(r"[A-Za-z0-9@_.-]{1,100}\\.service",service):
+                issues.append("Invalid configured systemd service name")
+                continue
             try:
                 out = run(["systemctl", "is-active", service], timeout=10)
                 if out.stdout.strip() != b"active":
                     issues.append("Service not active: " + service)
+                    continue
             except Exception:
                 issues.append("Service not active: " + service)
+                continue
+            # Only report presence of errors, not their potentially private content.
+            try:
+                logs = run(["journalctl", "-u", service, "--since", "20 minutes ago",
+                            "--priority=err", "--no-pager", "--output=cat"], timeout=12)
+                if logs.stdout.strip() and logs.stdout.strip() != b"-- No entries --":
+                    issues.append("Recent error logs for service: " + service)
+            except Exception:
+                pass
     return issues
 
 
