@@ -130,26 +130,40 @@
 {% endfor %}</div></section>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscribers">
 <div class="flex flex-wrap justify-between gap-2 items-center"><h2 class="font-semibold text-xl">👥 Участники</h2><span class="text-gray-400 text-sm">Найдено: {{ total }}</span></div>
-<form class="grid sm:grid-cols-[1fr_auto_auto] gap-3" method="get" action="/subscriptions#subscribers">
+<div class="flex flex-wrap gap-2">
+<a href="/subscriptions?buyers_only=true#subscribers" class="rounded-lg px-3 py-2 text-sm bg-emerald-900/50 text-emerald-200 border border-emerald-800">✅ Все подтверждённые покупатели</a>
+{% for p in provider_counts %}
+<a href="/subscriptions?payment_provider={{ p.code }}&buyers_only=true#subscribers" class="rounded-lg px-3 py-2 text-sm bg-gray-700 hover:bg-gray-600">{{ p.display_name }} · {{ p.buyers }} покупателей</a>
+{% endfor %}
+</div>
+<form class="grid sm:grid-cols-[minmax(150px,1fr)_minmax(170px,auto)_minmax(160px,auto)_auto] gap-3" method="get" action="/subscriptions#subscribers">
 <input name="search" value="{{ search }}" class="min-w-0 bg-gray-700 rounded-lg px-3 py-2" placeholder="Telegram ID, имя, @username">
 <select name="status" class="bg-gray-700 rounded-lg px-3 py-2">
 {% for key,label in [('all','Все участники'),('active','С действующим доступом'),('lifetime','Постоянный доступ'),('expiring','Истекает за 7 дней'),('expired','Срок истёк'),('none','Без действующего доступа')] %}
 <option value="{{ key }}" {% if access_filter==key %}selected{% endif %}>{{ label }}</option>
 {% endfor %}
 </select>
+<select name="payment_provider" class="bg-gray-700 rounded-lg px-3 py-2" aria-label="Платёжная система">
+<option value="all">Все платёжные системы</option>
+{% for provider in payment_providers %}
+<option value="{{ provider.code }}" {% if payment_provider_filter==provider.code %}selected{% endif %}>{{ provider.display_name }}</option>
+{% endfor %}
+</select>
+<label class="flex items-center gap-2 text-sm bg-gray-700 rounded-lg px-3 py-2"><input type="checkbox" name="buyers_only" value="true" {% if buyers_only %}checked{% endif %}>Только оплатившие</label>
 <button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-2">Показать</button>
 </form>
-<p class="text-gray-400 text-xs">Статусы рассчитаны по правам в нашей базе, а не по факту оплаты или нахождения в Telegram-группе.</p>
-<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Участник</th><th>ID</th><th>Состояние доступа</th><th>Окончание</th><th></th></tr></thead><tbody>
+<p class="text-gray-400 text-xs">«Оплатившие» — только подтверждённые платежи из проверенных webhook-событий. Ручные права и нажатия на ссылку не считаются оплатой. Пока API Tribute не подключён, список покупателей может оставаться пустым. Источник означает систему оплаты, а не способ вступления в Telegram-группу.</p>
+<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Участник</th><th>ID</th><th>Состояние доступа</th><th>Окончание</th><th>Оплата через</th><th></th></tr></thead><tbody>
 {% for u in users %}
 <tr class="border-t border-gray-700">
 <td class="py-3">{{ ([u.first_name,u.last_name]|select|join(' ')) or (u.username or 'Имя не указано') }}</td>
 <td class="font-mono text-xs">{{ u.telegram_id }}</td>
 <td>{% if u.access_status=='lifetime' %}<span class="text-green-300">Постоянный</span>{% elif u.access_status=='active' %}<span class="text-green-300">Действует</span>{% elif u.access_status=='expiring' %}<span class="text-amber-300">Скоро истечёт</span>{% elif u.access_status=='scheduled' %}<span class="text-blue-300">Запланирован</span>{% elif u.access_status=='expired' %}<span class="text-red-300">Истёк</span>{% else %}<span class="text-gray-400">Нет доступа</span>{% endif %}</td>
 <td class="text-gray-300 whitespace-nowrap">{{ u.expiry|tbilisi_time('%d.%m.%Y') if u.expiry and u.access_status not in ['lifetime','none'] else '—' }}</td>
+<td>{% if u.verified_payment_count %}<span class="text-emerald-300">{{ u.last_payment_provider_name or u.last_payment_provider }} · {{ u.verified_payment_count }} плат.</span><div class="text-xs text-gray-400">{{ u.last_payment_at|tbilisi_time('%d.%m.%Y') }}</div>{% else %}<span class="text-gray-500">Нет подтверждённых платежей</span>{% endif %}</td>
 <td><a class="text-blue-300 underline whitespace-nowrap" href="/subscriptions/users/{{ u.telegram_id }}">Карточка →</a></td>
 </tr>
-{% else %}<tr><td colspan="5" class="p-5 text-gray-400">По выбранным условиям участников нет.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="6" class="p-5 text-gray-400">По выбранным условиям участников нет.</td></tr>{% endfor %}
 </tbody></table></div>
 <nav class="flex justify-between items-center text-sm"><div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}#subscribers">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}#subscribers">Далее →</a>{% endif %}</div></nav>
 </section></main><script>
