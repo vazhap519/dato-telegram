@@ -217,10 +217,11 @@ def configured_alert_chat():
         value = result.stdout.decode("utf-8").strip()
         if value.isdecimal() and 0 < len(value) <= 13:
             return value
+        # Empty result means deliberately disabled in dashboard.
+        return ""
     except Exception:
-        # Preserve optional legacy /etc recipient on database outages.
-        pass
-    return os.getenv("DATO_ALERT_CHAT_ID","").strip()
+        # A database outage must not silence a separately configured fallback.
+        return os.getenv("DATO_ALERT_CHAT_ID","").strip()
 
 
 def notify(message):
