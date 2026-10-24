@@ -978,7 +978,7 @@ async def save_template(
         await upsert_template(template_id, title, body)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
-    return RedirectResponse("/broadcast", status_code=303)
+    return RedirectResponse("/broadcast#broadcast-templates", status_code=303)
 
 
 @app.post("/broadcast/rule")
@@ -990,7 +990,7 @@ async def save_rule(
         await set_rule(trigger, enabled, body)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
-    return RedirectResponse("/broadcast", status_code=303)
+    return RedirectResponse("/broadcast#broadcast-automation", status_code=303)
 
 
 @app.post("/broadcast/send")
