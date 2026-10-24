@@ -9,12 +9,16 @@
 <div class="bg-gray-800 rounded-xl p-4">Истекают за 7 дней<div class="text-2xl font-semibold">{{ summary.expiring }}</div></div>
 </section>
 <p class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Доступ выдаётся и продлевается через бота. Автоматическое исключение настраивается ниже и распространяется только на учтённых ботом участников. Нажатие кнопки оплаты не считается платежом — подтверждение Tribute подключим отдельно.</p>
-<section class="bg-gray-800 rounded-xl p-5 space-y-4" id="payment-providers">
+<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="payment-providers">
+<summary class="cursor-pointer list-none select-none p-4 md:p-5 flex items-center justify-between gap-3 hover:bg-gray-700/50">
+<span class="text-lg font-semibold">💳 Платёжные системы</span><span class="text-gray-400 group-open:rotate-180 transition-transform">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
 <div class="flex flex-wrap items-center justify-between gap-3">
 <div><h2 class="font-semibold text-xl">💳 Платёжные системы</h2><p class="text-gray-400 text-sm mt-1">Независимые настройки провайдеров. Интеграции API подключаются отдельно.</p></div>
 <span class="rounded-full border border-amber-700 bg-amber-900/30 px-3 py-1 text-xs text-amber-200">API пока не подключён</span>
 </div>
-{% if request.query_params.get('provider')=='saved' %}<p class="text-green-300 text-sm">Настройки провайдера сохранены.</p>{% elif request.query_params.get('provider')=='added' %}<p class="text-green-300 text-sm">Платёжная система добавлена в реестр (пока без API).</p>{% endif %}
+{% if request.query_params.get('provider')=='saved' %}<p class="text-green-300 text-sm">Настройки провайдера сохранены.</p>{% elif request.query_params.get('provider')=='added' %}<p class="text-green-300 text-sm">Платёжная система добавлена в реестр (пока без API).</p>{% elif request.query_params.get('provider')=='deleted' %}<p class="text-green-300 text-sm">Система убрана из списка. История платежей сохранена.</p>{% elif request.query_params.get('provider')=='restored' %}<p class="text-green-300 text-sm">Платёжная система восстановлена.</p>{% endif %}
 <div class="grid md:grid-cols-2 gap-3">
 {% for provider in payment_providers %}
 <form method="post" action="/subscriptions/provider" class="bg-gray-700/60 border border-gray-600 rounded-xl p-4 space-y-3">
@@ -32,7 +36,14 @@
 <label class="flex items-center gap-3 text-sm"><input type="checkbox" name="enabled" value="true" {{ 'checked' if provider.enabled else '' }}><span>Разрешить использовать провайдера после подключения API</span></label>
 <p class="text-xs text-amber-200">Переключатель сохраняет предпочтение. Пока нет проверки API и вебхуков, оплата и автоматическая выдача доступа через этот провайдер выключены.</p>
 <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg">Сохранить настройки</button>
-</form>{% endfor %}
+</form>
+<form method="post" action="/subscriptions/provider/delete" class="mt-2" onsubmit="return confirm('Убрать платёжную систему «{{ provider.display_name }}» из списка? История платежей будет сохранена.')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="code" value="{{ provider.code }}">
+<input type="hidden" name="confirm" value="ARCHIVE_PAYMENT_PROVIDER">
+<button type="submit" class="text-sm text-red-300 hover:text-red-200 rounded-lg border border-red-800 px-3 py-2">🗑 Удалить систему</button>
+</form>
+{% endfor %}
 <form method="post" action="/subscriptions/provider/add" class="rounded-xl border border-dashed border-gray-600 p-5 flex flex-col gap-3">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <h3 class="font-semibold">➕ Добавить платёжную систему</h3>
@@ -42,8 +53,27 @@
 <button class="rounded-lg px-4 py-2 bg-indigo-600 hover:bg-indigo-500 self-start">Добавить</button>
 </form>
 </div>
-</section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscription-automation">
+{% if archived_payment_providers %}
+<details class="bg-gray-900/50 rounded-lg p-3 mt-3">
+<summary class="cursor-pointer text-sm text-gray-300">🗂 Архив платёжных систем ({{ archived_payment_providers|length }})</summary>
+<div class="mt-3 space-y-2">
+{% for archived in archived_payment_providers %}
+<div class="flex flex-wrap justify-between items-center bg-gray-700/50 rounded-lg p-3 gap-2">
+<span class="text-sm">{{ archived.display_name }} <span class="text-gray-400">({{ archived.code }})</span></span>
+<form method="post" action="/subscriptions/provider/restore" onsubmit="return confirm('Восстановить платёжную систему?')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="code" value="{{ archived.code }}"><input type="hidden" name="confirm" value="RESTORE_PAYMENT_PROVIDER">
+<button class="text-indigo-300 text-sm underline">Восстановить</button>
+</form></div>
+{% endfor %}
+</div></details>
+{% endif %}
+</div>
+</details>
+<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="subscription-automation">
+<summary class="cursor-pointer list-none select-none p-4 md:p-5 flex items-center justify-between gap-3 hover:bg-gray-700/50">
+<span class="text-lg font-semibold">⚙️ Автоматизация подписок</span><span class="text-gray-400 group-open:rotate-180 transition-transform">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
 <h2 class="font-semibold text-xl">⚙️ Автоматизация подписок</h2>
 <p class="text-sm text-gray-400">Автоматизация работает только с участниками, вступление которых бот зафиксировал по собственной ссылке. Старые участники сообщества не добавляются в этот список автоматически.</p>
 {% if request.query_params.get('automation') == 'saved' %}<p class="text-green-300 text-sm">Настройки успешно сохранены.</p>{% endif %}
@@ -65,8 +95,13 @@
 <button class="bg-indigo-600 hover:bg-indigo-500 px-4 py-3 rounded font-semibold" onclick="return confirm('Сохранить настройки автоматизации подписок?')">Сохранить настройки</button>
 </form>
 <p class="text-xs text-gray-500">Изменения влияют на действующий бот без ручного редактирования файлов. Изменения сохраняются в журнале аудита.</p>
-</section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-4">
+</div>
+</details>
+<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="subscription-section-3">
+<summary class="cursor-pointer list-none select-none p-4 md:p-5 flex items-center justify-between gap-3 hover:bg-gray-700/50">
+<span class="text-lg font-semibold">⏳ Контроль сроков доступа</span><span class="text-gray-400 group-open:rotate-180 transition-transform">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
 <h2 class="font-semibold text-xl">⏳ Контроль сроков доступа</h2>
 <p class="text-gray-400 text-sm">Система учитывает все действующие ручные права и записанные активные подписки. Постоянный доступ имеет приоритет. Напоминания: за 3 дня, за сутки и после истечения, если они включены выше. Исключение настраивается отдельно.</p>
 <div class="grid grid-cols-2 gap-3">
@@ -83,8 +118,13 @@
 <td><a class="text-blue-300 underline" href="/subscriptions/users/{{ e.telegram_id }}">Карточка →</a></td></tr>
 {% else %}<tr><td colspan="4" class="py-4 text-gray-400">Сроки доступа ближайших участников не истекают.</td></tr>{% endfor %}
 </tbody></table></div>
-</section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+</div>
+</details>
+<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="subscription-section-4">
+<summary class="cursor-pointer list-none select-none p-4 md:p-5 flex items-center justify-between gap-3 hover:bg-gray-700/50">
+<span class="text-lg font-semibold">🔐 Telegram-группа</span><span class="text-gray-400 group-open:rotate-180 transition-transform">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4">
 <h2 class="font-semibold text-xl">🔐 Telegram-группа · тестовый режим</h2>
 <p class="text-sm text-gray-400">Бот проверяет права администратора и право приглашать людей. При назначении доступа бот отправляет ссылку для прямого вступления. Участник также может запросить новую ссылку сам. Ссылка допускает одно вступление и действует 20 минут. Автоматическое исключение регулируется настройками выше.</p>
 {% if tg_group.chat_id %}
@@ -100,8 +140,13 @@
 <button class="bg-indigo-600 hover:bg-indigo-500 rounded px-4 py-3">Проверить и подключить</button>
 </form>
 <p class="text-xs text-gray-400">Чтобы узнать ID группы, можно переслать сообщение из супергруппы в бота для просмотра ID либо использовать административные инструменты Telegram. Добавьте нашего бота администратором с правом приглашать пользователей. До проверки ничего не изменится.</p>
-</section>
-<section class="bg-gray-800 rounded-xl p-5 space-y-3"><h2 class="font-semibold text-xl">Тарифы</h2>
+</div>
+</details>
+<details class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden group" id="new-plan-days">
+<summary class="cursor-pointer list-none select-none p-4 md:p-5 flex items-center justify-between gap-3 hover:bg-gray-700/50">
+<span class="text-lg font-semibold">Тарифы</span><span class="text-gray-400 group-open:rotate-180 transition-transform">⌄</span>
+</summary>
+<div class="p-4 md:p-5 space-y-4"><h2 class="font-semibold text-xl">Тарифы</h2>
 <p class="text-gray-400 text-sm">В боте показываются только активные тарифы с ценой и HTTPS-ссылкой оплаты. Переход по ссылке не подтверждает оплату.</p>
 <form action="/subscriptions/plan/create" method="post" class="bg-gray-700 rounded-xl p-4 grid gap-3 mb-5">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -110,7 +155,7 @@
 <label class="text-sm">Название тарифа<input name="name" maxlength="100" minlength="2" required placeholder="Например, 3 месяца" class="mt-1 w-full bg-gray-800 rounded p-2"></label>
 <label class="text-sm">Стоимость<input type="number" name="price" min="0" max="1000000" step="0.01" required class="mt-1 w-full bg-gray-800 rounded p-2"></label>
 <label class="text-sm">Валюта<select name="currency" class="mt-1 w-full bg-gray-800 rounded p-2"><option value="EUR">EUR</option><option value="USD">USD</option><option value="GEL">GEL</option></select></label>
-<label class="text-sm">Срок в днях<input id="new-plan-days" type="number" name="duration_days" min="1" max="3650" value="30" required class="mt-1 w-full bg-gray-800 rounded p-2"></label>
+<label class="text-sm">Срок в днях<input type="number" name="duration_days" min="1" max="3650" value="30" required class="mt-1 w-full bg-gray-800 rounded p-2"></label>
 </div>
 <label class="flex gap-2 items-center text-sm"><input type="checkbox" name="is_lifetime" value="true" id="new-plan-lifetime"> Бессрочный тариф</label>
 <p class="text-xs text-gray-400">Новый тариф создаётся выключенным. После проверки включи его в списке ниже. Пока цены не используются для оплаты.</p>
@@ -127,7 +172,8 @@
 <label class="flex gap-2 items-center text-sm"><input type="checkbox" name="active" value="true" {{ 'checked' if p.is_active else '' }}> Активен в реестре</label>
 <button class="bg-indigo-600 px-4 py-2 rounded">Сохранить тариф</button>
 </form>
-{% endfor %}</div></section>
+{% endfor %}</div></div>
+</details>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4" id="subscribers">
 <div class="flex flex-wrap justify-between gap-2 items-center"><h2 class="font-semibold text-xl">👥 Участники</h2><span class="text-gray-400 text-sm">Найдено: {{ total }}</span></div>
 <div class="flex flex-wrap gap-2">
@@ -167,6 +213,13 @@
 </tbody></table></div>
 <nav class="flex justify-between items-center text-sm"><div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}#subscribers">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}#subscribers">Далее →</a>{% endif %}</div></nav>
 </section></main><script>
+// Open the correct block when returning from a form or following a section link.
+function openSectionFromHash(){
+ const target=document.getElementById(decodeURIComponent(location.hash.slice(1)));
+ if(target&&target.tagName==="DETAILS")target.open=true;
+}
+window.addEventListener("hashchange",openSectionFromHash);
+openSectionFromHash();
 const lifetime = document.getElementById("new-plan-lifetime");
 const days = document.getElementById("new-plan-days");
 lifetime.addEventListener("change", () => {
