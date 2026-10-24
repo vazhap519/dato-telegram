@@ -25,6 +25,10 @@ async def initialize_payment_providers():
             )
         """))
         await c.execute(text("""
+            ALTER TABLE payment_provider_settings
+            ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ
+        """))
+        await c.execute(text("""
             INSERT INTO payment_provider_settings(code,display_name)
             VALUES ('tribute','Tribute') ON CONFLICT(code) DO NOTHING
         """))
@@ -67,7 +71,8 @@ async def providers():
         return [dict(row) for row in (await s.execute(text("""
             SELECT code,display_name,public_url,enabled,integration_status,
                    notes,updated_at,updated_by
-            FROM payment_provider_settings ORDER BY CASE WHEN code='tribute' THEN 0 ELSE 1 END,
+            FROM payment_provider_settings WHERE archived_at IS NULL
+            ORDER BY CASE WHEN code='tribute' THEN 0 ELSE 1 END,
             display_name
         """))).mappings().all()]
 
@@ -75,7 +80,7 @@ async def save_provider(code,public_url,notes,enabled,actor):
     from urllib.parse import urlparse
     async with SessionLocal() as s:
         known=(await s.execute(text(
-            "SELECT 1 FROM payment_provider_settings WHERE code=:code"
+            "SELECT 1 FROM payment_provider_settings WHERE code=:code AND archived_at IS NULL"
         ),{"code":code})).first()
     if not known:
         raise ValueError("Платёжная система не найдена")
@@ -93,7 +98,7 @@ async def save_provider(code,public_url,notes,enabled,actor):
                 UPDATE payment_provider_settings SET
                   public_url=:url,notes=:notes,enabled=:enabled,
                   integration_status='planned',updated_at=NOW(),updated_by=:actor
-                WHERE code=:code
+                WHERE code=:code AND archived_at IS NULL
             """),{"code":code,"url":public_url,"notes":(notes or "").strip(),
                   "enabled":enabled,"actor":actor})
             await s.execute(text("""
@@ -176,3 +181,43 @@ async def payment_provider_counts():
             GROUP BY p.code,p.display_name
             ORDER BY p.display_name
         """))).mappings().all()]
+
+
+async def archive_provider(code,actor):
+    """Hide provider without deleting historical transactions or payment attribution."""
+    async with SessionLocal() as s:
+        async with s.begin():
+            row=(await s.execute(text("""
+                UPDATE payment_provider_settings
+                SET archived_at=NOW(),enabled=FALSE,updated_at=NOW(),updated_by=:actor
+                WHERE code=:code AND archived_at IS NULL
+                RETURNING code
+            """),{"code":code,"actor":actor})).first()
+            if not row: raise ValueError("Платёжная система уже удалена или не существует")
+            await s.execute(text("""
+                INSERT INTO payment_provider_audit(code,actor,action)
+                VALUES (:code,:actor,'archived')
+            """),{"code":code,"actor":actor})
+
+
+async def archived_providers():
+    async with SessionLocal() as s:
+        return [dict(row) for row in (await s.execute(text("""
+            SELECT code,display_name,archived_at FROM payment_provider_settings
+            WHERE archived_at IS NOT NULL ORDER BY archived_at DESC
+        """))).mappings().all()]
+
+
+async def restore_provider(code,actor):
+    async with SessionLocal() as s:
+        async with s.begin():
+            row=(await s.execute(text("""
+                UPDATE payment_provider_settings
+                SET archived_at=NULL,enabled=FALSE,updated_at=NOW(),updated_by=:actor
+                WHERE code=:code AND archived_at IS NOT NULL RETURNING code
+            """),{"code":code,"actor":actor})).first()
+            if not row: raise ValueError("Система не найдена в архиве")
+            await s.execute(text("""
+                INSERT INTO payment_provider_audit(code,actor,action)
+                VALUES (:code,:actor,'restored')
+            """),{"code":code,"actor":actor})
