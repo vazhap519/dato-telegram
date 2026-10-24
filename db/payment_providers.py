@@ -178,6 +178,7 @@ async def payment_provider_counts():
               COUNT(v.id) FILTER (WHERE v.payment_status='paid') payments
             FROM payment_provider_settings p
             LEFT JOIN verified_payment_receipts v ON v.provider=p.code
+            WHERE p.archived_at IS NULL
             GROUP BY p.code,p.display_name
             ORDER BY p.display_name
         """))).mappings().all()]
