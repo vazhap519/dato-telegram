@@ -143,11 +143,14 @@ async def overview():
         ))).mappings()]
         return dict(summary),plans
 
-async def people(search='', page=1, status='all'):
+async def people(search='', page=1, status='all', payment_provider='all', buyers_only=False):
     """Filter by effective rights, not by clicks or unverified payments."""
     if status not in ('all','active','lifetime','expiring','expired','none'):
         status='all'
     page=max(1,min(page,100000))
+    payment_provider=(payment_provider or 'all').strip().lower()[:40]
+    if payment_provider!='all' and not payment_provider.replace('-','').replace('_','').isalnum():
+        payment_provider='all'
     q=(search or '').strip().lstrip('@')[:80]
     base="""
     WITH access_state AS (
@@ -178,7 +181,22 @@ async def people(search='', page=1, status='all'):
         (SELECT COUNT(*) FROM access_grants g
           WHERE g.telegram_id=u.telegram_id AND g.resource='community'
           AND g.revoked_at IS NULL AND g.starts_at<=NOW()
-          AND (g.ends_at IS NULL OR g.ends_at>NOW())) AS community_grants
+          AND (g.ends_at IS NULL OR g.ends_at>NOW())) AS community_grants,
+        (SELECT COUNT(*) FROM verified_payment_receipts v
+          WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid') AS verified_payment_count,
+        (SELECT v.provider FROM verified_payment_receipts v
+          WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid'
+          ORDER BY v.verified_at DESC,v.id DESC LIMIT 1) AS last_payment_provider,
+        (SELECT v.verified_at FROM verified_payment_receipts v
+          WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid'
+          ORDER BY v.verified_at DESC,v.id DESC LIMIT 1) AS last_payment_at,
+        (SELECT p.display_name FROM verified_payment_receipts v
+          JOIN payment_provider_settings p ON p.code=v.provider
+          WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid'
+          ORDER BY v.verified_at DESC,v.id DESC LIMIT 1) AS last_payment_provider_name,
+        EXISTS(SELECT 1 FROM verified_payment_receipts v
+          WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid'
+          AND (:provider='all' OR v.provider=:provider)) AS matching_verified_payment
       FROM users u
     )
     """
@@ -198,8 +216,10 @@ async def people(search='', page=1, status='all'):
           AND expiry<=NOW() AND expiry IS NOT NULL)
       OR (:status='none' AND NOT active_access AND NOT future_access)
     )
+    AND (NOT CAST(:buyers_only AS BOOLEAN) OR verified_payment_count>0)
+    AND (:provider='all' OR matching_verified_payment)
     """
-    params={"q":q,"status":status,"offset":(page-1)*30}
+    params={"q":q,"status":status,"offset":(page-1)*30,"provider":payment_provider,"buyers_only":buyers_only}
     async with SessionLocal() as s:
         total=(await s.execute(text(base+"SELECT COUNT(*) FROM access_state "+where),params)).scalar_one()
         rows=(await s.execute(text(base+"""
