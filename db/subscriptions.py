@@ -143,25 +143,78 @@ async def overview():
         ))).mappings()]
         return dict(summary),plans
 
-async def people(search='', page=1):
+async def people(search='', page=1, status='all'):
+    """Filter by effective rights, not by clicks or unverified payments."""
+    if status not in ('all','active','lifetime','expiring','expired','none'):
+        status='all'
     page=max(1,min(page,100000))
+    q=(search or '').strip().lstrip('@')[:80]
+    base="""
+    WITH access_state AS (
+      SELECT u.telegram_id,u.username,u.first_name,u.last_name,u.created_at,
+        EXISTS(SELECT 1 FROM access_grants g
+          WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+          AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+          AND (g.ends_at IS NULL OR g.ends_at>NOW())) OR
+        EXISTS(SELECT 1 FROM subscriptions s
+          WHERE s.telegram_id=u.telegram_id AND s.status='active'
+          AND s.paid_until>NOW()) AS active_access,
+        EXISTS(SELECT 1 FROM access_grants g
+          WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+          AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+          AND g.ends_at IS NULL) AS is_lifetime,
+        (SELECT MAX(expiry) FROM (
+           SELECT g.ends_at expiry FROM access_grants g
+           WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+             AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.ends_at IS NOT NULL
+           UNION ALL
+           SELECT s.paid_until expiry FROM subscriptions s
+           WHERE s.telegram_id=u.telegram_id AND s.status='active'
+             AND s.paid_until IS NOT NULL
+        ) dates) AS expiry,
+        EXISTS(SELECT 1 FROM access_grants g
+          WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+          AND g.revoked_at IS NULL AND g.starts_at>NOW()) AS future_access,
+        (SELECT COUNT(*) FROM access_grants g
+          WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+          AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+          AND (g.ends_at IS NULL OR g.ends_at>NOW())) AS community_grants
+      FROM users u
+    )
+    """
+    where="""
+    WHERE (
+      CAST(:q AS TEXT)='' OR CAST(telegram_id AS TEXT) ILIKE '%'||:q||'%'
+      OR COALESCE(username,'') ILIKE '%'||:q||'%'
+      OR COALESCE(first_name,'') ILIKE '%'||:q||'%'
+      OR COALESCE(last_name,'') ILIKE '%'||:q||'%'
+    ) AND (
+      :status='all'
+      OR (:status='active' AND active_access)
+      OR (:status='lifetime' AND is_lifetime)
+      OR (:status='expiring' AND active_access AND NOT is_lifetime
+          AND expiry BETWEEN NOW() AND NOW()+INTERVAL '7 days')
+      OR (:status='expired' AND NOT active_access AND NOT future_access
+          AND expiry<=NOW() AND expiry IS NOT NULL)
+      OR (:status='none' AND NOT active_access AND NOT future_access)
+    )
+    """
+    params={"q":q,"status":status,"offset":(page-1)*30}
     async with SessionLocal() as s:
-        params={"q":search.strip().lstrip("@")[:80],"offset":(page-1)*30}
-        where=""" WHERE CAST(:q AS TEXT)='' OR CAST(u.telegram_id AS TEXT) ILIKE '%'||:q||'%'
-            OR COALESCE(u.username,'') ILIKE '%'||:q||'%'
-            OR COALESCE(u.first_name,'') ILIKE '%'||:q||'%'
-            OR COALESCE(u.last_name,'') ILIKE '%'||:q||'%' """
-        total=(await s.execute(text("SELECT count(*) FROM users u"+where),params)).scalar_one()
-        rows=(await s.execute(text("""
-          SELECT u.telegram_id,u.username,u.first_name,u.last_name,u.created_at,
-          (SELECT COUNT(*) FROM access_grants g WHERE g.telegram_id=u.telegram_id
-            AND g.resource='community' AND g.revoked_at IS NULL AND g.starts_at<=NOW()
-            AND (g.ends_at IS NULL OR g.ends_at>NOW())) community_grants,
-          (SELECT COUNT(*) FROM access_grants g WHERE g.telegram_id=u.telegram_id
-            AND g.resource='community' AND g.grant_type='lifetime' AND g.revoked_at IS NULL) lifetime_grants
-          FROM users u
-        """+where+" ORDER BY u.created_at DESC,u.telegram_id DESC LIMIT 30 OFFSET :offset"),params)).mappings()
+        total=(await s.execute(text(base+"SELECT COUNT(*) FROM access_state "+where),params)).scalar_one()
+        rows=(await s.execute(text(base+"""
+          SELECT *,CASE
+             WHEN is_lifetime THEN 'lifetime'
+             WHEN active_access AND expiry BETWEEN NOW() AND NOW()+INTERVAL '7 days' THEN 'expiring'
+             WHEN active_access THEN 'active'
+             WHEN future_access THEN 'scheduled'
+             WHEN expiry<=NOW() AND expiry IS NOT NULL THEN 'expired'
+             ELSE 'none'
+          END AS access_status
+          FROM access_state
+        """+where+" ORDER BY created_at DESC,telegram_id DESC LIMIT 30 OFFSET :offset"),params)).mappings().all()
         return [dict(x) for x in rows],total
+
 
 async def person(telegram_id):
     async with SessionLocal() as s:
