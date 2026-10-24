@@ -104,9 +104,12 @@ async def group_removal_test_worker(bot):
                         logger.info("Expiry notice not delivered uid=%s", uid)
                 except asyncio.CancelledError:
                     raise
-                except Exception:
+                except Exception as exc:
                     logger.exception("Removal failed for uid=%s", uid)
-                    await finish_group_removal(uid, "error", str(exc)[:300])
+                    try:
+                        await finish_group_removal(uid, "error", str(exc)[:300])
+                    except Exception:
+                        logger.exception("Could not save removal failure for uid=%s", uid)
         except asyncio.CancelledError:
             raise
         except Exception:
