@@ -41,6 +41,17 @@ def fetch_live_catalogue():
 
 
 async def verify_db():
+    # This checker is deliberately read-only: missing migration tables must
+    # produce an actionable message rather than silently creating anything.
+    async with SessionLocal() as s:
+        table = (await s.execute(text("""
+            SELECT to_regclass('tribute_auto_settings')
+        """))).scalar_one_or_none()
+    if table is None:
+        print("CHECK FAILED: tribute_auto_settings table is missing.")
+        print("The bot/admin startup initialization may still be running or failed.")
+        print("Check service logs: journalctl -u dato-telegram-bot -u dato-telegram-admin -n 100 --no-pager")
+        return None
     state=await list_auto_settings()
     print("Global auto payment processing:", "ON" if state["setting"]["enabled"] else "OFF (safe)")
     print("Configured exact offers:",len(state["offers"]))
@@ -81,6 +92,8 @@ async def verify_db():
 
 async def main():
     state=await verify_db()
+    if state is None:
+        return 3
     catalogue=fetch_live_catalogue()
     if catalogue is None:
         print("CHECK FAILED: live Tribute catalogue is unavailable. Keep automation OFF.")
