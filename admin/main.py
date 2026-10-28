@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
-from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_event, verify_signature, store_event, recent_events
+from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
 from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts, archive_provider, archived_providers, restore_provider
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
@@ -137,7 +137,7 @@ async def tribute_webhook(request: Request):
     if not verify_signature(body, request.headers.get("trbt-signature"), api_key):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     try:
-        event = parse_event(body)
+        event = parse_signed_delivery(body)
     except InvalidTributeEvent as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     inserted = await store_event(event)
