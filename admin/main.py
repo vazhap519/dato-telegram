@@ -21,6 +21,7 @@ from db.support import initialize_support, list_tickets, ticket_detail, support_
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
+from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
@@ -55,6 +56,7 @@ async def setup_onboarding():
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
+    await initialize_tribute_payment_tests()
     await initialize_payment_providers()
     await initialize_reliability_settings()
     await initialize_group_access()
@@ -83,6 +85,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/grant/expiry",
         "/subscriptions/renew",
         "/subscriptions/automation",
+        "/subscriptions/tribute-test/create",
         "/subscriptions/provider",
         "/subscriptions/provider/add",
         "/subscriptions/provider/delete",
@@ -543,6 +546,58 @@ async def support_change_status(ticket_id:int,status:str=Form(...),
             logging.exception("Support closure notice not delivered for %s",ticket_id)
     return RedirectResponse(f"/support/{ticket_id}?status=ok",status_code=303)
 
+
+
+@app.get("/subscriptions/tribute-test")
+async def tribute_test_page(request: Request, user=Depends(get_current_user)):
+    """Only signed-in admin sees test link history; no public test tariff."""
+    return templates.TemplateResponse(
+        request=request,
+        name="tribute_test.html",
+        context={
+            "one_time_link": None,
+            "test_links": await recent_tribute_test_links(),
+            "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
+            "test_subscription_id": TEST_SUBSCRIPTION_ID,
+            "test_period_id": TEST_PERIOD_ID,
+        },
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@app.post("/subscriptions/tribute-test/create")
+async def tribute_test_create(
+    request: Request,
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    """Issue a 20-minute one-use bot entry, not a payment or an entitlement."""
+    from aiogram import Bot
+
+    if not os.environ.get("BOT_TOKEN"):
+        raise HTTPException(status_code=503, detail="Telegram bot is not configured")
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            me = await telegram.get_me()
+            username = me.username
+    except Exception:
+        raise HTTPException(status_code=503, detail="Cannot identify Telegram bot")
+    if not username:
+        raise HTTPException(status_code=503, detail="Telegram bot has no username")
+
+    token = await create_tribute_test_link(user["user"])
+    return templates.TemplateResponse(
+        request=request,
+        name="tribute_test.html",
+        context={
+            "one_time_link": f"https://t.me/{username}?start={token}",
+            "test_links": await recent_tribute_test_links(),
+            "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
+            "test_subscription_id": TEST_SUBSCRIPTION_ID,
+            "test_period_id": TEST_PERIOD_ID,
+        },
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 @app.get("/subscriptions/tribute-events")
