@@ -35,6 +35,12 @@ class MemoryDB:
     def __init__(self):
         self.now=datetime.now(timezone.utc).replace(microsecond=0)
         self.user=8609932510
+        self.plan_price=Decimal("1")
+        self.plan_currency="USD"
+        self.plan_active=False
+        self.plan_url=""
+        self.checkout_intent=True
+        self.offer_accepted=True
         self.offer={
             "subscription_id":279302,"period_id":528940,
             "channel_id":547415,"amount_minor":100,
@@ -89,10 +95,15 @@ class MemoryDB:
                 if sql.startswith("SELECT * FROM tribute_auto_offers"):
                     return Result(db.offer.copy())
                 if sql.startswith("SELECT id,price_amount,currency,is_lifetime"):
-                    return Result({"id":51,"price_amount":Decimal("1"),
-                                   "currency":"USD","is_lifetime":False,
-                                   "is_active":False,"archived_at":None,
-                                   "payment_url":""})
+                    return Result({"id":db.offer["plan_id"],
+                                   "price_amount":db.plan_price,
+                                   "currency":db.plan_currency,"is_lifetime":False,
+                                   "is_active":db.plan_active,"archived_at":None,
+                                   "payment_url":db.plan_url})
+                if sql.startswith("SELECT 1 FROM offer_acceptances a"):
+                    return Result((1,) if db.offer_accepted else None)
+                if sql.startswith("SELECT 1 FROM tribute_checkout_intents i"):
+                    return Result((1,) if db.checkout_intent else None)
                 if sql.startswith("SELECT pg_advisory_xact_lock"):
                     return Result(True)
                 if sql.startswith("SELECT 1 FROM users WHERE"):
@@ -158,6 +169,65 @@ class TributeAutoTransactionTests(unittest.TestCase):
             self.assertEqual(len(state.audit),2)
             self.assertFalse(any("access_grants" in sql or
                                  "ban_chat_member" in sql for sql in state.statements))
+
+    def make_real_public_checkout(self):
+        from db.tribute_shared_checkout import PRODUCTION_OFFER_ID, PRODUCTION_URL
+        state=MemoryDB()
+        state.offer.update({
+            "subscription_id":PRODUCTION_OFFER_ID,
+            "period_id":529034,"channel_id":547415,"amount_minor":4900,
+            "currency":"eur","period":"quarterly",
+            "plan_id":52,"require_test_claim":False,
+        })
+        state.plan_price=Decimal("49")
+        state.plan_currency="EUR"
+        state.plan_active=True
+        state.plan_url=PRODUCTION_URL
+        state.events[1]["payload"]["details"].update({
+            "subscription_id":PRODUCTION_OFFER_ID,
+            "period_id":529034,"channel_id":547415,
+            "amount":4900,"currency":"eur","period":"quarterly",
+            "expires_at":(state.now+timedelta(days=90)).isoformat(),
+        })
+        return state
+
+    def test_shared_link_accepts_three_month_payment_without_any_plan_selection(self):
+        state=self.make_real_public_checkout()
+        with patch.dict(sys.modules, {
+            "db.database":SimpleNamespace(SessionLocal=state.session_factory)
+        }):
+            self.assertEqual(asyncio.run(activate_auto_event(1)),"processed")
+        self.assertEqual(state.sub["telegram_id"],8609932510)
+        self.assertEqual(state.sub["paid_until"],state.now+timedelta(days=90))
+        self.assertEqual(state.outbox,{1})
+        self.assertEqual(state.receipts["payment-1"],77)
+        self.assertTrue(any("tribute_checkout_intents" in sql for sql in state.statements))
+        self.assertFalse(any("subscription_plan_selections" in sql for sql in state.statements))
+
+    def test_shared_link_payment_without_bot_checkout_intent_cannot_grant_access(self):
+        state=self.make_real_public_checkout()
+        state.checkout_intent=False
+        with patch.dict(sys.modules, {
+            "db.database":SimpleNamespace(SessionLocal=state.session_factory)
+        }):
+            from db.tribute_auto import AutoPaymentError
+            with self.assertRaises(AutoPaymentError):
+                asyncio.run(activate_auto_event(1))
+        self.assertIsNone(state.sub)
+        self.assertEqual(state.outbox,set())
+        self.assertFalse(state.receipts)
+
+    def test_shared_link_paid_period_must_match_signed_price_and_id(self):
+        state=self.make_real_public_checkout()
+        state.events[1]["payload"]["details"]["period_id"]=529035
+        with patch.dict(sys.modules, {
+            "db.database":SimpleNamespace(SessionLocal=state.session_factory)
+        }):
+            from db.tribute_auto import AutoPaymentError
+            with self.assertRaises(AutoPaymentError):
+                asyncio.run(activate_auto_event(1))
+        self.assertIsNone(state.sub)
+        self.assertFalse(state.receipts)
 
     def test_unsigned_event_is_rejected_before_any_write(self):
         state=MemoryDB()
