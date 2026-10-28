@@ -11,6 +11,7 @@ from db.subscriptions import available_payment_plans, select_payment_plan, subsc
 from db.group_access import group_settings
 from db.tribute_payment_test import claim_tribute_test_link, TEST_PAYMENT_URL, TEST_BROWSER_URL, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.tribute_auto import is_auto_processing_enabled
+from db.tribute_shared_checkout import begin_shared_checkout
 from bot.group_handlers import send_group_invitation
 
 logger = logging.getLogger(__name__)
@@ -249,31 +250,51 @@ def plan_button_label(plan):
 
 
 async def subscription_click_handler(query: types.CallbackQuery):
+    """One bot button, one Tribute page, four selectable paid periods.
+
+    The click proves intent to visit an OFFER only, not an assumed payment
+    period. Real term/price and entitlement are taken solely from a signed
+    Tribute new_subscription webhook.
+    """
     if not query.from_user:
         return
     if not await record_subscription_click(query.from_user.id):
-        await query.answer("Сначала примите условия публичной оферты.", show_alert=True)
+        await query.answer("Сначала примите актуальную публичную оферту через /start.", show_alert=True)
         return
-    plans = await available_payment_plans()
-    if not plans:
-        await query.answer("Тарифы пока не настроены. Попробуйте позже.", show_alert=True)
+    url = await begin_shared_checkout(query.from_user.id)
+    if not url:
+        await query.answer(
+            "Оформление подписки сейчас настраивается. Попробуйте позже.",
+            show_alert=True,
+        )
         return
     await query.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        *[[InlineKeyboardButton(text=plan_button_label(plan), callback_data=f"choose_plan:{plan['id']}")]
-          for plan in plans],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_subscription")]
+    keyboard=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить через Tribute", url=url)],
+        [InlineKeyboardButton(text="👤 Моя подписка", callback_data="my_subscription")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_subscription")],
     ])
+    message_text=(
+        "💫 «Круг Души» — оформление подписки\\n\\n"
+        "Выберите срок уже на странице Tribute:\\n"
+        "• 1 месяц — 19 €\\n"
+        "• 3 месяца — 49 €\\n"
+        "• 6 месяцев — 95 €\\n"
+        "• 1 год — 179 €\\n\\n"
+        "Tribute может добавить сервисный сбор, итог виден до оплаты. "
+        "Подписка продлевается автоматически, пока вы её не отмените.\\n\\n"
+        "После подтверждения платежа наш бот учтёт фактически оплаченный "
+        "период и отправит персональное приглашение в «Круг Души». "
+        "Открытие страницы оплаты само по себе доступ не предоставляет."
+    )
     if query.message:
         try:
-            await query.message.edit_text("Выберите срок участия в сообществе:", reply_markup=keyboard)
+            await query.message.edit_text(message_text,reply_markup=keyboard)
             return
         except TelegramBadRequest:
             pass
     await query.bot.send_message(
-        query.from_user.id,
-        "Выберите срок участия в сообществе:",
-        reply_markup=keyboard
+        query.from_user.id,message_text,reply_markup=keyboard
     )
 
 
