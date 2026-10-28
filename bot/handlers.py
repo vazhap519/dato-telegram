@@ -41,7 +41,7 @@ def account_keyboard(can_subscribe=True, can_invite=False):
     rows = []
     if can_subscribe:
         rows.append([InlineKeyboardButton(
-            text="💳 Выбрать тариф", callback_data="subscription_click"
+            text="💳 Оформить подписку", callback_data="subscription_click"
         )])
     if can_invite:
         rows.append([InlineKeyboardButton(
@@ -322,44 +322,13 @@ async def back_to_subscription_handler(query: types.CallbackQuery):
 
 
 async def choose_plan_handler(query: types.CallbackQuery):
-    if not query.from_user:
-        return
-    try:
-        plan_id = int((query.data or "").partition(":")[2])
-    except ValueError:
-        await query.answer("Не удалось определить тариф.", show_alert=True)
-        return
-    plan = await select_payment_plan(query.from_user.id, plan_id)
-    if not plan:
-        await query.answer("Тариф недоступен или необходимо принять оферту.", show_alert=True)
-        return
-    await query.answer("Тариф выбран")
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Перейти к оплате", url=plan["payment_url"])],
-        [InlineKeyboardButton(text="↩️ Выбрать другой тариф", callback_data="subscription_click")]
-    ])
-    text = (
-        f"Вы выбрали: {plan['name']}\n"
-        f"Стоимость: {plan['price_amount']} {plan['currency']}\n"
-        f"Срок: {'Бессрочно' if plan['is_lifetime'] else str(plan['duration_days']) + ' дней'}\n\n"
-        "Нажмите кнопку ниже для перехода на страницу оплаты. "
-        + (
-            "После успешной оплаты подключённого тарифа Tribute автоматически "
-            "проверит платёж, и бот отправит приглашение. Сам переход к оплате "
-            "не активирует доступ."
-            if await is_auto_processing_enabled() else
-            "Автоматическая проверка платежей пока выключена. "
-            "Один переход к оплате не активирует доступ."
+    """Old inline tariff buttons must not open legacy or private-group charges."""
+    if query.from_user:
+        await query.answer(
+            "Срок подписки теперь выбирается непосредственно в Tribute. "
+            "Откройте /start и нажмите «Оформить подписку».",
+            show_alert=True,
         )
-    )
-    # Edit instead of sending a new message to avoid duplicates on repeated taps.
-    if query.message:
-        try:
-            await query.message.edit_text(text, reply_markup=keyboard)
-            return
-        except TelegramBadRequest:
-            pass
-    await query.bot.send_message(query.from_user.id, text, reply_markup=keyboard)
 
 
 from db.broadcast import opt_out, opt_in
