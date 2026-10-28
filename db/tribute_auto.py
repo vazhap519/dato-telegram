@@ -6,6 +6,7 @@ events are *never* treated as payment and this module NEVER removes members.
 """
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from urllib.parse import parse_qs, urlsplit
 import re
 
 from sqlalchemy import text
@@ -27,6 +28,25 @@ MAX_TG_ID = 9223372036854775807
 
 class AutoPaymentError(ValueError):
     pass
+
+
+def is_tribute_checkout(url):
+    """Allow only real Tribute payment-link families as a production bot plan."""
+    if not isinstance(url,str) or not url or len(url)>2000:
+        return False
+    try:
+        parsed=urlsplit(url)
+        if parsed.scheme!="https" or parsed.username or parsed.password:
+            return False
+        host=(parsed.hostname or "").lower()
+        if host=="t.me" and parsed.path=="/tribute/app":
+            values=parse_qs(parsed.query).get("startapp",[])
+            return len(values)==1 and bool(re.fullmatch(r"s[A-Za-z0-9_-]{3,90}",values[0]))
+        if host=="web.tribute.tg" and re.fullmatch(r"/s/[A-Za-z0-9_-]{3,90}",parsed.path):
+            return not parsed.query
+    except ValueError:
+        return False
+    return False
 
 
 def _exact_int(x):
@@ -228,11 +248,13 @@ async def register_auto_offer(offer_id, period_id, channel_id, amount_minor,
     async with SessionLocal() as s:
         async with s.begin():
             plan = (await s.execute(text("""
-                SELECT price_amount,currency,duration_days,is_lifetime,is_active,archived_at
+                SELECT price_amount,currency,duration_days,is_lifetime,is_active,archived_at,payment_url
                 FROM subscription_plans WHERE id=:id FOR UPDATE
             """), {"id":plan_id})).mappings().first()
             if not plan or plan["archived_at"] or plan["is_lifetime"] or not plan["is_active"]:
                 raise AutoPaymentError("Укажите активный месячный/годовой тариф без бессрочных прав")
+            if not is_tribute_checkout(plan["payment_url"]):
+                raise AutoPaymentError("В тарифе бота должна быть настоящая HTTPS-ссылка оплаты Tribute")
             if plan["price_amount"] is None or plan["currency"].lower()!=currency:
                 raise AutoPaymentError("Цена или валюта тарифа бота не совпадают с Tribute")
             if Decimal(plan["price_amount"]) != Decimal(amount_minor)/Decimal(100):
@@ -262,7 +284,7 @@ async def set_auto_offer_enabled(offer_id, period_id, enabled, actor):
         async with s.begin():
             offer = (await s.execute(text("""
                 SELECT o.*,p.price_amount,p.currency AS plan_currency,
-                       p.is_lifetime,p.is_active,p.archived_at,p.duration_days
+                       p.is_lifetime,p.is_active,p.archived_at,p.duration_days,p.payment_url
                 FROM tribute_auto_offers o JOIN subscription_plans p ON p.id=o.plan_id
                 WHERE o.subscription_id=:offer AND o.period_id=:cycle FOR UPDATE
             """), {"offer":offer_id,"cycle":period_id})).mappings().first()
@@ -273,6 +295,8 @@ async def set_auto_offer_enabled(offer_id, period_id, enabled, actor):
                     raise AutoPaymentError("Бессрочный или архивный тариф запрещён")
                 if not offer["require_test_claim"] and not offer["is_active"]:
                     raise AutoPaymentError("Публичный тариф бота должен быть активным")
+                if not offer["require_test_claim"] and not is_tribute_checkout(offer["payment_url"]):
+                    raise AutoPaymentError("У публичного тарифа бота должна быть ссылка Tribute")
                 if offer["price_amount"] is None or (Decimal(offer["price_amount"])
                         != Decimal(offer["amount_minor"])/Decimal(100)
                         or offer["plan_currency"].lower()!=offer["currency"]):
@@ -280,7 +304,7 @@ async def set_auto_offer_enabled(offer_id, period_id, enabled, actor):
             await s.execute(text("""
                 UPDATE tribute_auto_offers
                 SET enabled=:enabled,
-                    enabled_at=CASE WHEN :enabled THEN NOW() ELSE NULL END
+                    enabled_at=CASE WHEN :enabled THEN COALESCE(enabled_at,NOW()) ELSE NULL END
                 WHERE subscription_id=:offer AND period_id=:cycle
             """), {"enabled":enabled,"offer":offer_id,"cycle":period_id})
             await s.execute(text("""
@@ -305,7 +329,7 @@ async def set_auto_processing_enabled(enabled, actor):
             await s.execute(text("""
                 UPDATE tribute_auto_settings
                 SET enabled=:enabled,
-                    enabled_at=CASE WHEN :enabled THEN NOW() ELSE NULL END,
+                    enabled_at=CASE WHEN :enabled THEN COALESCE(enabled_at,NOW()) ELSE NULL END,
                     updated_by=:actor,updated_at=NOW()
                 WHERE id=1
             """), {"enabled":enabled,"actor":actor})
