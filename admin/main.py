@@ -22,6 +22,7 @@ from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
 from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
+from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
@@ -57,6 +58,7 @@ async def setup_onboarding():
     await initialize_automation()
     await initialize_subscriptions()
     await initialize_tribute_payment_tests()
+    await initialize_tribute_test_activation()
     await initialize_payment_providers()
     await initialize_reliability_settings()
     await initialize_group_access()
@@ -86,6 +88,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/renew",
         "/subscriptions/automation",
         "/subscriptions/tribute-test/create",
+        "/subscriptions/tribute-test/activate",
         "/subscriptions/provider",
         "/subscriptions/provider/add",
         "/subscriptions/provider/delete",
