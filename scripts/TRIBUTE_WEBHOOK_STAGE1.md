@@ -41,6 +41,33 @@ Verify 401 for an invalid signature and a single `pending_review` entry for a va
 Check `expires_at`, `telegram_user_id`, `trb_user_id`, `subscription_id` names as actually delivered.
 **Never treat `trb_user_id` as a Telegram ID**; these are distinct identifiers.
 
+## Identified test subscription (2026-10-28)
+
+Read-only GET /subscriptions succeeded and returned exactly one USD 1/month offering:
+- Test public-channel subscription: `subscriptionId=279302`
+- Monthly pricing period: `periodId=528940`
+- Payment link inside Telegram: `https://t.me/tribute/app?startapp=s1aES`
+- Web payment link: `https://web.tribute.tg/s/1aES`
+
+Existing creator offers **must not be mapped to this test community-access flow**:
+- `subscriptionId=229558` (existing USD "Вход в Круг Души")
+- `subscriptionId=183308` (existing EUR "Вход в Круг Души")
+- `subscriptionId=236047` ("Подписка Первопроходца")
+
+The catalogue identifies offerings, **not buyers**, so it cannot prove
+who purchased nor activate an entitlement.
+
+The public-channel subscription is recurring, and the checkout displayed
+a total of approximately USD 1.12 at the time of the user's screenshot.
+A real payment test is a real charge; perform only with the owner's approval,
+preferably using an otherwise unentitled test Telegram account, and cancel
+future renewals after the test.
+
+The first real signed event must be inspected for its event name, `subscription_id`
+and/or `subscriptionId`, `period_id` and/or `periodId`, `expires_at`,
+and buyer identity before any payment-to-Telegram access automation is implemented.
+Webhooks for unrelated existing offers remain in the audit inbox only.
+
 ## Next steps (not implemented)
 
 - Validate real payload fields and the dedicated public-channel subscription ID.
