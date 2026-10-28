@@ -120,6 +120,9 @@ async def initialize_tribute_auto():
     """Create independent auto-processing settings without enabling purchases."""
     from db.database import engine
     async with engine.begin() as conn:
+        # Both bot and admin services initialize the same tables on startup.
+        # Serialize new DDL across processes to avoid first-deploy catalog races.
+        await conn.execute(text("SELECT pg_advisory_xact_lock(638492701)"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS tribute_auto_settings (
                 id INTEGER PRIMARY KEY CHECK (id=1),
@@ -262,14 +265,18 @@ async def register_auto_offer(offer_id, period_id, channel_id, amount_minor,
             low,high,_ = CYCLES[period]
             if plan["duration_days"] is None or not low<=plan["duration_days"]<=high:
                 raise AutoPaymentError("Срок тарифа бота не совпадает с Tribute")
-            await s.execute(text("""
+            inserted = (await s.execute(text("""
                 INSERT INTO tribute_auto_offers
                     (subscription_id,period_id,channel_id,amount_minor,
                      currency,period,plan_id,enabled,require_test_claim)
                 VALUES(:offer,:cycle,:chat,:amount,:currency,:period,:plan,FALSE,FALSE)
+                ON CONFLICT(subscription_id,period_id) DO NOTHING
+                RETURNING subscription_id
             """), {"offer":offer_id,"cycle":period_id,"chat":channel_id,
                     "amount":amount_minor,"currency":currency,
-                    "period":period,"plan":plan_id})
+                    "period":period,"plan":plan_id})).scalar_one_or_none()
+            if inserted is None:
+                raise AutoPaymentError("Этот период Tribute уже добавлен")
             await s.execute(text("""
                 INSERT INTO subscription_audit_log(action,actor,details)
                 VALUES('tribute_auto_offer_added',:actor,
@@ -623,11 +630,10 @@ async def finish_invite(event_id, delivered, reason=""):
                 UPDATE tribute_invite_outbox
                 SET state=:state,locked_until=NULL,
                     next_attempt_at=CASE WHEN :delivered THEN NOW()
-                                         ELSE NOW()+CAST(:delay AS INTERVAL) END,
+                                         ELSE NOW()+ INTERVAL '30 minutes' END,
                     last_error=:reason,updated_at=NOW()
                 WHERE event_id=:event_id AND state='sending'
             """), {"event_id":event_id,
                     "state":"sent" if delivered else "retry",
                     "delivered":delivered,
-                    "delay":timedelta(minutes=30),
                     "reason":str(reason)[:180]})
