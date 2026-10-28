@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
+from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_event, verify_signature, store_event, recent_events
 from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts, archive_provider, archived_providers, restore_provider
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
@@ -116,6 +117,32 @@ async def protect_admin_forms(request: Request, call_next):
             )
 
     return await call_next(request)
+
+
+@app.post("/webhooks/tribute")
+async def tribute_webhook(request: Request):
+    """Stage 1: verify and persist, NEVER grant/revoke access."""
+    api_key = os.environ.get("TRIBUTE_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Webhook not configured")
+    if not request.headers.get("content-type", "").lower().startswith("application/json"):
+        raise HTTPException(status_code=415, detail="Expected application/json")
+    # Stream with a hard cap so even missing Content-Length cannot exhaust memory.
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Payload too large")
+    body = bytes(raw)
+    if not verify_signature(body, request.headers.get("trbt-signature"), api_key):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    try:
+        event = parse_event(body)
+    except InvalidTributeEvent as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    inserted = await store_event(event)
+    return {"status": "received" if inserted else "duplicate", "access_changes": False}
+
 
 templates = Jinja2Templates(directory="admin/templates")
 
@@ -515,6 +542,17 @@ async def support_change_status(ticket_id:int,status:str=Form(...),
             import logging
             logging.exception("Support closure notice not delivered for %s",ticket_id)
     return RedirectResponse(f"/support/{ticket_id}?status=ok",status_code=303)
+
+
+
+@app.get("/subscriptions/tribute-events")
+async def tribute_webhook_journal(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(
+        request=request, name="tribute_events.html",
+        context={"events": await recent_events(100),
+                 "webhook_ready": bool(os.environ.get("TRIBUTE_API_KEY"))},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/subscriptions")
