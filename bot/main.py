@@ -13,6 +13,7 @@ from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
 from db.tribute_payment_test import initialize_tribute_payment_tests
 from db.tribute_auto import initialize_tribute_auto
+from db.payment_providers import initialize_payment_providers
 from bot.tribute_worker import tribute_subscription_worker
 from db.group_access import initialize_group_access
 from db.expiry_monitor import initialize_expiry_monitor
@@ -54,6 +55,7 @@ async def main():
     await initialize_flow()
     await initialize_support()
     await initialize_subscriptions()
+    await initialize_payment_providers()
     await initialize_tribute_payment_tests()
     await initialize_tribute_auto()
     await initialize_group_access()
