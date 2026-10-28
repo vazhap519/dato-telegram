@@ -28,7 +28,7 @@ def subscription_intro(settings):
     """Single reusable subscription step for accepted users."""
     message_text = (settings.get("subscription_text") or "").strip()
     if not message_text:
-        message_text = "Вы уже приняли условия. Выберите подходящий тариф для участия в сообществе."
+        message_text = "Вы приняли условия. Нажмите «Оформить подписку», чтобы выбрать срок участия в Tribute."
     return message_text, InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Оформить подписку", callback_data="subscription_click")],
         [InlineKeyboardButton(text="👤 Моя подписка", callback_data="my_subscription")],
