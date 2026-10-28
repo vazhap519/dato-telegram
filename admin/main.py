@@ -560,6 +560,7 @@ async def tribute_test_page(request: Request, user=Depends(get_current_user)):
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "test_subscription_id": TEST_SUBSCRIPTION_ID,
             "test_period_id": TEST_PERIOD_ID,
+            "now": datetime.now(timezone.utc),
         },
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
@@ -595,6 +596,7 @@ async def tribute_test_create(
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "test_subscription_id": TEST_SUBSCRIPTION_ID,
             "test_period_id": TEST_PERIOD_ID,
+            "now": datetime.now(timezone.utc),
         },
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
