@@ -86,7 +86,7 @@ def is_expected_production_offer(offer):
                 offer.get("require_test_claim") is False)
 
 
-def production_offer_ready(offer):
+def production_offer_ready(offer, *, require_enabled=True):
     """Validate the stored exact offer AND the current bot payment plan.
 
     Call on every checkout attempt, even if an admin enabled it earlier.
@@ -96,7 +96,7 @@ def production_offer_ready(offer):
         return False
     try:
         return bool(
-            offer["enabled"] and offer["is_active"] and
+            (offer["enabled"] or not require_enabled) and offer["is_active"] and
             not offer["is_lifetime"] and offer["archived_at"] is None and
             offer["plan_currency"]=="EUR" and
             offer["price_amount"] is not None and
@@ -125,7 +125,7 @@ async def shared_checkout_status():
     checked=[]
     for period_id,cadence,cents,days,label in PERIODS:
         offer=by_period.get(period_id)
-        valid=bool(offer and production_offer_ready(offer))
+        valid=bool(offer and production_offer_ready(offer, require_enabled=False))
         checked.append({"period_id":period_id,"period":cadence,
                         "price_eur":Decimal(cents)/100,"label":label,
                         "configured":valid,"enabled":bool(offer and offer["enabled"])})
