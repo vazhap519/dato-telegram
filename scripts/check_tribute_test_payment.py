@@ -7,12 +7,14 @@ It deliberately does not print secrets, signatures or customer information.
 import asyncio
 from datetime import timedelta
 from pathlib import Path
-import os
+import sys
 
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(PROJECT_ROOT / ".env")
 
 from db.database import SessionLocal
 from db.tribute_test_activation import (
