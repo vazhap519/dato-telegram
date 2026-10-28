@@ -63,7 +63,7 @@
             <td class="p-2">
               {% if item.claimed_at %}
                 <span class="text-emerald-300">Да</span>
-              {% elif item.expires_at < item.created_at %}
+              {% elif item.expires_at < now %}
                 <span class="text-gray-400">Истекла</span>
               {% else %}
                 <span class="text-amber-300">Нет</span>
