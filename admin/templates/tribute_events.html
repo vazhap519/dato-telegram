@@ -42,6 +42,8 @@
           <td class="p-3">
             {% if item.status == "processed" %}
               <span class="text-emerald-300">Оплата подтверждена · доступ учтён</span>
+            {% elif item.status == "needs_attention" %}
+              <span class="text-red-300">Требует ручной проверки — доступ не выдан</span>
             {% elif item.status == "pending_review" %}
               <span class="text-amber-300">Ожидает проверки</span>
             {% else %}
