@@ -75,7 +75,7 @@
 </summary>
 <div class="p-4 md:p-5 space-y-4">
 <h2 class="font-semibold text-xl">⚙️ Автоматизация подписок</h2>
-<p class="text-sm text-gray-400">Автоматизация работает только с участниками, вступление которых бот зафиксировал по собственной ссылке. Старые участники сообщества не добавляются в этот список автоматически.</p>
+<p class="text-sm text-gray-400">Эта старая общая автоматизация работает только с участниками, вступление которых бот зафиксировал по собственной ссылке. Её оставляем выключенной. Для оплаченных участников новой подписки Tribute настройка исключения без льготного периода находится на <a class="text-blue-300 underline" href="/subscriptions/tribute-auto">отдельной странице Tribute</a>.</p>
 {% if request.query_params.get('automation') == 'saved' %}<p class="text-green-300 text-sm">Настройки успешно сохранены.</p>{% endif %}
 <div class="bg-gray-700 rounded-lg p-4 text-sm">Под контролем бота в подключённой группе: <strong>{{ managed_total }}</strong> участник(ов). Тестовые исключения отдельных аккаунтов настраиваются в их карточках отдельно.</div>
 <form method="post" action="/subscriptions/automation" class="space-y-4">
@@ -85,7 +85,7 @@
 <label class="flex items-center gap-3"><input type="checkbox" name="removal_enabled" value="true" {{ 'checked' if subscription_automation.removal_enabled else '' }}> <span>Автоматически исключать участников с истёкшим доступом</span></label>
 <p class="text-xs text-amber-300">Внимание: функция исключения выключена по умолчанию. При включении действуют только участники, записанные ботом при вступлении через его собственную ссылку. Постоянные права и действующие продления имеют приоритет.</p>
 <div>
-<label class="block text-sm mb-2" for="automation-grace">Льготный период после окончания доступа</label>
+<label class="block text-sm mb-2" for="automation-grace">Льготный период только для старой общей автоматизации (не применяется к новой подписке Tribute)</label>
 <select id="automation-grace" name="grace_hours" class="bg-gray-700 rounded p-3">
 <option value="0" {{ 'selected' if subscription_automation.grace_hours == 0 else '' }}>Без задержки</option>
 <option value="24" {{ 'selected' if subscription_automation.grace_hours == 24 else '' }}>24 часа</option>
