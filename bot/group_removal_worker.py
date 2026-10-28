@@ -14,6 +14,7 @@ from db.group_access import (
 from db.subscription_automation import (
     automation_settings, eligible_managed_removals, mark_managed_removed,
 )
+from db.tribute_paid_removal import eligible_expired_tribute_members
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,13 @@ async def removal_eligibility(uid, chat_id):
     tests = await eligible_removal_tests(settings["grace_hours"], limit=1000)
     if any(x["telegram_id"] == uid and x["chat_id"] == chat_id for x in tests):
         return True
-    if not settings["removal_enabled"]:
-        return False
-    managed = await eligible_managed_removals(chat_id, settings["grace_hours"], limit=1000)
-    return any(x["telegram_id"] == uid for x in managed)
+    if settings["removal_enabled"]:
+        managed = await eligible_managed_removals(chat_id, settings["grace_hours"], limit=1000)
+        if any(x["telegram_id"] == uid for x in managed):
+            return True
+    # Separate owner-opt-in: exact paid_until, no additional grace period.
+    tribute = await eligible_expired_tribute_members(chat_id, limit=1000)
+    return any(x["telegram_id"] == uid for x in tribute)
 
 
 async def group_removal_test_worker(bot):
@@ -46,10 +50,14 @@ async def group_removal_test_worker(bot):
             targets = list(test_targets)
             if settings["removal_enabled"]:
                 targets += await eligible_managed_removals(chat_id, settings["grace_hours"])
+            # Tribute production buyers have their own disabled-by-default
+            # zero-grace policy; never enable legacy global removal for them.
+            tribute_targets = await eligible_expired_tribute_members(chat_id)
+            targets += tribute_targets
             logger.info(
-                "Removal scan: group=%s grace=%sh global=%s candidates=%s",
+                "Removal scan: group=%s legacy_grace=%sh global=%s tribute_due=%s candidates=%s",
                 chat_id, settings["grace_hours"], settings["removal_enabled"],
-                len(targets),
+                len(tribute_targets), len(targets),
             )
             seen = set()
             for target in targets:
@@ -97,8 +105,8 @@ async def group_removal_test_worker(bot):
                     try:
                         await bot.send_message(
                             uid,
-                            "⏳ Срок доступа в «Круг Души» и льготный период истекли. "
-                            "После продления получите новое приглашение через /subscription."
+                            "⏳ Оплаченный срок доступа в «Круг Души» закончился. "
+                            "После новой оплаты получите приглашение через /subscription."
                         )
                     except Exception:
                         logger.info("Expiry notice not delivered uid=%s", uid)
