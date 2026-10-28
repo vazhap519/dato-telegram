@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Tribute — тест через бота</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+<main class="max-w-3xl mx-auto p-5 md:p-8 space-y-5">
+  <header class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold">🧪 Тест оплаты через бота</h1>
+      <p class="text-gray-400 mt-2 text-sm">Скрытый тестовый сценарий для проверки реального платежа Tribute.</p>
+    </div>
+    <a href="/subscriptions" class="bg-gray-700 rounded-lg px-4 py-2">← Подписки</a>
+  </header>
+
+  <section class="rounded-xl border border-amber-700 bg-amber-950/40 p-5 space-y-2">
+    <h2 class="text-lg font-semibold text-amber-200">Тестовый платёж — настоящее списание</h2>
+    <p class="text-sm">Сумма предложения: <strong>1 USD в месяц</strong> (Tribute может показать комиссию; ранее итог был 1,12 USD). Автопродление включено до отмены в Tribute.</p>
+    <p class="text-sm">Subscription ID: <code>{{ test_subscription_id }}</code> · Period ID: <code>{{ test_period_id }}</code>.</p>
+    <p class="text-sm font-semibold">Оплата не даёт автоматического доступа в «Круг Души». Платёж проверяется только по журналу вебхуков.</p>
+    <a class="text-blue-300 underline text-sm" href="/subscriptions/tribute-events">Посмотреть журнал вебхуков</a>
+  </section>
+
+  {% if one_time_link %}
+  <section class="rounded-xl border border-emerald-700 bg-emerald-950/40 p-5 space-y-3">
+    <h2 class="text-lg font-semibold">Одноразовая ссылка создана</h2>
+    <p class="text-sm">Срок действия — 20 минут; ссылка открывается только один раз и не отображается повторно после обновления страницы.</p>
+    <p class="text-xs text-gray-300">Не публикуйте эту ссылку и не пересылайте её в общий чат.</p>
+    <div class="bg-gray-950 border border-gray-700 p-3 rounded-lg break-all text-sm select-all">{{ one_time_link }}</div>
+    <a href="{{ one_time_link }}" target="_blank" rel="noopener noreferrer"
+       class="inline-block bg-emerald-700 hover:bg-emerald-600 font-semibold px-5 py-3 rounded-lg">
+      Открыть нашего Telegram-бота
+    </a>
+    <p class="text-xs text-gray-300">Если тестовый аккаунт ещё не принял оферту, сначала запустите бота обычной командой /start, примите условия, затем откройте ссылку снова.</p>
+  </section>
+  {% endif %}
+
+  <section class="rounded-xl border border-gray-700 bg-gray-800 p-5 space-y-3">
+    <h2 class="text-lg font-semibold">Создать тестовую ссылку</h2>
+    <p class="text-sm text-gray-300">Доступна только после входа в админку. Не добавляет новый тариф в публичное меню бота и не выдаёт права доступа.</p>
+    <form method="post" action="/subscriptions/tribute-test/create">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-5 py-3 rounded-lg font-semibold">Создать одноразовую ссылку (20 минут)</button>
+    </form>
+  </section>
+
+  <section class="rounded-xl border border-gray-700 bg-gray-800 p-5 space-y-3">
+    <h2 class="text-lg font-semibold">История тестовых ссылок</h2>
+    <p class="text-sm text-gray-400">В журнале сохраняются только факты создания и использования ссылок. Секретные коды не сохраняются в открытом виде.</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead><tr class="text-gray-400 border-b border-gray-700">
+          <th class="p-2">Создана (UTC)</th><th class="p-2">Использована</th><th class="p-2">Telegram ID</th>
+        </tr></thead>
+        <tbody>
+          {% for item in test_links %}
+          <tr class="border-b border-gray-700">
+            <td class="p-2 whitespace-nowrap">{{ item.created_at }}</td>
+            <td class="p-2">
+              {% if item.claimed_at %}
+                <span class="text-emerald-300">Да</span>
+              {% elif item.expires_at < item.created_at %}
+                <span class="text-gray-400">Истекла</span>
+              {% else %}
+                <span class="text-amber-300">Нет</span>
+              {% endif %}
+            </td>
+            <td class="p-2">{{ item.claimed_by or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td class="p-3 text-gray-400" colspan="3">Тестовых ссылок ещё нет.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+</body>
+</html>
