@@ -11,8 +11,8 @@ from scripts import smoke_test_tribute_test_member as smoke
 
 def approved():
     return {
-        "telegram_id": 8609932510,
-        "trb_user_id": "T-59727293",
+        "telegram_id": 1234567890,
+        "trb_user_id": "T-12345",
         "subscription_row_id": 42,
         "chat_id": -100123,
         "chat_title": "TEST ONLY",
@@ -59,13 +59,13 @@ class SmokeTestSafety(unittest.TestCase):
 
     def test_signed_payment_and_bot_join_required(self):
         with patch.object(smoke,"SessionLocal",FakeSession):
-            row=self.run_async(smoke.read_test_buyer(8609932510))
-        self.assertEqual(row["telegram_id"],8609932510)
+            row=self.run_async(smoke.read_test_buyer(1234567890))
+        self.assertEqual(row["telegram_id"],1234567890)
         sql,params=FakeSession.queries[-1]
         self.assertEqual(params["offer"],279302)
         self.assertEqual(params["period_text"],"528940")
         self.assertEqual(params["plan_code"],"tribute_test_279302_monthly")
-        self.assertEqual(params["uid"],8609932510)
+        self.assertEqual(params["uid"],1234567890)
         for clause in (
             "e.signature_valid=TRUE",
             "e.status='processed'",
@@ -94,13 +94,13 @@ class SmokeTestSafety(unittest.TestCase):
                 rec[field]=val
                 FakeSession.records=[rec]
                 with self.subTest(field=field),self.assertRaises(smoke.UnsafeTest):
-                    self.run_async(smoke.read_test_buyer(8609932510))
+                    self.run_async(smoke.read_test_buyer(1234567890))
 
     def test_rejects_unknown_buyer_or_nonpositive_uid(self):
         with patch.object(smoke,"SessionLocal",FakeSession):
             FakeSession.records=[]
             with self.assertRaises(smoke.UnsafeTest):
-                self.run_async(smoke.read_test_buyer(8609932510))
+                self.run_async(smoke.read_test_buyer(1234567890))
             with self.assertRaises(smoke.UnsafeTest):
                 self.run_async(smoke.read_test_buyer(0))
 
@@ -113,18 +113,18 @@ class SmokeTestSafety(unittest.TestCase):
              patch.object(smoke,"mark_managed_removed",new_callable=AsyncMock) as mark,\
              patch.object(smoke,"send_group_invitation",new_callable=AsyncMock,
                           return_value="sent") as invite:
-            result=self.run_async(smoke.smoke_kick_and_reinvite(8609932510,bot))
+            result=self.run_async(smoke.smoke_kick_and_reinvite(1234567890,bot))
             self.assertEqual(result,"sent")
             self.assertEqual(pre.await_count,2)
             bot.ban_chat_member.assert_awaited_once_with(
-                -100123,8609932510,revoke_messages=False
+                -100123,1234567890,revoke_messages=False
             )
             bot.unban_chat_member.assert_awaited_once_with(
-                -100123,8609932510,only_if_banned=True
+                -100123,1234567890,only_if_banned=True
             )
-            mark.assert_awaited_once_with(8609932510,-100123)
+            mark.assert_awaited_once_with(1234567890,-100123)
             invite.assert_awaited_once_with(
-                bot,8609932510,actor="smoke_test_verified_tribute_279302"
+                bot,1234567890,actor="smoke_test_verified_tribute_279302"
             )
 
     def test_changed_payment_blocks_all_telegram_actions(self):
@@ -138,7 +138,7 @@ class SmokeTestSafety(unittest.TestCase):
              patch.object(smoke,"mark_managed_removed",new_callable=AsyncMock),\
              patch.object(smoke,"send_group_invitation",new_callable=AsyncMock):
             with self.assertRaises(smoke.UnsafeTest):
-                self.run_async(smoke.smoke_kick_and_reinvite(8609932510,bot))
+                self.run_async(smoke.smoke_kick_and_reinvite(1234567890,bot))
             bot.ban_chat_member.assert_not_awaited()
             bot.unban_chat_member.assert_not_awaited()
 
@@ -152,7 +152,7 @@ class SmokeTestSafety(unittest.TestCase):
         with patch.object(smoke,"read_test_buyer",new_callable=AsyncMock,
                           return_value=approved()):
             with self.assertRaises(smoke.UnsafeTest):
-                self.run_async(smoke.preflight(8609932510,bot))
+                self.run_async(smoke.preflight(1234567890,bot))
 
         bot=SimpleNamespace(
             get_me=AsyncMock(return_value=SimpleNamespace(id=123)),
@@ -165,7 +165,7 @@ class SmokeTestSafety(unittest.TestCase):
         with patch.object(smoke,"read_test_buyer",new_callable=AsyncMock,
                           return_value=approved()):
             with self.assertRaises(smoke.UnsafeTest):
-                self.run_async(smoke.preflight(8609932510,bot))
+                self.run_async(smoke.preflight(1234567890,bot))
 
     def test_preflight_uses_actual_live_paid_entitlement(self):
         bot=SimpleNamespace(
@@ -181,7 +181,7 @@ class SmokeTestSafety(unittest.TestCase):
              patch("db.group_access.has_group_access",new_callable=AsyncMock,
                    return_value=False):
             with self.assertRaises(smoke.UnsafeTest):
-                self.run_async(smoke.preflight(8609932510,bot))
+                self.run_async(smoke.preflight(1234567890,bot))
 
     def test_implementation_never_modifies_subscription_rights(self):
         source=(smoke.ROOT/"scripts/smoke_test_tribute_test_member.py").read_text("utf-8")
