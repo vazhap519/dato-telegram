@@ -25,6 +25,7 @@ from db.tribute_payment_test import initialize_tribute_payment_tests, create_tri
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
 from db.tribute_auto import initialize_tribute_auto, list_auto_settings, register_auto_offer, set_auto_offer_enabled, set_auto_processing_enabled, is_auto_processing_enabled, AutoPaymentError
 from db.tribute_shared_checkout import initialize_shared_checkout, shared_checkout_status, set_shared_checkout_enabled, CheckoutNotReady
+from db.tribute_paid_removal import initialize_tribute_paid_removal, tribute_paid_removal_status, set_tribute_paid_removal_enabled, TributeRemovalError
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
@@ -68,6 +69,7 @@ async def setup_onboarding():
     await initialize_group_access()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
+    await initialize_tribute_paid_removal()
 
 
 # Protection against cross-origin admin requests
@@ -97,6 +99,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/tribute-auto/offer",
         "/subscriptions/tribute-auto/add",
         "/subscriptions/tribute-auto/checkout",
+        "/subscriptions/tribute-auto/removal",
         "/subscriptions/provider",
         "/subscriptions/provider/add",
         "/subscriptions/provider/delete",
@@ -574,15 +577,64 @@ async def tribute_shared_checkout_change(
     )
 
 
+@app.post("/subscriptions/tribute-auto/removal")
+async def tribute_paid_removal_change(
+    enabled: bool = Form(False),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    """Enable zero-grace kick only for verified Tribute 279348 paid members."""
+    if enabled:
+        # Enforce real Telegram ban permissions BEFORE flipping the DB flag.
+        from aiogram import Bot
+        from aiogram.enums import ChatMemberStatus
+        config=await group_settings()
+        if not config.get("chat_id"):
+            raise HTTPException(400,detail="Закрытая группа не настроена")
+        try:
+            async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+                me=await bot.get_me()
+                membership=await bot.get_chat_member(config["chat_id"],me.id)
+                authorized=(
+                    membership.status==ChatMemberStatus.CREATOR or
+                    (membership.status==ChatMemberStatus.ADMINISTRATOR and
+                     bool(getattr(membership,"can_restrict_members",False)))
+                )
+                if not authorized:
+                    raise HTTPException(
+                        400,
+                        detail="Для исключения участников боту нужны права блокировать участников",
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Unable to verify Telegram removal permissions")
+            raise HTTPException(
+                503,
+                detail="Не удалось проверить права бота в закрытой группе",
+            ) from exc
+    try:
+        await set_tribute_paid_removal_enabled(enabled, user["user"])
+    except TributeRemovalError as exc:
+        raise HTTPException(400,detail=str(exc)) from exc
+    return RedirectResponse(
+        "/subscriptions/tribute-auto?changed=removal",
+        status_code=303,
+    )
+
+
 @app.get("/subscriptions/tribute-auto")
 async def tribute_auto_page(request: Request, user=Depends(get_current_user)):
     state = await list_auto_settings()
     shared = await shared_checkout_status()
+    paid_removal = await tribute_paid_removal_status()
     return templates.TemplateResponse(
         request=request, name="tribute_auto.html",
         context={
             **state,
             "shared": shared,
+            "paid_removal": paid_removal,
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
         },
         headers={"Cache-Control":"no-store", "Referrer-Policy":"same-origin"},
