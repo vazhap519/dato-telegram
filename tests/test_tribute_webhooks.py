@@ -126,6 +126,25 @@ class TributeWebhookSafetyTests(unittest.TestCase):
         self.assertTrue(all("payment_webhook_events" in sql for sql in Session.sql_statements))
         self.assertFalse(any("access_grants" in sql or "UPDATE subscriptions" in sql for sql in Session.sql_statements))
 
+    def test_known_test_plan_ids_are_visible_without_secrets(self):
+        event = dict(EVENT, payload={
+            "subscription_id": 279302,
+            "period_id": 528940,
+            "expires_at": "2026-11-28T17:00:00Z",
+            "telegram_user_id": 123456789,
+            "credit_card": "never-store-this",
+            "email": "do-not-log@example.test",
+        })
+        record = safe_event_record(event)
+        self.assertEqual(record["details"]["subscription_id"], 279302)
+        self.assertEqual(record["details"]["period_id"], 528940)
+        self.assertEqual(record["details"]["telegram_user_id"], 123456789)
+        self.assertEqual(record["details"]["expires_at"], "2026-11-28T17:00:00Z")
+        self.assertNotIn("credit_card", record["details"])
+        self.assertNotIn("email", record["details"])
+        self.assertNotIn("never-store-this", json.dumps(record))
+        self.assertNotIn("do-not-log@example.test", json.dumps(record))
+
     def test_sensitive_fields_not_stored(self):
         rec = safe_event_record(EVENT)
         self.assertEqual(rec["details"]["trb_user_id"], "account-54")
