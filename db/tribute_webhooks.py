@@ -57,6 +57,41 @@ def parse_event(body: bytes) -> dict:
     return event
 
 
+def parse_signed_delivery(body: bytes) -> dict:
+    """Recognize signed connection probes without treating them as subscriptions.
+
+    Normal webhook envelopes retain strict validation. A signed JSON object that
+    is not a valid subscription envelope can be logged as a diagnostic event.
+    A malformed recognized subscription MUST still be rejected.
+    """
+    try:
+        return parse_event(body)
+    except InvalidTributeEvent:
+        if not body or len(body) > MAX_BODY_BYTES:
+            raise
+        try:
+            obj = json.loads(body)
+        except (ValueError, UnicodeDecodeError):
+            raise InvalidTributeEvent("Malformed JSON") from None
+        if not isinstance(obj, dict):
+            raise InvalidTributeEvent("Expected an object")
+        if obj.get("name") in SUBSCRIPTION_EVENTS:
+            raise InvalidTributeEvent("Malformed subscription webhook")
+        name = obj.get("name")
+        if not isinstance(name, str) or not name or len(name) > 80:
+            name = "tribute_connection_test"
+        payload = obj.get("payload")
+        payload_fields = sorted(str(k)[:80] for k in payload)[:60] if isinstance(payload, dict) else []
+        return {
+            "name": name,
+            "created_at": "1970-01-01T00:00:00Z",
+            "sent_at": "",
+            "payload": {"probe_fingerprint": hashlib.sha256(body).hexdigest()},
+            "_envelope_fields": sorted(str(k)[:80] for k in obj)[:60],
+            "_payload_fields": payload_fields,
+        }
+
+
 def event_key(event: dict) -> str:
     """Stable across Tribute retries if only sent_at changes."""
     stable = {k: event[k] for k in ("name", "created_at", "payload")}
@@ -76,7 +111,8 @@ def safe_event_record(event: dict) -> dict:
         "name": event["name"],
         "created_at": event["created_at"],
         "sent_at": str(event.get("sent_at", ""))[:64],
-        "payload_fields": sorted(str(key)[:80] for key in payload)[:60],
+        "payload_fields": event.get("_payload_fields", sorted(str(key)[:80] for key in payload)[:60]),
+        "envelope_fields": event.get("_envelope_fields", []),
         "details": details,
     }
 
