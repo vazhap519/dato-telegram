@@ -314,3 +314,280 @@ async def set_auto_processing_enabled(enabled, actor):
                 VALUES ('tribute_auto_toggled',:actor,
                     jsonb_build_object('enabled',CAST(:enabled AS BOOLEAN)))
             """), {"actor":actor,"enabled":enabled})
+
+
+async def is_auto_processing_enabled():
+    from db.database import SessionLocal
+    async with SessionLocal() as s:
+        row = (await s.execute(text("""
+            SELECT enabled FROM tribute_auto_settings WHERE id=1
+        """))).scalar_one_or_none()
+        return row is True
+
+
+async def pending_auto_event_ids(limit=20):
+    """Only events received AFTER the offer/global owner opt-in qualify.
+
+    Join on JSON text, never CAST untrusted webhook values to bigint in SQL.
+    Values must still be type-checked in Python before any mutation.
+    """
+    from db.database import SessionLocal
+    async with SessionLocal() as s:
+        ids = (await s.execute(text("""
+            SELECT e.id
+            FROM payment_webhook_events e
+            JOIN tribute_auto_offers o
+              ON e.payload->'details'->>'subscription_id' = CAST(o.subscription_id AS TEXT)
+             AND e.payload->'details'->>'period_id' = CAST(o.period_id AS TEXT)
+            JOIN tribute_auto_settings a ON a.id=1
+            WHERE e.provider='tribute' AND e.signature_valid=TRUE
+              AND e.status='pending_review'
+              AND e.payload->>'name' IN ('new_subscription','renewed_subscription')
+              AND o.enabled=TRUE AND a.enabled=TRUE
+              AND e.received_at >= o.enabled_at
+              AND e.received_at >= a.enabled_at
+            ORDER BY e.id ASC LIMIT :limit
+        """), {"limit":min(max(int(limit),1),50)})).scalars().all()
+    return list(ids)
+
+
+async def mark_auto_event_attention(event_id, reason):
+    """Only manually reviewable events; failures never remove access."""
+    from db.database import SessionLocal
+    async with SessionLocal() as s:
+        async with s.begin():
+            await s.execute(text("""
+                UPDATE payment_webhook_events SET status='needs_attention'
+                WHERE id=:id AND provider='tribute' AND status='pending_review'
+            """), {"id":event_id})
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log(action,actor,details)
+                VALUES ('tribute_auto_attention','tribute_worker',
+                    jsonb_build_object('event_id',CAST(:event_id AS BIGINT),
+                                       'reason',CAST(:reason AS TEXT)))
+            """), {"event_id":event_id,"reason":str(reason)[:180]})
+
+
+async def activate_auto_event(event_id):
+    """Atomically record an allowlisted signed payment and enqueue invitation.
+
+    Any bad payment/user association aborts the entire transaction.
+    The bot worker calls this ONLY for rows selected by pending_auto_event_ids.
+    """
+    from db.database import SessionLocal
+    async with SessionLocal() as s:
+        async with s.begin():
+            event = (await s.execute(text("""
+                SELECT id,event_key,signature_valid,status,payload,received_at
+                FROM payment_webhook_events WHERE id=:id AND provider='tribute'
+                FOR UPDATE
+            """), {"id":event_id})).mappings().first()
+            if not event or event["signature_valid"] is not True:
+                raise AutoPaymentError("Событие Tribute не имеет проверенной подписи")
+            if event["status"] != "pending_review":
+                return "already_handled"
+
+            data = event["payload"]
+            details = data.get("details", {}) if isinstance(data,dict) else {}
+            offer_id = _exact_int(details.get("subscription_id")) if isinstance(details,dict) else None
+            period_id = _exact_int(details.get("period_id")) if isinstance(details,dict) else None
+            if offer_id is None or period_id is None:
+                raise AutoPaymentError("Отсутствуют числовые идентификаторы тарифа")
+            setting = (await s.execute(text("""
+                SELECT enabled,enabled_at FROM tribute_auto_settings WHERE id=1
+                FOR SHARE
+            """))).mappings().one()
+            offer = (await s.execute(text("""
+                SELECT * FROM tribute_auto_offers
+                WHERE subscription_id=:offer AND period_id=:cycle FOR SHARE
+            """), {"offer":offer_id,"cycle":period_id})).mappings().first()
+            if not offer or not offer["enabled"] or not setting["enabled"]:
+                return "disabled"
+            if event["received_at"] < offer["enabled_at"] or event["received_at"] < setting["enabled_at"]:
+                return "older_than_activation"
+            parsed = validate_paid_event(data, offer)
+            uid, buyer = parsed["telegram_id"], parsed["trb_user_id"]
+
+            # Serialize competing payments for the same customer and offer.
+            provider_ref = (
+                f"test:{offer_id}:{buyer}" if offer["require_test_claim"]
+                else f"tribute:{offer_id}:{buyer}"
+            )
+            await s.execute(text("""
+                SELECT pg_advisory_xact_lock(hashtext(:key))
+            """), {"key":provider_ref})
+            user = (await s.execute(text("""
+                SELECT 1 FROM users WHERE telegram_id=:uid
+            """), {"uid":uid})).first()
+            if not user:
+                raise AutoPaymentError("Покупатель не запускал нашего Telegram-бота")
+
+            binding = (await s.execute(text("""
+                SELECT telegram_id,subscription_row_id
+                FROM tribute_auto_buyers
+                WHERE offer_id=:offer AND trb_user_id=:buyer
+                FOR UPDATE
+            """), {"offer":offer_id,"buyer":buyer})).mappings().first()
+            current = (await s.execute(text("""
+                SELECT id,telegram_id,paid_until FROM subscriptions
+                WHERE provider='tribute' AND provider_subscription_id=:ref
+                FOR UPDATE
+            """), {"ref":provider_ref})).mappings().first()
+
+            # Reuse the already MANUALLY verified test payment if present.
+            legacy = None
+            if offer["require_test_claim"] and current and not binding:
+                legacy = (await s.execute(text("""
+                    SELECT telegram_id,subscription_row_id
+                    FROM tribute_test_buyer_bindings
+                    WHERE offer_id=:offer AND trb_user_id=:buyer
+                """), {"offer":offer_id,"buyer":buyer})).mappings().first()
+                if not legacy or legacy["telegram_id"] != uid or legacy["subscription_row_id"] != current["id"]:
+                    raise AutoPaymentError("Нельзя переназначить ранее оплаченную тестовую подписку")
+
+            if binding:
+                if binding["telegram_id"] != uid:
+                    raise AutoPaymentError("Tribute ID уже принадлежит другому Telegram-аккаунту")
+                if not current or binding["subscription_row_id"] != current["id"]:
+                    raise AutoPaymentError("Не найдена прежняя подписка плательщика")
+            elif parsed["event_name"] == "renewed_subscription" and not legacy:
+                raise AutoPaymentError("Продление без предыдущей подтверждённой подписки")
+            elif parsed["event_name"] == "new_subscription":
+                if offer["require_test_claim"]:
+                    claimed = (await s.execute(text("""
+                        SELECT 1 FROM tribute_payment_test_links
+                        WHERE claimed_by=:uid AND claimed_at IS NOT NULL
+                          AND claimed_at<=:received
+                          AND claimed_at>=:earliest
+                        LIMIT 1
+                    """), {"uid":uid,"received":event["received_at"],
+                            "earliest":event["received_at"]-timedelta(hours=2)})).first()
+                    if not claimed:
+                        raise AutoPaymentError("Покупатель не открыл тестовую ссылку нашего бота")
+                else:
+                    started = (await s.execute(text("""
+                        SELECT 1 FROM offer_acceptances a
+                        JOIN bot_flow_settings f ON f.id=1
+                        WHERE a.telegram_id=:uid AND a.offer_version=f.offer_version
+                        LIMIT 1
+                    """), {"uid":uid})).first()
+                    selected = (await s.execute(text("""
+                        SELECT 1 FROM subscription_plan_selections
+                        WHERE telegram_id=:uid AND plan_id=:plan
+                          AND selected_at<=:when
+                          AND selected_at>=:earliest
+                        LIMIT 1
+                    """), {"uid":uid,"plan":offer["plan_id"],
+                            "when":event["received_at"],
+                            "earliest":event["received_at"]-timedelta(hours=48)})).first()
+                    if not started or not selected:
+                        raise AutoPaymentError("Нет принятой оферты и выбора этого тарифа в боте")
+
+            if current and current["telegram_id"] != uid:
+                raise AutoPaymentError("Оплаченная подписка привязана к другому пользователю")
+            if current and not binding and not legacy:
+                raise AutoPaymentError("Существующая подписка не имеет проверенной связи с Tribute")
+
+            # Existing paid_until is never reduced by stale/out-of-order events.
+            if current:
+                sub_id = current["id"]
+                await s.execute(text("""
+                    UPDATE subscriptions
+                    SET paid_until=GREATEST(paid_until,:expiry),
+                        status='active',renews_automatically=TRUE,
+                        updated_at=NOW()
+                    WHERE id=:id AND telegram_id=:uid
+                """), {"id":sub_id,"uid":uid,"expiry":parsed["expires_at"]})
+            else:
+                sub_id = (await s.execute(text("""
+                    INSERT INTO subscriptions (
+                        telegram_id,plan_id,status,provider,provider_subscription_id,
+                        paid_until,renews_automatically
+                    ) VALUES (:uid,:plan,'active','tribute',:ref,:expiry,TRUE)
+                    RETURNING id
+                """), {"uid":uid,"plan":offer["plan_id"],"ref":provider_ref,
+                        "expiry":parsed["expires_at"]})).scalar_one()
+            if not binding:
+                await s.execute(text("""
+                    INSERT INTO tribute_auto_buyers
+                        (offer_id,trb_user_id,telegram_id,subscription_row_id)
+                    VALUES(:offer,:buyer,:uid,:sub)
+                """), {"offer":offer_id,"buyer":buyer,"uid":uid,"sub":sub_id})
+
+            result = (await s.execute(text("""
+                INSERT INTO verified_payment_receipts (
+                    provider,provider_payment_id,telegram_id,subscription_id,
+                    amount,currency,payment_status,source
+                ) VALUES ('tribute',:event_key,:uid,:sub,:price,:currency,
+                          'paid','verified_webhook')
+                ON CONFLICT(provider,provider_payment_id) DO NOTHING
+                RETURNING id
+            """), {"event_key":event["event_key"],"uid":uid,"sub":sub_id,
+                    "price":parsed["price"],"currency":offer["currency"].upper()})).scalar_one_or_none()
+            if result is None:
+                receipt = (await s.execute(text("""
+                    SELECT telegram_id,subscription_id
+                    FROM verified_payment_receipts
+                    WHERE provider='tribute' AND provider_payment_id=:key
+                """), {"key":event["event_key"]})).mappings().first()
+                if not receipt or receipt["telegram_id"] != uid or receipt["subscription_id"] != sub_id:
+                    raise AutoPaymentError("Подтверждение платежа уже связано с другим участником")
+            await s.execute(text("""
+                INSERT INTO tribute_invite_outbox(event_id,telegram_id)
+                VALUES (:id,:uid) ON CONFLICT(event_id) DO NOTHING
+            """), {"id":event_id,"uid":uid})
+            await s.execute(text("""
+                UPDATE payment_webhook_events SET status='processed'
+                WHERE id=:id AND status='pending_review'
+            """), {"id":event_id})
+            await s.execute(text("""
+                INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                VALUES (:uid,'tribute_auto_paid','tribute_worker',
+                   jsonb_build_object('webhook_id',CAST(:event AS BIGINT),
+                                      'subscription_id',CAST(:sub AS BIGINT),
+                                      'offer_id',CAST(:offer AS BIGINT),
+                                      'kind',CAST(:kind AS TEXT)))
+            """), {"uid":uid,"event":event_id,"sub":sub_id,
+                    "offer":offer_id,"kind":parsed["event_name"]})
+            return "processed"
+
+
+async def claim_due_invites(limit=5):
+    """Lease pending/expired invite attempts to a single worker process."""
+    from db.database import SessionLocal
+    async with SessionLocal() as s:
+        async with s.begin():
+            rows = (await s.execute(text("""
+                UPDATE tribute_invite_outbox o
+                SET state='sending',attempts=attempts+1,
+                    locked_until=NOW()+ INTERVAL '3 minutes',updated_at=NOW()
+                WHERE o.event_id IN (
+                    SELECT event_id FROM tribute_invite_outbox
+                    WHERE ((state IN ('pending','retry') AND next_attempt_at<=NOW())
+                        OR (state='sending' AND locked_until<NOW()))
+                    ORDER BY next_attempt_at,event_id
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT :limit
+                )
+                RETURNING event_id,telegram_id,attempts
+            """), {"limit":min(max(int(limit),1),20)})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def finish_invite(event_id, delivered, reason=""):
+    from db.database import SessionLocal
+    async with SessionLocal() as s:
+        async with s.begin():
+            # Leave failed delivery eligible for retry; do not undo paid access.
+            await s.execute(text("""
+                UPDATE tribute_invite_outbox
+                SET state=:state,locked_until=NULL,
+                    next_attempt_at=CASE WHEN :delivered THEN NOW()
+                                         ELSE NOW()+:delay END,
+                    last_error=:reason,updated_at=NOW()
+                WHERE event_id=:event_id AND state='sending'
+            """), {"event_id":event_id,
+                    "state":"sent" if delivered else "retry",
+                    "delivered":delivered,
+                    "delay":timedelta(minutes=30),
+                    "reason":str(reason)[:180]})
