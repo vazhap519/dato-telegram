@@ -24,6 +24,7 @@ from db.group_access import initialize_group_access, group_settings, save_group,
 from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
 from db.tribute_auto import initialize_tribute_auto, list_auto_settings, register_auto_offer, set_auto_offer_enabled, set_auto_processing_enabled, AutoPaymentError
+from db.tribute_shared_checkout import initialize_shared_checkout, shared_checkout_status, set_shared_checkout_enabled, CheckoutNotReady
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
@@ -61,6 +62,7 @@ async def setup_onboarding():
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
     await initialize_tribute_auto()
+    await initialize_shared_checkout()
     await initialize_payment_providers()
     await initialize_reliability_settings()
     await initialize_group_access()
@@ -94,6 +96,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/tribute-auto/setting",
         "/subscriptions/tribute-auto/offer",
         "/subscriptions/tribute-auto/add",
+        "/subscriptions/tribute-auto/checkout",
         "/subscriptions/provider",
         "/subscriptions/provider/add",
         "/subscriptions/provider/delete",
@@ -556,13 +559,30 @@ async def support_change_status(ticket_id:int,status:str=Form(...),
 
 
 
+@app.post("/subscriptions/tribute-auto/checkout")
+async def tribute_shared_checkout_change(
+    enabled: bool = Form(False),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    try:
+        await set_shared_checkout_enabled(enabled, user["user"])
+    except CheckoutNotReady as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+    return RedirectResponse(
+        "/subscriptions/tribute-auto?changed=checkout", status_code=303,
+    )
+
+
 @app.get("/subscriptions/tribute-auto")
 async def tribute_auto_page(request: Request, user=Depends(get_current_user)):
     state = await list_auto_settings()
+    shared = await shared_checkout_status()
     return templates.TemplateResponse(
         request=request, name="tribute_auto.html",
         context={
             **state,
+            "shared": shared,
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
         },
         headers={"Cache-Control":"no-store", "Referrer-Policy":"same-origin"},
