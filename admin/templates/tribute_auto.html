@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="same-origin">
+  <title>Tribute — автоматическая оплата</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+<main class="max-w-5xl mx-auto px-4 py-7 md:px-8 space-y-6">
+  <header class="flex flex-wrap justify-between items-start gap-3">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold">Tribute · автоматизация подписок</h1>
+      <p class="mt-2 text-sm text-gray-400">Подтверждение оплаты, продление срока и персональное приглашение от нашего бота.</p>
+    </div>
+    <a href="/subscriptions" class="bg-gray-700 px-4 py-2 rounded-lg">← Подписки</a>
+  </header>
+
+  {% if request.query_params.get('changed') %}
+  <p class="border border-emerald-700 text-emerald-200 bg-emerald-950/40 rounded-lg p-4 text-sm">Настройки сохранены. Предыдущие платежи при включении не обрабатываются автоматически задним числом.</p>
+  {% endif %}
+
+  <section class="border border-amber-700 bg-amber-950/30 rounded-xl p-5 space-y-2">
+    <h2 class="font-bold">Защитные ограничения</h2>
+    <p class="text-sm">Обрабатываются только подписанные вебхуки <code>new_subscription</code> и <code>renewed_subscription</code>, полученные <strong>после включения</strong> системы и конкретного тарифа. Только точно перечисленные ниже предложения Tribute, цены и периоды могут выдать доступ.</p>
+    <p class="text-sm">Непроверенные и неподходящие события направляются на ручную проверку. Отмена будущих списаний не отбирает уже оплаченный срок. Автоматическое исключение из группы здесь <strong>не включается</strong>. Права первопроходцев не изменяются.</p>
+    <p class="text-xs text-amber-200">Старое тестовое предложение за $1 было отменено; его оплаченный период действует до 28 ноября 2026. Для полноценного запуска потребуется отдельный реальный тариф.</p>
+  </section>
+
+  <section class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+    <div class="flex flex-wrap justify-between items-center gap-2">
+      <h2 class="font-bold text-xl">Главный переключатель</h2>
+      {% if setting.enabled %}
+        <span class="text-emerald-300 font-semibold">● Включено</span>
+      {% else %}
+        <span class="text-amber-300 font-semibold">● Выключено</span>
+      {% endif %}
+    </div>
+    <p class="text-sm text-gray-300">Рекомендуется включать только после проверки таблицы тарифов и прав бота. При отключении обработка новых событий и доставка приглашений останавливаются, но уже оплаченные права сохраняются.</p>
+    <form method="post" action="/subscriptions/tribute-auto/setting" class="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="enabled" value="true" {% if setting.enabled %}checked{% endif %}> Автоматическая выдача и продление</label>
+      <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg font-semibold">Сохранить</button>
+    </form>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div class="bg-gray-900 p-3 rounded-lg">События на проверке<strong class="block text-xl">{{ pending_total }}</strong></div>
+      <div class="bg-gray-900 p-3 rounded-lg">Приглашения ожидают<strong class="block text-xl">{{ outbox.get('pending',0) }}</strong></div>
+      <div class="bg-gray-900 p-3 rounded-lg">Приглашения отправлены<strong class="block text-xl">{{ outbox.get('sent',0) }}</strong></div>
+      <div class="bg-gray-900 p-3 rounded-lg">Повторы доставки<strong class="block text-xl">{{ outbox.get('retry',0) }}</strong></div>
+    </div>
+  </section>
+
+  <section class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+    <h2 class="font-bold text-xl">Разрешённые тарифы Tribute</h2>
+    <p class="text-sm text-gray-300">Каждая строка связывает один тариф Tribute с одним тарифом в нашем боте. Новые строки и тестовое предложение изначально выключены. Включение тарифа не включает общий переключатель.</p>
+
+    <div class="space-y-3">
+    {% for offer in offers %}
+    <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-2">
+      <div class="flex flex-wrap justify-between gap-3">
+        <div>
+          <h3 class="font-bold">{{ offer.plan_name }}</h3>
+          <p class="text-xs text-gray-400 mt-1">Tribute subscription_id: <code>{{ offer.subscription_id }}</code> · period_id: <code>{{ offer.period_id }}</code> · channel_id: <code>{{ offer.channel_id }}</code></p>
+          <p class="text-sm mt-1">{{ '%.2f' | format(offer.amount_minor / 100) }} {{ offer.currency | upper }} · {{ offer.period }} · {{ "Только приватный тест" if offer.require_test_claim else "Покупка через выбранный тариф бота" }}</p>
+        </div>
+        <div class="self-start text-sm">
+        {% if offer.enabled %}
+          <span class="text-emerald-300">Разрешён</span>
+        {% else %}
+          <span class="text-amber-300">Выключен</span>
+        {% endif %}
+        </div>
+      </div>
+      <form method="post" action="/subscriptions/tribute-auto/offer" class="flex flex-wrap gap-3 items-center">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="subscription_id" value="{{ offer.subscription_id }}">
+        <input type="hidden" name="period_id" value="{{ offer.period_id }}">
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="enabled" value="true" {% if offer.enabled %}checked{% endif %}> Разрешить автоматическую обработку этого тарифа</label>
+        <button class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg" type="submit">Сохранить тариф</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="text-gray-400 text-sm">Разрешённых тарифов ещё нет.</p>
+    {% endfor %}
+    </div>
+
+    <details class="border-t border-gray-700 pt-4">
+      <summary class="cursor-pointer text-blue-300 font-semibold">➕ Привязать новый действующий тариф Tribute</summary>
+      <p class="text-sm text-amber-200 mt-3">Используй только идентификаторы из подтверждённого каталога Tribute. Ошибочная привязка может начислить доступ не к тому продукту. Новая строка создаётся в выключенном состоянии.</p>
+      <form method="post" action="/subscriptions/tribute-auto/add" class="mt-4 grid sm:grid-cols-2 gap-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="text-sm">ID подписки Tribute<input type="number" name="subscription_id" min="1" required class="bg-gray-700 w-full p-2 rounded mt-1"></label>
+        <label class="text-sm">ID периода Tribute<input type="number" name="period_id" min="1" required class="bg-gray-700 w-full p-2 rounded mt-1"></label>
+        <label class="text-sm">ID канала Tribute<input type="number" name="channel_id" min="1" required class="bg-gray-700 w-full p-2 rounded mt-1"></label>
+        <label class="text-sm">Стоимость в минимальных единицах (например, 1900 для $19)<input type="number" name="amount_minor" min="1" required class="bg-gray-700 w-full p-2 rounded mt-1"></label>
+        <label class="text-sm">Валюта<select name="currency" class="bg-gray-700 w-full p-2 rounded mt-1"><option value="usd">USD</option><option value="eur">EUR</option><option value="gel">GEL</option></select></label>
+        <label class="text-sm">Период<select name="period" class="bg-gray-700 w-full p-2 rounded mt-1"><option value="monthly">1 месяц</option><option value="quarterly">3 месяца</option><option value="halfyearly">6 месяцев</option><option value="yearly">12 месяцев</option><option value="weekly">7 дней</option></select></label>
+        <label class="text-sm sm:col-span-2">Тариф в нашем боте
+          <select name="plan_id" required class="bg-gray-700 w-full p-2 rounded mt-1">
+            <option value="">Выбрать тариф</option>
+            {% for p in plans %}
+            <option value="{{ p.id }}">{{ p.name }} · {{ p.price_amount or 'нет цены' }} {{ p.currency }} · {{ p.duration_days }} дней</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="bg-emerald-700 hover:bg-emerald-600 px-4 py-3 rounded-lg sm:col-span-2 font-semibold">Добавить выключенный тариф</button>
+      </form>
+    </details>
+  </section>
+  <p class="text-sm text-gray-400">Реальные события и ошибки обрабатываемых платежей можно проверить в <a href="/subscriptions/tribute-events" class="underline text-blue-300">журнале вебхуков Tribute</a>. Управление отдельными постоянными правами и контроль исключений находятся в основной админке подписок.</p>
+</main>
+</body>
+</html>
