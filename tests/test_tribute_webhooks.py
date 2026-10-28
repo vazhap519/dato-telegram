@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from db.tribute_webhooks import (
     InvalidTributeEvent, event_key, parse_event, parse_signed_delivery, safe_event_record,
-    verify_signature, SUBSCRIPTION_EVENTS,
+    verify_signature, SUBSCRIPTION_EVENTS, DONATION_EVENTS, PAYMENT_REVIEW_EVENTS,
 )
 
 KEY = "local-example-key-not-production"
@@ -144,6 +144,24 @@ class TributeWebhookSafetyTests(unittest.TestCase):
         self.assertNotIn("email", record["details"])
         self.assertNotIn("never-store-this", json.dumps(record))
         self.assertNotIn("do-not-log@example.test", json.dumps(record))
+
+    def test_public_channel_recurring_donations_are_reviewable(self):
+        self.assertTrue({"new_donation", "recurrent_donation", "cancelled_donation"} <= DONATION_EVENTS)
+        self.assertTrue(DONATION_EVENTS <= PAYMENT_REVIEW_EVENTS)
+        for event_name in DONATION_EVENTS:
+            event = dict(EVENT, name=event_name, payload={
+                "donation_request_id": 279302,
+                "telegram_user_id": 123456789,
+                "email": "do-not-store@example.test",
+            })
+            self.assertEqual(parse_signed_delivery(json.dumps(event).encode()), event)
+            saved = safe_event_record(event)
+            self.assertEqual(saved["details"]["donation_request_id"], 279302)
+            self.assertNotIn("do-not-store@example.test", json.dumps(saved))
+            malformed = dict(event)
+            del malformed["created_at"]
+            with self.assertRaises(InvalidTributeEvent):
+                parse_signed_delivery(json.dumps(malformed).encode())
 
     def test_sensitive_fields_not_stored(self):
         rec = safe_event_record(EVENT)
