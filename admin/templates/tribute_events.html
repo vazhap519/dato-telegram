@@ -40,7 +40,9 @@
             {% endif %}
           </td>
           <td class="p-3">
-            {% if item.status == "pending_review" %}
+            {% if item.status == "processed" %}
+              <span class="text-emerald-300">Оплата подтверждена · доступ учтён</span>
+            {% elif item.status == "pending_review" %}
               <span class="text-amber-300">Ожидает проверки</span>
             {% else %}
               <span class="text-gray-400">Не относится к подпискам</span>
@@ -50,6 +52,25 @@
             {% for field, value in item.payload.details.items() %}
               <div><span class="text-gray-400">{{ field }}:</span> {{ value }}</div>
             {% endfor %}
+            {% if item.payload.name == "new_subscription"
+                  and item.payload.details.subscription_id == test_subscription_id
+                  and item.payload.details.period_id == test_period_id
+                  and item.status in ("pending_review", "processed") %}
+            <form method="post" action="/subscriptions/tribute-test/activate" class="mt-3 space-y-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="event_id" value="{{ item.id }}">
+              <input type="hidden" name="confirm" value="APPROVE_REAL_TRIBUTE_TEST_PAYMENT">
+              <button class="bg-emerald-700 hover:bg-emerald-600 px-3 py-2 rounded-lg font-semibold text-white text-sm"
+                      type="submit">
+                {% if item.status == "processed" %}
+                  🚪 Повторно отправить приглашение
+                {% else %}
+                  ✅ Учесть платёж и отправить приглашение
+                {% endif %}
+              </button>
+            </form>
+            <div class="text-xs text-amber-200 mt-2">Только тестовый тариф за 1 USD. Права существующих участников не изменяются.</div>
+            {% endif %}
             <details class="mt-2 text-gray-400">
               <summary class="cursor-pointer">Доступные поля</summary>
               <div class="text-xs space-y-1 mt-1">
