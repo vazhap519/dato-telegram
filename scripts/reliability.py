@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -174,6 +175,9 @@ def health():
         with urllib.request.urlopen(request, timeout=12) as response:
             if not (200 <= response.status < 400):
                 issues.append("Admin HTTP status: " + str(response.status))
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401:
+            issues.append("Admin HTTPS error: " + str(exc.code))
     except Exception:
         issues.append("Admin HTTPS endpoint is unavailable")
     for service in os.getenv("DATO_MONITOR_SERVICES", "").split(","):
