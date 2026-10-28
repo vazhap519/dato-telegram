@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tribute — журнал вебхуков</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+<main class="max-w-6xl mx-auto p-5 md:p-8 space-y-6">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div><h1 class="text-2xl md:text-3xl font-bold">Tribute — журнал вебхуков</h1>
+      <p class="text-gray-400 text-sm mt-2">Этап 1: только проверка подписи и запись событий. Выдача и отзыв доступа отключены в обработчике.</p>
+    </div>
+    <a href="/subscriptions" class="bg-gray-700 rounded px-4 py-2">← Подписки</a>
+  </header>
+  <div class="rounded-xl p-4 border border-amber-700 bg-amber-950/40 text-sm">
+    {% if webhook_ready %}
+      API-ключ задан на сервере. Для проверки доставки настройте URL вебхука в Tribute.
+    {% else %}
+      API-ключ пока не задан. Входящие запросы будут отклоняться кодом 503.
+    {% endif %}
+    Не включайте автоматическое исключение участников на основании этих записей.
+    <p class="mt-2 text-gray-300">Показаны последние 100 событий. В базе журнал сохраняется полностью до отдельной политики хранения.</p>
+  </div>
+  <div class="overflow-x-auto bg-gray-800 border border-gray-700 rounded-xl">
+    <table class="w-full text-sm text-left">
+      <thead class="bg-gray-700 text-gray-200">
+        <tr><th class="p-3">Получено (UTC)</th><th class="p-3">Событие</th><th class="p-3">Статус</th><th class="p-3">Служебные данные</th></tr>
+      </thead>
+      <tbody>
+      {% for item in events %}
+        <tr class="border-t border-gray-700 align-top">
+          <td class="p-3 whitespace-nowrap text-gray-300">{{ item.received_at }}</td>
+          <td class="p-3"><span class="font-semibold">{{ item.payload.name }}</span>
+            <div class="text-xs text-gray-400 mt-1">{{ item.payload.created_at }}</div>
+          </td>
+          <td class="p-3">
+            {% if item.status == "pending_review" %}
+              <span class="text-amber-300">Ожидает проверки</span>
+            {% else %}
+              <span class="text-gray-400">Не относится к подпискам</span>
+            {% endif %}
+          </td>
+          <td class="p-3 break-all">
+            {% for field, value in item.payload.details.items() %}
+              <div><span class="text-gray-400">{{ field }}:</span> {{ value }}</div>
+            {% endfor %}
+            <details class="mt-2 text-gray-400">
+              <summary class="cursor-pointer">Доступные поля</summary>
+              <span class="text-xs">{{ item.payload.payload_fields | join(", ") }}</span>
+            </details>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="p-8 text-center text-gray-400">Подтверждённых вебхуков ещё нет.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</main>
+</body>
+</html>
