@@ -24,6 +24,7 @@ load_dotenv(ROOT / ".env")
 from db.database import SessionLocal
 from db.tribute_shared_checkout import (
     PERIODS, PUBLIC_CHANNEL_ID, PRODUCTION_OFFER_ID, PRODUCTION_URL,
+    initialize_shared_checkout,
 )
 from scripts.check_tribute_subscriptions import API_URL, parse_catalog
 
@@ -158,6 +159,7 @@ async def main(apply):
         print("DRY RUN ONLY: No database changes. Use --apply after deployment if approved.")
         return 0
     try:
+        await initialize_shared_checkout()
         await apply_setup()
         return 0
     except ValueError as exc:
