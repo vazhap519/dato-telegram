@@ -430,6 +430,20 @@ async def activate_auto_event(event_id):
             if event["received_at"] < offer["enabled_at"] or event["received_at"] < setting["enabled_at"]:
                 return "older_than_activation"
             parsed = validate_paid_event(data, offer)
+            plan = (await s.execute(text("""
+                SELECT id,price_amount,currency,is_lifetime,is_active,
+                       archived_at,payment_url
+                FROM subscription_plans WHERE id=:plan FOR SHARE
+            """), {"plan":offer["plan_id"]})).mappings().first()
+            if (not plan or plan["is_lifetime"] or plan["archived_at"]
+                    or plan["price_amount"] is None
+                    or Decimal(plan["price_amount"]) != parsed["price"]
+                    or plan["currency"].lower() != offer["currency"]):
+                raise AutoPaymentError("Тариф в боте больше не соответствует оплате Tribute")
+            if not offer["require_test_claim"] and (
+                not plan["is_active"] or not is_tribute_checkout(plan["payment_url"])
+            ):
+                raise AutoPaymentError("Реальный тариф бота выключен или ссылка оплаты изменена")
             uid, buyer = parsed["telegram_id"], parsed["trb_user_id"]
 
             # Serialize competing payments for the same customer and offer.
@@ -518,10 +532,12 @@ async def activate_auto_event(event_id):
                 await s.execute(text("""
                     UPDATE subscriptions
                     SET paid_until=GREATEST(paid_until,:expiry),
+                        plan_id=:plan,
                         status='active',renews_automatically=TRUE,
                         updated_at=NOW()
                     WHERE id=:id AND telegram_id=:uid
-                """), {"id":sub_id,"uid":uid,"expiry":parsed["expires_at"]})
+                """), {"id":sub_id,"uid":uid,"plan":offer["plan_id"],
+                        "expiry":parsed["expires_at"]})
             else:
                 sub_id = (await s.execute(text("""
                     INSERT INTO subscriptions (
