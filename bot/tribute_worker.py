@@ -49,6 +49,11 @@ async def tribute_subscription_worker(bot):
                     for job in invites:
                         event_id = job["event_id"]
                         uid = job["telegram_id"]
+                        # Respect an owner emergency-disable between claiming
+                        # a queued delivery and contacting Telegram.
+                        if not await is_auto_processing_enabled():
+                            await finish_invite(event_id, False, "Automation disabled")
+                            break
                         try:
                             result = await send_group_invitation(
                                 bot, uid, "tribute_auto_payment"
