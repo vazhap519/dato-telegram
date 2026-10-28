@@ -52,6 +52,52 @@
   </section>
 
   <section class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="font-bold text-xl">Одна ссылка оплаты — четыре периода</h2>
+      {% if shared.checkout.enabled %}
+        <strong class="text-emerald-300">● Кнопка включена</strong>
+      {% else %}
+        <strong class="text-amber-300">● Кнопка выключена</strong>
+      {% endif %}
+    </div>
+    <p class="text-sm text-gray-300">В нашем боте будет одна кнопка «Оформить подписку». На странице Tribute пользователь сам выбирает период; бот учитывает фактическую оплату по подписанному вебхуку.</p>
+    <p class="text-sm break-all">Предложение Tribute: <code>{{ shared.checkout.subscription_id }}</code></p>
+    <p class="text-sm break-all">Ссылка: <code>{{ shared.checkout.checkout_url }}</code></p>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {% for p in shared.periods %}
+      <div class="bg-gray-900 rounded-lg p-3">
+        <p class="font-semibold">{{ p.label }}</p>
+        <p class="text-sm">{{ p.price_eur }} €</p>
+        <p class="text-xs text-gray-400 mt-1">Period ID: {{ p.period_id }}</p>
+        {% if p.configured and p.enabled %}
+          <p class="text-emerald-300 text-sm mt-1">✓ Проверен и разрешён</p>
+        {% elif p.configured %}
+          <p class="text-amber-300 text-sm mt-1">Настроен, выключен</p>
+        {% else %}
+          <p class="text-red-300 text-sm mt-1">Ещё не подготовлен</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="text-sm {% if shared.all_ready %}text-emerald-300{% else %}text-amber-300{% endif %}">
+      {% if shared.all_ready %}
+        Все четыре тарифа настроены и разрешены. Для открытия оплаты нужен включённый общий переключатель.
+      {% else %}
+        Сначала выполните безопасную подготовку всех четырёх тарифов и разрешите каждый период ниже.
+      {% endif %}
+    </p>
+    <form method="post" action="/subscriptions/tribute-auto/checkout" class="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="text-sm flex items-center gap-2">
+        <input type="checkbox" name="enabled" value="true" {% if shared.checkout.enabled %}checked{% endif %}>
+        Показывать одну ссылку оплаты в нашем Telegram-боте
+      </label>
+      <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg font-semibold">Сохранить</button>
+    </form>
+    <p class="text-xs text-gray-400">Включение разрешено только при четырёх корректных тарифах, включённой автоматической обработке и привязке к публичному каналу. До этого кнопка в боте сообщит о настройке оплаты.</p>
+  </section>
+
+  <section class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
     <h2 class="font-bold text-xl">Разрешённые тарифы Tribute</h2>
     <p class="text-sm text-gray-300">Каждая строка связывает один тариф Tribute с одним тарифом в нашем боте. Новые строки и тестовое предложение изначально выключены. Включение тарифа не включает общий переключатель.</p>
 
