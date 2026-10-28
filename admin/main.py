@@ -23,7 +23,7 @@ from db.subscription_automation import initialize_subscription_automation, autom
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
 from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
-from db.tribute_auto import initialize_tribute_auto, list_auto_settings, register_auto_offer, set_auto_offer_enabled, set_auto_processing_enabled, AutoPaymentError
+from db.tribute_auto import initialize_tribute_auto, list_auto_settings, register_auto_offer, set_auto_offer_enabled, set_auto_processing_enabled, is_auto_processing_enabled, AutoPaymentError
 from db.tribute_shared_checkout import initialize_shared_checkout, shared_checkout_status, set_shared_checkout_enabled, CheckoutNotReady
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
@@ -854,6 +854,13 @@ async def subscriptions_automation_update(
     if grace_hours not in (0,24,72):
         raise HTTPException(400, detail="Неверный льготный период")
     if removal_enabled:
+        # First payment automation is intentionally grant-only. Do not let an
+        # unrelated legacy admin control silently enable Telegram expulsions.
+        if await is_auto_processing_enabled():
+            raise HTTPException(
+                400,
+                detail="Сначала выключите автоматизацию оплаты Tribute; исключения участников проверяются отдельно.",
+            )
         group = await group_settings()
         if not group.get("chat_id"):
             raise HTTPException(400, detail="Сначала подключите Telegram-группу")
