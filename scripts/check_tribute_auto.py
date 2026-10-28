@@ -19,6 +19,7 @@ sys.path.insert(0,str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from db.tribute_auto import list_auto_settings, validate_paid_event, AutoPaymentError
+from db.tribute_shared_checkout import shared_checkout_status
 from db.database import SessionLocal
 from scripts.check_tribute_subscriptions import parse_catalog
 from sqlalchemy import text
@@ -53,6 +54,12 @@ async def verify_db():
         print("Check service logs: journalctl -u dato-telegram-bot -u dato-telegram-admin -n 100 --no-pager")
         return None
     state=await list_auto_settings()
+    shared=await shared_checkout_status()
+    print("Shared checkout:", "ON" if shared["checkout"]["enabled"] else "OFF (safe)")
+    print("Shared offer ID:", shared["checkout"]["subscription_id"])
+    print("Verified/approved shared periods:",
+          sum(bool(p["configured"] and p["enabled"]) for p in shared["periods"]),
+          "/ 4")
     print("Global auto payment processing:", "ON" if state["setting"]["enabled"] else "OFF (safe)")
     print("Configured exact offers:",len(state["offers"]))
     print("Unsigned or manual-review backlog:",state["pending_total"])
