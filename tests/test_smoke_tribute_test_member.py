@@ -63,6 +63,12 @@ class SmokeTestSafety(unittest.TestCase):
         self.assertEqual(row["telegram_id"],1234567890)
         sql,params=FakeSession.queries[-1]
         self.assertEqual(params["offer"],279302)
+        self.assertIs(type(params["offer"]), int)
+        self.assertEqual(params["offer_ref"], "279302")
+        self.assertIs(type(params["offer_ref"]), str)
+        self.assertIn("b.offer_id=:offer", sql)
+        self.assertIn("CONCAT('test:', :offer_ref, ':', b.trb_user_id)", sql)
+        self.assertNotIn("CAST(:offer AS TEXT)", sql)
         self.assertEqual(params["period_text"],"528940")
         self.assertEqual(params["plan_code"],"tribute_test_279302_monthly")
         self.assertEqual(params["uid"],1234567890)
