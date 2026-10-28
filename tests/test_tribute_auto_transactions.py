@@ -204,6 +204,54 @@ class TributeAutoTransactionTests(unittest.TestCase):
         self.assertTrue(any("tribute_checkout_intents" in sql for sql in state.statements))
         self.assertFalse(any("subscription_plan_selections" in sql for sql in state.statements))
 
+    def test_one_checkout_safely_accepts_all_four_signed_actual_periods(self):
+        from db.tribute_shared_checkout import PERIODS, PRODUCTION_OFFER_ID
+        for pid, cadence, cents, days, label in PERIODS:
+            with self.subTest(cadence=cadence):
+                state=self.make_real_public_checkout()
+                state.offer.update({"period_id":pid, "period":cadence, "amount_minor":cents})
+                state.plan_price=Decimal(cents)/100
+                state.events[1]["payload"]["details"].update({
+                    "period_id":pid,"period":cadence,"amount":cents,
+                    "expires_at":(state.now+timedelta(days=days)).isoformat(),
+                })
+                with patch.dict(sys.modules, {
+                    "db.database":SimpleNamespace(SessionLocal=state.session_factory)
+                }):
+                    self.assertEqual(asyncio.run(activate_auto_event(1)),"processed")
+                self.assertEqual(state.sub["telegram_id"],8609932510)
+                self.assertEqual(state.sub["paid_until"],state.now+timedelta(days=days))
+                self.assertEqual(state.outbox,{1})
+
+    def test_renewal_can_switch_period_without_reassigning_buyer(self):
+        state=self.make_real_public_checkout()
+        state.offer.update({"period_id":529035, "period":"monthly", "amount_minor":1900})
+        state.plan_price=Decimal("19")
+        state.events[1]["payload"]["details"].update({
+            "period_id":529035,"period":"monthly","amount":1900,
+            "expires_at":(state.now+timedelta(days=30)).isoformat(),
+        })
+        with patch.dict(sys.modules,{
+            "db.database":SimpleNamespace(SessionLocal=state.session_factory)
+        }):
+            self.assertEqual(asyncio.run(activate_auto_event(1)),"processed")
+            state.add_event(2,"renewed_subscription",365)
+            state.offer.update({"period_id":529032,"period":"yearly",
+                                "amount_minor":17900,"plan_id":65})
+            state.plan_price=Decimal("179")
+            state.events[2]["payload"]["details"].update({
+                "subscription_id":279348,"period_id":529032,
+                "channel_id":547415,"amount":17900,
+                "currency":"eur","period":"yearly",
+                "expires_at":(state.now+timedelta(days=365)).isoformat(),
+            })
+            self.assertEqual(asyncio.run(activate_auto_event(2)),"processed")
+        self.assertEqual(state.sub["id"],77)
+        self.assertEqual(state.sub["paid_until"],state.now+timedelta(days=365))
+        self.assertEqual(state.outbox,{1,2})
+        self.assertEqual(len(state.receipts),2)
+        self.assertEqual(state.binding["telegram_id"],8609932510)
+
     def test_shared_link_payment_without_bot_checkout_intent_cannot_grant_access(self):
         state=self.make_real_public_checkout()
         state.checkout_intent=False
