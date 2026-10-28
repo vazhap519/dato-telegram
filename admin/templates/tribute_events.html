@@ -10,9 +10,9 @@
 <main class="max-w-6xl mx-auto p-5 md:p-8 space-y-6">
   <header class="flex flex-wrap items-center justify-between gap-3">
     <div><h1 class="text-2xl md:text-3xl font-bold">Tribute — журнал вебхуков</h1>
-      <p class="text-gray-400 text-sm mt-2">Подписанные события сохраняются в журнале. Первый реальный платёж тестового тарифа можно отдельно подтвердить администратором. Автоматическая выдача и отзыв доступа через вебхук пока отключены.</p>
+      <p class="text-gray-400 text-sm mt-2">Подписанные события сохраняются в журнале. Автоматическая выдача и продление работают только для отдельно разрешённых тарифов через защищённую очередь. Исключение из группы обработчиком вебхуков не выполняется.</p>
     </div>
-    <a href="/subscriptions" class="bg-gray-700 rounded px-4 py-2">← Подписки</a>
+    <div class="flex gap-2 flex-wrap"><a href="/subscriptions/tribute-auto" class="bg-indigo-700 rounded px-4 py-2">⚙️ Автоматизация</a><a href="/subscriptions" class="bg-gray-700 rounded px-4 py-2">← Подписки</a></div>
   </header>
   <div class="rounded-xl p-4 border border-amber-700 bg-amber-950/40 text-sm">
     {% if webhook_ready %}
