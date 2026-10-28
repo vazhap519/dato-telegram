@@ -333,6 +333,16 @@ async def set_auto_processing_enabled(enabled, actor):
                 """))).scalar_one()
                 if count == 0:
                     raise AutoPaymentError("Сначала включите хотя бы одно проверенное предложение")
+                group_id = (await s.execute(text("""
+                    SELECT chat_id FROM telegram_group_settings WHERE id=1
+                """))).scalar_one_or_none()
+                if not group_id:
+                    raise AutoPaymentError("Сначала подключите настоящую закрытую группу")
+                removal = (await s.execute(text("""
+                    SELECT removal_enabled FROM subscription_automation_settings WHERE id=1
+                """))).scalar_one_or_none()
+                if removal:
+                    raise AutoPaymentError("Отключите автоматическое исключение участников перед первым запуском")
             await s.execute(text("""
                 UPDATE tribute_auto_settings
                 SET enabled=:enabled,
