@@ -57,6 +57,10 @@ def main() -> int:
         first, first_data = send(raw, signature)
         second, second_data = send(raw, signature)
         invalid, invalid_data = send(raw + b" ", signature)
+        # Tribute may send a signed connection test without the normal event envelope.
+        setup_body = json.dumps({"test": True, "check": "tribute-webhook"}).encode("utf-8")
+        setup_signature = hmac.new(key.encode("utf-8"), setup_body, hashlib.sha256).hexdigest()
+        setup_code, setup_data = send(setup_body, setup_signature)
     except (URLError, TimeoutError, OSError) as exc:
         print("NETWORK ERROR:", type(exc).__name__)
         return 3
@@ -64,12 +68,15 @@ def main() -> int:
     print("Signed request:", first, first_data.get("status", first_data.get("detail", "-")))
     print("Repeated request:", second, second_data.get("status", second_data.get("detail", "-")))
     print("Altered request:", invalid, invalid_data.get("detail", "-"))
+    print("Signed setup probe:", setup_code, setup_data.get("status", setup_data.get("detail", "-")))
     success = (
         first == 200 and first_data.get("status") == "received"
         and first_data.get("access_changes") is False
         and second == 200 and second_data.get("status") == "duplicate"
         and second_data.get("access_changes") is False
         and invalid == 401
+        and setup_code == 200 and setup_data.get("status") in ("received", "duplicate")
+        and setup_data.get("access_changes") is False
     )
     print("RESULT:", "PASS" if success else "FAIL — review the endpoint and service configuration")
     print("No Telegram group permissions or subscription records were changed by this probe.")
