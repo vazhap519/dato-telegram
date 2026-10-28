@@ -605,6 +605,41 @@ async def tribute_test_create(
     )
 
 
+@app.post("/subscriptions/tribute-test/activate")
+async def tribute_test_activate(
+    event_id: int = Form(...),
+    confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    """Approve a previously verified test payment; then offer an invite."""
+    if confirm != "APPROVE_REAL_TRIBUTE_TEST_PAYMENT":
+        raise HTTPException(400, detail="Подтвердите проверенную оплату")
+    try:
+        result = await activate_saved_test_purchase(event_id, user["user"])
+    except TributeActivationError as exc:
+        raise HTTPException(400, detail=str(exc)) from exc
+
+    import logging
+    from aiogram import Bot
+    from bot.group_handlers import send_group_invitation
+    invite_status = "failed"
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            invite_status = await send_group_invitation(
+                telegram, result["telegram_id"], "tribute_verified_test_payment"
+            )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Paid user invitation failed uid=%s", result["telegram_id"]
+        )
+    return RedirectResponse(
+        f'/subscriptions/users/{result["telegram_id"]}'
+        f'?tribute_test=activated&invite={invite_status}',
+        status_code=303,
+    )
+
+
 @app.get("/subscriptions/tribute-events")
 async def tribute_webhook_journal(request: Request, user=Depends(get_current_user)):
     return templates.TemplateResponse(
