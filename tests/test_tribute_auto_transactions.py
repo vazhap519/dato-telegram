@@ -21,6 +21,10 @@ class Result:
         return self
     def first(self):
         return self.value
+    def one(self):
+        if self.value is None:
+            raise AssertionError("Expected one SQL row")
+        return self.value
     def scalar_one(self):
         return self.value
     def scalar_one_or_none(self):
