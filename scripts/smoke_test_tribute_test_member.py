@@ -88,7 +88,7 @@ async def read_test_buyer(telegram_id: int) -> dict:
               ON sub.id=b.subscription_row_id
              AND sub.telegram_id=b.telegram_id
              AND sub.provider='tribute'
-             AND sub.provider_subscription_id=CONCAT('test:', CAST(:offer AS TEXT), ':', b.trb_user_id)
+             AND sub.provider_subscription_id=CONCAT('test:', :offer_ref, ':', b.trb_user_id)
              AND sub.status='active'
              AND sub.paid_until>NOW()
             JOIN subscription_plans plan
@@ -100,7 +100,11 @@ async def read_test_buyer(telegram_id: int) -> dict:
             WHERE b.offer_id=:offer AND b.telegram_id=:uid
             LIMIT 2
         """), {
+            # Keep the integer offer binding distinct from the text component
+            # used for the provider reference. Sharing the same :offer inside
+            # CAST(... AS TEXT) causes asyncpg to compare BIGINT = TEXT below.
             "offer": TEST_SUBSCRIPTION_ID,
+            "offer_ref": str(TEST_SUBSCRIPTION_ID),
             "period_text": str(TEST_PERIOD_ID),
             "offer_text": str(TEST_SUBSCRIPTION_ID),
             "plan_code": TEST_PLAN_CODE,
