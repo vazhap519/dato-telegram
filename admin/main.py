@@ -562,7 +562,7 @@ async def tribute_test_page(request: Request, user=Depends(get_current_user)):
             "test_period_id": TEST_PERIOD_ID,
             "now": datetime.now(timezone.utc),
         },
-        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "same-origin"},
     )
 
 
@@ -598,7 +598,7 @@ async def tribute_test_create(
             "test_period_id": TEST_PERIOD_ID,
             "now": datetime.now(timezone.utc),
         },
-        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "same-origin"},
     )
 
 
