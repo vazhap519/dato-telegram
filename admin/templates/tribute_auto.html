@@ -24,7 +24,7 @@
   <section class="border border-amber-700 bg-amber-950/30 rounded-xl p-5 space-y-2">
     <h2 class="font-bold">Защитные ограничения</h2>
     <p class="text-sm">Обрабатываются только подписанные вебхуки <code>new_subscription</code> и <code>renewed_subscription</code>, полученные <strong>после включения</strong> системы и конкретного тарифа. Только точно перечисленные ниже предложения Tribute, цены и периоды могут выдать доступ.</p>
-    <p class="text-sm">Непроверенные и неподходящие события направляются на ручную проверку. Отмена будущих списаний не отбирает уже оплаченный срок. Автоматическое исключение из группы здесь <strong>не включается</strong>. Права первопроходцев не изменяются.</p>
+    <p class="text-sm">Непроверенные и неподходящие события направляются на ручную проверку. Отмена будущих списаний не отбирает уже оплаченный срок. Исключение платных участников настраивается <strong>отдельным переключателем ниже</strong>, по умолчанию выключено. Права первопроходцев не изменяются.</p>
     <p class="text-xs text-amber-200">Старое тестовое предложение за $1 было отменено; его оплаченный период действует до 28 ноября 2026. Для полноценного запуска потребуется отдельный реальный тариф.</p>
   </section>
 
@@ -49,6 +49,44 @@
       <div class="bg-gray-900 p-3 rounded-lg">Приглашения отправлены<strong class="block text-xl">{{ outbox.get('sent',0) }}</strong></div>
       <div class="bg-gray-900 p-3 rounded-lg">Повторы доставки<strong class="block text-xl">{{ outbox.get('retry',0) }}</strong></div>
     </div>
+  </section>
+
+  <section class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="font-bold text-xl">Исключение после неоплаты · без льготного периода</h2>
+      {% if paid_removal.enabled %}
+        <strong class="text-emerald-300">● Включено</strong>
+      {% else %}
+        <strong class="text-amber-300">● Выключено</strong>
+      {% endif %}
+    </div>
+    <p class="text-sm text-gray-300">Только для платных участников новой подписки Tribute
+      <code>279348</code>, вступивших по личному приглашению нашего бота.
+      Как только заканчивается <code>paid_until</code> и нет подтверждённого продления,
+      бот исключает участника при ближайшей проверке (примерно каждые 30 секунд).
+      <strong>Дополнительных 7 дней нет.</strong>
+    </p>
+    <p class="text-sm text-gray-300">Проверка не трогает первопроходцев с бессрочными правами,
+      участников с другими действующими/будущими правами, старых участников,
+      приглашённых не нашим ботом, и тех, чьё подтверждённое продление ещё обрабатывается.
+      Если продление пришло после исключения, участник сможет получить новое приглашение.
+    </p>
+    <div class="bg-gray-900 p-3 rounded-lg text-sm">
+      Учтено оплаченных участников под нашим управлением в текущей группе:
+      <strong>{{ paid_removal.tracked_paid_members }}</strong>
+    </div>
+    <form method="post" action="/subscriptions/tribute-auto/removal" class="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="enabled" value="true" {% if paid_removal.enabled %}checked{% endif %}>
+        Исключать при окончании оплаченного срока (0 часов отсрочки)
+      </label>
+      <button type="submit" class="bg-red-700 hover:bg-red-600 px-4 py-2 rounded-lg font-semibold">Сохранить исключение</button>
+    </form>
+    <p class="text-xs text-amber-200">Требуются права бота блокировать участников.
+      Обычное общее исключение в админке подписок оставляйте выключенным.
+      Если включаете этот режим при наличии уже истёкших подписок, такие участники могут быть исключены сразу.
+      Выключение этого переключателя останавливает последующие исключения.</p>
   </section>
 
   <section class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-4">
