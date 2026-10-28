@@ -154,9 +154,10 @@ async def activate_saved_test_purchase(event_id: int, actor: str) -> dict:
                 WHERE claimed_by=:uid
                   AND claimed_at IS NOT NULL
                   AND claimed_at <= :received_at
-                  AND claimed_at >= :received_at - INTERVAL '2 hours'
+                  AND claimed_at >= :earliest_claim
                 LIMIT 1
-            """), {"uid":uid, "received_at":row["received_at"]})).first()
+            """), {"uid":uid, "received_at":row["received_at"],
+                    "earliest_claim":row["received_at"] - timedelta(hours=2)})).first()
             if not claim:
                 raise TributeActivationError("Не найден тестовый вход покупателя через нашего бота")
 
