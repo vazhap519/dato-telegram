@@ -68,6 +68,33 @@ and/or `subscriptionId`, `period_id` and/or `periodId`, `expires_at`,
 and buyer identity before any payment-to-Telegram access automation is implemented.
 Webhooks for unrelated existing offers remain in the audit inbox only.
 
+## Isolated checkout through our Telegram bot
+
+The administrator can create an **unlisted** 20-minute, one-use bot entry via
+`https://bot.arutyun.me/subscriptions/tribute-test` (requires admin login,
+CSRF token and existing Nginx Basic Auth). The page shows the generated Telegram
+deep link **only at creation time**, and the database stores only its SHA-256 hash.
+
+The Telegram user should have accepted the current offer through `/start`.
+If not yet accepted, the test link stays unclaimed: accept the offer first,
+then reopen the same link while it is still valid. The link is atomically
+claimed for the Telegram ID and cannot be reused.
+
+After the claim, the bot displays the two previously verified Tribute URLs.
+The checkout is a **real USD 1 monthly recurring payment**, and actual checkout
+fees may increase the amount. The customer must actively authorize payment
+in Tribute. The test must **never be inserted in the public subscription
+plan list**, and claiming a link never grants Telegram group membership.
+
+The private admin page lists who claimed a test link (Telegram ID) and when.
+The webhook inbox separately lists signed payment/donation events: manually
+compare only after the first real verified delivery. Tribute does not accept
+a custom order ID in the payment link, so a claimed bot link and a checkout
+page opening are not proof that a particular person paid.
+
+A buyer should turn off future recurring charges after the controlled test
+if not intentionally keeping the subscription.
+
 ## Next steps (not implemented)
 
 - Validate real payload fields and the dedicated public-channel subscription ID.
