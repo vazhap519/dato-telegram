@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from db.tribute_webhooks import (
-    InvalidTributeEvent, event_key, parse_event, safe_event_record,
+    InvalidTributeEvent, event_key, parse_event, parse_signed_delivery, safe_event_record,
     verify_signature, SUBSCRIPTION_EVENTS,
 )
 
@@ -51,6 +51,35 @@ class TributeWebhookSafetyTests(unittest.TestCase):
         invalid = dict(EVENT, created_at="2026-10-28")
         with self.assertRaises(InvalidTributeEvent):
             parse_event(json.dumps(invalid).encode())
+
+    def test_signed_connection_check_without_subscription_envelope(self):
+        probe_body = json.dumps({
+            "test": True,
+            "request_id": "request-123",
+            "email": "private@example.test",
+        }).encode("utf-8")
+        probe = parse_signed_delivery(probe_body)
+        self.assertEqual(probe["name"], "tribute_connection_test")
+        self.assertEqual(probe["_envelope_fields"], ["email", "request_id", "test"])
+        self.assertEqual(probe["payload"].keys(), {"probe_fingerprint"})
+        self.assertNotIn("private@example.test", json.dumps(safe_event_record(probe)))
+        self.assertEqual(event_key(probe), event_key(parse_signed_delivery(probe_body)))
+
+    def test_signed_event_without_timestamp_is_not_accepted_as_subscription(self):
+        malformed = {
+            "name": "new_subscription",
+            "payload": {"telegram_user_id": 12345},
+        }
+        with self.assertRaises(InvalidTributeEvent):
+            parse_signed_delivery(json.dumps(malformed).encode("utf-8"))
+
+    def test_standard_event_is_unchanged(self):
+        self.assertEqual(parse_signed_delivery(json.dumps(EVENT).encode()), EVENT)
+
+    def test_signed_malformed_json_still_rejected(self):
+        for body in (b"not json", b"[]", b""):
+            with self.subTest(body=body), self.assertRaises(InvalidTributeEvent):
+                parse_signed_delivery(body)
 
     def test_retry_uses_stable_event_key(self):
         retry = dict(EVENT, sent_at="2026-10-28T11:30:00Z")
