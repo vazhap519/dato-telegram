@@ -1,6 +1,7 @@
 """Offline tests: isolated payment-preview links cannot grant subscriber access."""
 import asyncio
 import hashlib
+from pathlib import Path
 import sys
 import unittest
 from types import SimpleNamespace
@@ -19,6 +20,24 @@ class TributeTestLinkTests(unittest.TestCase):
         self.assertEqual(TEST_PERIOD_ID, 528940)
         self.assertEqual(TEST_PAYMENT_URL, "https://t.me/tribute/app?startapp=s1aES")
         self.assertNotIn(TEST_SUBSCRIPTION_ID, {229558, 183308, 236047})
+
+    def test_admin_checkout_form_preserves_origin_and_csrf_protection(self):
+        root = Path(__file__).resolve().parents[1]
+        template = (root / "admin/templates/tribute_test.html").read_text(encoding="utf-8")
+        admin_code = (root / "admin/main.py").read_text(encoding="utf-8")
+        # no-referrer turns navigation/form POST Origin into null in browsers.
+        self.assertIn('<meta name="referrer" content="same-origin">', template)
+        self.assertNotIn('<meta name="referrer" content="no-referrer">', template)
+        self.assertIn('action="/subscriptions/tribute-test/create"', template)
+        self.assertIn('name="csrf_token"', template)
+        self.assertIn('rel="noopener noreferrer"', template)
+        self.assertEqual(
+            admin_code.count('"Referrer-Policy": "same-origin"'), 2
+        )
+        self.assertIn('"/subscriptions/tribute-test/create",', admin_code)
+        self.assertIn('csrf_check=Depends(verify_csrf)', admin_code)
+        self.assertIn('if origin != "https://bot.arutyun.me":', admin_code)
+        self.assertNotIn('"Referrer-Policy": "no-referrer"', admin_code)
 
     def test_token_validation_and_hashing(self):
         token = "tt_" + "A" * 32
