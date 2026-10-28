@@ -86,6 +86,28 @@ def is_expected_production_offer(offer):
                 offer.get("require_test_claim") is False)
 
 
+def production_offer_ready(offer):
+    """Validate the stored exact offer AND the current bot payment plan.
+
+    Call on every checkout attempt, even if an admin enabled it earlier.
+    Never show a payment page for a drifted price, inactive tariff or URL.
+    """
+    if not is_expected_production_offer(offer):
+        return False
+    try:
+        return bool(
+            offer["enabled"] and offer["is_active"] and
+            not offer["is_lifetime"] and offer["archived_at"] is None and
+            offer["plan_currency"]=="EUR" and
+            offer["price_amount"] is not None and
+            Decimal(offer["price_amount"])==Decimal(offer["amount_minor"])/100 and
+            offer["payment_url"]==PRODUCTION_URL and
+            offer["duration_days"]==expected_periods()[offer["period_id"]]["days"]
+        )
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return False
+
+
 async def shared_checkout_status():
     """Read-only overview for the protected admin page."""
     from db.database import SessionLocal
@@ -103,14 +125,7 @@ async def shared_checkout_status():
     checked=[]
     for period_id,cadence,cents,days,label in PERIODS:
         offer=by_period.get(period_id)
-        valid=bool(offer and is_expected_production_offer(offer)
-              and offer["name"] and offer["plan_currency"]=="EUR"
-              and offer["price_amount"] is not None
-              and Decimal(offer["price_amount"])==Decimal(cents)/100
-              and offer["payment_url"]==PRODUCTION_URL
-              and offer["is_active"] and not offer["is_lifetime"]
-              and offer["archived_at"] is None
-              and offer["duration_days"]==days)
+        valid=bool(offer and production_offer_ready(offer))
         checked.append({"period_id":period_id,"period":cadence,
                         "price_eur":Decimal(cents)/100,"label":label,
                         "configured":valid,"enabled":bool(offer and offer["enabled"])})
@@ -144,15 +159,7 @@ async def set_shared_checkout_enabled(enabled, actor):
                     WHERE o.subscription_id=:offer
                 """), {"offer":PRODUCTION_OFFER_ID})).mappings().all()
                 if len(records)!=4 or any(
-                    not is_expected_production_offer(dict(o)) or
-                    not o["enabled"] or not o["is_active"] or o["is_lifetime"] or
-                    o["archived_at"] is not None or
-                    o["plan_currency"]!="EUR" or
-                    o["payment_url"]!=PRODUCTION_URL or
-                    o["price_amount"] is None or
-                    Decimal(o["price_amount"])!=Decimal(o["amount_minor"])/100 or
-                    o["duration_days"]!=expected_periods()[o["period_id"]]["days"]
-                    for o in records
+                    not production_offer_ready(dict(o)) for o in records
                 ):
                     raise CheckoutNotReady("Все четыре периода должны быть проверены и разрешены")
             await s.execute(text("""
@@ -188,11 +195,17 @@ async def begin_shared_checkout(telegram_id):
                     and data["subscription_id"]==PRODUCTION_OFFER_ID
                     and data["checkout_url"]==PRODUCTION_URL):
                 return None
-            counts=(await s.execute(text("""
-                SELECT COUNT(*) AS total,COUNT(*) FILTER(WHERE enabled) AS active
-                FROM tribute_auto_offers WHERE subscription_id=:offer
-            """), {"offer":PRODUCTION_OFFER_ID})).mappings().one()
-            if counts["total"]!=4 or counts["active"]!=4:
+            offers=(await s.execute(text("""
+                SELECT o.*,p.price_amount,p.currency AS plan_currency,
+                       p.duration_days,p.is_active,p.archived_at,
+                       p.payment_url,p.is_lifetime
+                FROM tribute_auto_offers o
+                JOIN subscription_plans p ON p.id=o.plan_id
+                WHERE o.subscription_id=:offer
+            """), {"offer":PRODUCTION_OFFER_ID})).mappings().all()
+            if len(offers)!=4 or any(
+                not production_offer_ready(dict(offer)) for offer in offers
+            ):
                 return None
             accepted=(await s.execute(text("""
                 SELECT f.offer_version
