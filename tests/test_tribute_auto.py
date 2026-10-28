@@ -165,6 +165,24 @@ class TributeAutoValidationTests(unittest.TestCase):
         self.assertNotIn("UPDATE access_grants",code+worker)
         self.assertNotIn("cancelled_subscription",code)
 
+    def test_admin_and_bot_use_safeguarded_automation_integration(self):
+        root = Path(__file__).resolve().parents[1]
+        admin = (root / "admin/main.py").read_text(encoding="utf-8")
+        bot = (root / "bot/main.py").read_text(encoding="utf-8")
+        settings = (root / "db/tribute_auto.py").read_text(encoding="utf-8")
+        for route in ("/subscriptions/tribute-auto/setting",
+                      "/subscriptions/tribute-auto/offer",
+                      "/subscriptions/tribute-auto/add"):
+            self.assertIn('"' + route + '",', admin)
+        self.assertIn("csrf_check=Depends(verify_csrf)", admin)
+        self.assertIn("user=Depends(get_current_user)", admin)
+        self.assertIn("await initialize_tribute_auto()", admin)
+        self.assertIn("await initialize_tribute_auto()", bot)
+        self.assertIn("tribute_subscription_worker(bot)", bot)
+        self.assertIn("SELECT chat_id FROM telegram_group_settings", settings)
+        self.assertIn("SELECT removal_enabled FROM subscription_automation_settings", settings)
+        self.assertIn("enabled_at=CASE WHEN :enabled THEN COALESCE(enabled_at,NOW())", settings)
+
     def test_pending_query_uses_exact_offer_and_post_enable_cutoffs(self):
         class Result:
             def scalars(self):
