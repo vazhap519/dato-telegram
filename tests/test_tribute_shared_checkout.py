@@ -11,6 +11,7 @@ from db.tribute_shared_checkout import (
     CheckoutNotReady, PUBLIC_CHANNEL_ID, PRODUCTION_OFFER_ID, PRODUCTION_URL,
     PERIODS, expected_periods, is_expected_production_offer,
     begin_shared_checkout, set_shared_checkout_enabled,
+    production_offer_ready,
 )
 
 
@@ -20,6 +21,8 @@ class FakeResult:
     def mappings(self):
         return self
     def one(self):
+        return self.value
+    def all(self):
         return self.value
     def scalar_one_or_none(self):
         return self.value
@@ -32,6 +35,7 @@ class FakeDb:
     global_enabled=True
     complete=True
     accepted=True
+    drifted=False
     inserts=[]
     statements=[]
 
@@ -41,6 +45,7 @@ class FakeDb:
         cls.global_enabled=True
         cls.complete=True
         cls.accepted=True
+        cls.drifted=False
         cls.inserts=[]
         cls.statements=[]
 
@@ -61,9 +66,24 @@ class FakeDb:
                 "checkout_enabled":FakeDb.checkout_enabled,
                 "automation_enabled":FakeDb.global_enabled,
             })
-        if sql.startswith("SELECT COUNT(*) AS total,COUNT(*) FILTER"):
-            n=4 if FakeDb.complete else 2
-            return FakeResult({"total":n,"active":n})
+        if sql.startswith("SELECT o.*,p.price_amount,p.currency AS plan_currency"):
+            from db.tribute_shared_checkout import PERIODS
+            rows=[]
+            for pid,cadence,cents,days,label in PERIODS:
+                row={
+                    "subscription_id":PRODUCTION_OFFER_ID,
+                    "period_id":pid,"channel_id":PUBLIC_CHANNEL_ID,
+                    "amount_minor":cents,"currency":"eur","period":cadence,
+                    "require_test_claim":False,
+                    "enabled":True,"is_active":True,"is_lifetime":False,
+                    "archived_at":None,"price_amount":Decimal(cents)/100,
+                    "plan_currency":"EUR","payment_url":PRODUCTION_URL,
+                    "duration_days":days,
+                }
+                if FakeDb.drifted and pid==529034:
+                    row["price_amount"]=Decimal("1")
+                rows.append(row)
+            return FakeResult(rows if FakeDb.complete else rows[:2])
         if sql.startswith("SELECT f.offer_version"):
             return FakeResult("1" if FakeDb.accepted else None)
         if sql.startswith("INSERT INTO tribute_checkout_intents"):
@@ -114,9 +134,9 @@ class SharedCheckoutTests(unittest.TestCase):
         self.assertNotIn("plan_id",FakeDb.inserts[0])
 
     def test_disabled_automation_checkout_incomplete_periods_or_terms_reject(self):
-        for field in ("checkout_enabled","global_enabled","complete","accepted"):
+        for field in ("checkout_enabled","global_enabled","complete","accepted","drifted"):
             FakeDb.reset()
-            setattr(FakeDb,field,False)
+            setattr(FakeDb,field,field=="drifted")
             with self.subTest(field=field):
                 with patch.dict(sys.modules,{
                     "db.database":SimpleNamespace(SessionLocal=FakeDb)
@@ -124,6 +144,27 @@ class SharedCheckoutTests(unittest.TestCase):
                     self.assertIsNone(asyncio.run(begin_shared_checkout(123456789)))
                 self.assertEqual(FakeDb.inserts,[])
         self.assertIsNone(asyncio.run(begin_shared_checkout(-1)))
+
+    def test_revalidate_plan_price_before_letting_buyer_pay(self):
+        valid={
+            "subscription_id":279348,"period_id":529035,
+            "channel_id":547415,"amount_minor":1900,
+            "currency":"eur","period":"monthly",
+            "require_test_claim":False,
+            "enabled":True,"is_active":True,"is_lifetime":False,
+            "archived_at":None,"price_amount":Decimal("19"),
+            "plan_currency":"EUR","payment_url":PRODUCTION_URL,
+            "duration_days":30,
+        }
+        self.assertTrue(production_offer_ready(valid))
+        for field,bad in (
+            ("price_amount",Decimal("20")),
+            ("payment_url","https://t.me/tribute/app?startapp=s1aES"),
+            ("is_active",False),("enabled",False),
+            ("duration_days",365),("is_lifetime",True),
+        ):
+            with self.subTest(field=field):
+                self.assertFalse(production_offer_ready(dict(valid,**{field:bad})))
 
     def test_no_access_grants_or_group_removals_in_checkout(self):
         root=Path(__file__).resolve().parents[1]
