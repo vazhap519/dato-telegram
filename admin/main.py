@@ -645,7 +645,10 @@ async def tribute_webhook_journal(request: Request, user=Depends(get_current_use
     return templates.TemplateResponse(
         request=request, name="tribute_events.html",
         context={"events": await recent_events(100),
-                 "webhook_ready": bool(os.environ.get("TRIBUTE_API_KEY"))},
+                 "webhook_ready": bool(os.environ.get("TRIBUTE_API_KEY")),
+                 "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
+                 "test_subscription_id": TEST_SUBSCRIPTION_ID,
+                 "test_period_id": TEST_PERIOD_ID},
         headers={"Cache-Control": "no-store"},
     )
 
