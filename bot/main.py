@@ -12,6 +12,8 @@ from bot.support_handlers import support_start, support_callback, support_text
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
 from db.tribute_payment_test import initialize_tribute_payment_tests
+from db.tribute_auto import initialize_tribute_auto
+from bot.tribute_worker import tribute_subscription_worker
 from db.group_access import initialize_group_access
 from db.expiry_monitor import initialize_expiry_monitor
 from db.subscription_automation import initialize_subscription_automation
@@ -53,6 +55,7 @@ async def main():
     await initialize_support()
     await initialize_subscriptions()
     await initialize_tribute_payment_tests()
+    await initialize_tribute_auto()
     await initialize_group_access()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
@@ -69,6 +72,7 @@ async def main():
     task = asyncio.create_task(broadcast_worker(bot))
     expiry_task = asyncio.create_task(expiry_worker(bot))
     group_test_task = asyncio.create_task(group_removal_test_worker(bot))
+    tribute_task = asyncio.create_task(tribute_subscription_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
@@ -76,6 +80,7 @@ async def main():
         task.cancel()
         expiry_task.cancel()
         group_test_task.cancel()
+        tribute_task.cancel()
         try:
             await task
         except asyncio.CancelledError:
@@ -86,6 +91,10 @@ async def main():
             pass
         try:
             await group_test_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await tribute_task
         except asyncio.CancelledError:
             pass
 
