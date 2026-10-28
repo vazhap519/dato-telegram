@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramBadRequest
 from db.flow import register_user, get_flow_settings, accept_offer, authorize_video_uploader, store_uploaded_video_note, record_subscription_click, has_accepted_offer
 from db.subscriptions import available_payment_plans, select_payment_plan, subscription_snapshot
 from db.group_access import group_settings
+from db.tribute_payment_test import claim_tribute_test_link, TEST_PAYMENT_URL, TEST_BROWSER_URL, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from bot.group_handlers import send_group_invitation
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,42 @@ async def my_subscription_callback(query: types.CallbackQuery):
     await show_subscription_account(query.bot, query.from_user.id, query.message)
 
 
+async def handle_tribute_test_start(message: types.Message, token: str, settings: dict):
+    """One-time private checkout preview, not a real subscription entitlement."""
+    if message.chat.type != "private":
+        return
+    version = (settings.get("offer_version") or "1").strip()
+    if not await has_accepted_offer(message.from_user.id, version):
+        await message.answer(
+            "🧪 Для тестовой оплаты сначала ознакомьтесь с условиями и примите оферту. "
+            "После этого повторно откройте одноразовую ссылку из админки.",
+            reply_markup=offer_buttons((settings.get("offer_url") or "").strip()),
+        )
+        return
+    if not await claim_tribute_test_link(token, message.from_user.id):
+        await message.answer(
+            "Тестовая ссылка истекла или уже использована. "
+            "Создайте новую в административной панели подписок."
+        )
+        return
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Открыть оплату Tribute", url=TEST_PAYMENT_URL)],
+        [InlineKeyboardButton(text="🌐 Оплата через браузер", url=TEST_BROWSER_URL)],
+    ])
+    await message.answer(
+        "🧪 Проверка оплаты через нашего бота\\n\\n"
+        "Тестовый тариф Tribute: 1 USD в месяц. "
+        "На экране Tribute возможна дополнительная комиссия (ранее итог составлял 1,12 USD).\\n"
+        f"Предложение: {TEST_SUBSCRIPTION_ID}, период: {TEST_PERIOD_ID}.\\n\\n"
+        "⚠️ Это настоящее списание с автоматическим продлением, пока его не отменить. "
+        "Проверка нужна для изучения платёжного вебхука. "
+        "После оплаты доступ в «Круг Души» автоматически НЕ предоставляется.\\n\\n"
+        "Если согласны провести платёж, воспользуйтесь кнопкой. "
+        "Затем проверьте журнал Tribute в админке.",
+        reply_markup=keyboard,
+    )
+
+
 async def start_handler(message: types.Message):
     if not message.from_user:
         return
@@ -134,6 +171,12 @@ async def start_handler(message: types.Message):
     settings = await get_flow_settings()
     if not settings:
         await message.answer("Настройки бота ещё не готовы.")
+        return
+    # Test checkout is deliberately absent from the public plan list.
+    # Only a short-lived, single-use link created by an authenticated admin works.
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) == 2 and parts[1].startswith("tt_"):
+        await handle_tribute_test_start(message, parts[1].strip(), settings)
         return
     version = (settings.get("offer_version") or "1").strip()
     if await has_accepted_offer(message.from_user.id, version):
