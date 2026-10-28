@@ -9,6 +9,10 @@ MAX_BODY_BYTES = 65536
 SUBSCRIPTION_EVENTS = frozenset({
     "new_subscription", "renewed_subscription", "cancelled_subscription",
 })
+DONATION_EVENTS = frozenset({
+    "new_donation", "recurrent_donation", "cancelled_donation",
+})
+PAYMENT_REVIEW_EVENTS = SUBSCRIPTION_EVENTS | DONATION_EVENTS
 SAFE_FIELDS = frozenset({
     # Keep only the identifiers needed to verify a real Tribute payment
     # against a known offer. No card details, names, emails or full payloads.
@@ -17,7 +21,8 @@ SAFE_FIELDS = frozenset({
     "trb_user_id", "trbUserId", "telegram_user_id", "telegramUserId",
     "user_id", "userId", "channel_id", "channelId",
     "payment_id", "paymentId", "transaction_id", "transactionId",
-    "purchase_id", "purchaseId", "currency", "amount",
+    "purchase_id", "purchaseId", "donation_request_id", "donationRequestId",
+    "currency", "amount",
 })
 
 
@@ -81,8 +86,8 @@ def parse_signed_delivery(body: bytes) -> dict:
             raise InvalidTributeEvent("Malformed JSON") from None
         if not isinstance(obj, dict):
             raise InvalidTributeEvent("Expected an object")
-        if obj.get("name") in SUBSCRIPTION_EVENTS:
-            raise InvalidTributeEvent("Malformed subscription webhook")
+        if obj.get("name") in PAYMENT_REVIEW_EVENTS:
+            raise InvalidTributeEvent("Malformed payment webhook")
         name = obj.get("name")
         if not isinstance(name, str) or not name or len(name) > 80:
             name = "tribute_connection_test"
@@ -129,7 +134,7 @@ async def store_event(event: dict) -> bool:
     from db.database import SessionLocal
 
     record = safe_event_record(event)
-    state = "pending_review" if event["name"] in SUBSCRIPTION_EVENTS else "ignored"
+    state = "pending_review" if event["name"] in PAYMENT_REVIEW_EVENTS else "ignored"
     async with SessionLocal() as session:
         async with session.begin():
             inserted = (await session.execute(text("""
