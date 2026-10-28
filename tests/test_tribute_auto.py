@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from db.tribute_auto import (
     AutoPaymentError, CYCLES, TEST_CHANNEL_ID, TEST_PLAN_CODE,
-    validate_paid_event, pending_auto_event_ids,
+    validate_paid_event, pending_auto_event_ids, is_tribute_checkout,
 )
 
 WHEN = datetime(2026,10,28,18,0,tzinfo=timezone.utc)
@@ -118,6 +118,33 @@ class TributeAutoValidationTests(unittest.TestCase):
             self.assertEqual(result["expires_at"],exp)
             self.assertLessEqual(min_days,plan_days)
             self.assertLessEqual(plan_days,max_days)
+
+    def test_production_plan_requires_direct_tribute_payment_link(self):
+        accepted = [
+            "https://t.me/tribute/app?startapp=s1aES",
+            "https://web.tribute.tg/s/1aES",
+        ]
+        denied = [
+            "", "http://t.me/tribute/app?startapp=s1aES",
+            "https://evil.example/s/1aES",
+            "https://web.tribute.tg.evil.example/s/1aES",
+            "https://t.me@evil.example/tribute/app?startapp=s1aES",
+            "https://t.me/tribute/app",
+            "https://t.me/anotherbot?start=123",
+            "https://web.tribute.tg/s/a",
+            "https://web.tribute.tg/s/1aES?redirect=https://evil.example",
+        ]
+        for url in accepted:
+            with self.subTest(url=url):
+                self.assertTrue(is_tribute_checkout(url))
+        for url in denied:
+            with self.subTest(url=url):
+                self.assertFalse(is_tribute_checkout(url))
+
+    def test_nobody_can_be_granted_access_by_cancellation(self):
+        for name in ("cancelled_subscription", "cancelled_donation"):
+            with self.subTest(name=name), self.assertRaises(AutoPaymentError):
+                validate_paid_event(event(name),offer(),now=WHEN)
 
     def test_no_automatic_removal_and_flags_off_by_default(self):
         root = Path(__file__).resolve().parents[1]
