@@ -3,6 +3,10 @@ import hashlib
 import hmac
 import json
 import unittest
+import asyncio
+import sys
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from db.tribute_webhooks import (
     InvalidTributeEvent, event_key, parse_event, safe_event_record,
@@ -53,6 +57,45 @@ class TributeWebhookSafetyTests(unittest.TestCase):
         self.assertEqual(event_key(EVENT), event_key(retry))
         renewal = dict(EVENT, name="renewed_subscription")
         self.assertNotEqual(event_key(EVENT), event_key(renewal))
+
+    def test_database_inbox_is_idempotent_and_has_no_access_mutations(self):
+        from db.tribute_webhooks import store_event
+
+        class Result:
+            def __init__(self, value):
+                self.value = value
+
+            def scalar_one_or_none(self):
+                return self.value
+
+        class Session:
+            keys = set()
+            sql_statements = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def begin(self):
+                return self
+
+            async def execute(self, statement, params):
+                self.sql_statements.append(str(statement))
+                key = params["event_key"]
+                if key in self.keys:
+                    return Result(None)
+                self.keys.add(key)
+                return Result(1)
+
+        with patch.dict(sys.modules, {"db.database": SimpleNamespace(SessionLocal=Session)}):
+            self.assertTrue(asyncio.run(store_event(EVENT)))
+            retry = dict(EVENT, sent_at="2026-10-28T11:30:00Z")
+            self.assertFalse(asyncio.run(store_event(retry)))
+        self.assertEqual(len(Session.keys), 1)
+        self.assertTrue(all("payment_webhook_events" in sql for sql in Session.sql_statements))
+        self.assertFalse(any("access_grants" in sql or "UPDATE subscriptions" in sql for sql in Session.sql_statements))
 
     def test_sensitive_fields_not_stored(self):
         rec = safe_event_record(EVENT)
