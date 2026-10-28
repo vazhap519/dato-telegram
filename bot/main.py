@@ -19,6 +19,7 @@ from bot.tribute_worker import tribute_subscription_worker
 from db.group_access import initialize_group_access
 from db.expiry_monitor import initialize_expiry_monitor
 from db.subscription_automation import initialize_subscription_automation
+from db.tribute_paid_removal import initialize_tribute_paid_removal
 from bot.expiry_worker import expiry_worker
 from bot.group_removal_worker import group_removal_test_worker
 from bot.group_handlers import group_join_request_handler, group_id_handler, managed_member_join_handler
@@ -63,6 +64,7 @@ async def main():
     await initialize_group_access()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
+    await initialize_tribute_paid_removal()
     await initialize_broadcasts()
     await initialize_automation()
     async def reminder_scheduler():
