@@ -164,8 +164,9 @@ async def record_subscription_click(telegram_id):
     """Count first click uniquely; count repeated clicks separately."""
     async with SessionLocal() as session:
         accepted = (await session.execute(text("""
-            SELECT 1 FROM offer_acceptances
-            WHERE telegram_id=:id LIMIT 1
+            SELECT 1 FROM offer_acceptances a
+            JOIN bot_flow_settings f ON f.id=1 AND a.offer_version=f.offer_version
+            WHERE a.telegram_id=:id LIMIT 1
         """), {"id": telegram_id})).first()
         if not accepted:
             return False
