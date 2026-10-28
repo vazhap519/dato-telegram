@@ -10,6 +10,7 @@ from db.flow import register_user, get_flow_settings, accept_offer, authorize_vi
 from db.subscriptions import available_payment_plans, select_payment_plan, subscription_snapshot
 from db.group_access import group_settings
 from db.tribute_payment_test import claim_tribute_test_link, TEST_PAYMENT_URL, TEST_BROWSER_URL, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
+from db.tribute_auto import is_auto_processing_enabled
 from bot.group_handlers import send_group_invitation
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,10 @@ async def show_subscription_account(bot, telegram_id, message=None):
     if chosen:
         lines.extend(["", "Последний выбранный тариф: " + chosen["plan_name"],
                       "Выбор тарифа не является подтверждением оплаты."])
-    lines.extend(["", "Автоматическая проверка платежей Tribute ещё не подключена."])
+    if await is_auto_processing_enabled():
+        lines.extend(["", "Оплата Tribute проверяется автоматически для подключённых тарифов."])
+    else:
+        lines.extend(["", "Автоматическая проверка Tribute пока выключена."])
     output = "\n".join(lines)
     group = await group_settings()
     buttons = account_keyboard(can_invite=bool(group.get("chat_id") and (current or paid)))
@@ -318,7 +322,14 @@ async def choose_plan_handler(query: types.CallbackQuery):
         f"Стоимость: {plan['price_amount']} {plan['currency']}\n"
         f"Срок: {'Бессрочно' if plan['is_lifetime'] else str(plan['duration_days']) + ' дней'}\n\n"
         "Нажмите кнопку ниже для перехода на страницу оплаты. "
-        "Автоматическое подтверждение платежа пока не подключено. Переход к оплате не активирует доступ."
+        + (
+            "После успешной оплаты подключённого тарифа Tribute автоматически "
+            "проверит платёж, и бот отправит приглашение. Сам переход к оплате "
+            "не активирует доступ."
+            if await is_auto_processing_enabled() else
+            "Автоматическая проверка платежей пока выключена. "
+            "Один переход к оплате не активирует доступ."
+        )
     )
     # Edit instead of sending a new message to avoid duplicates on repeated taps.
     if query.message:
