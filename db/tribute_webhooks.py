@@ -10,8 +10,14 @@ SUBSCRIPTION_EVENTS = frozenset({
     "new_subscription", "renewed_subscription", "cancelled_subscription",
 })
 SAFE_FIELDS = frozenset({
-    "subscription_id", "subscriptionId", "expires_at", "period", "type",
-    "trb_user_id", "telegram_user_id", "user_id", "channel_id", "payment_id",
+    # Keep only the identifiers needed to verify a real Tribute payment
+    # against a known offer. No card details, names, emails or full payloads.
+    "subscription_id", "subscriptionId", "period_id", "periodId",
+    "expires_at", "expiresAt", "period", "type",
+    "trb_user_id", "trbUserId", "telegram_user_id", "telegramUserId",
+    "user_id", "userId", "channel_id", "channelId",
+    "payment_id", "paymentId", "transaction_id", "transactionId",
+    "purchase_id", "purchaseId", "currency", "amount",
 })
 
 
