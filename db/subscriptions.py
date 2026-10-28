@@ -404,7 +404,9 @@ async def select_payment_plan(telegram_id, plan_id):
     async with SessionLocal() as session:
         async with session.begin():
             accepted = (await session.execute(text("""
-                SELECT 1 FROM offer_acceptances WHERE telegram_id=:uid LIMIT 1
+                SELECT 1 FROM offer_acceptances a
+                JOIN bot_flow_settings f ON f.id=1 AND a.offer_version=f.offer_version
+                WHERE a.telegram_id=:uid LIMIT 1
             """), {"uid":telegram_id})).first()
             if not accepted:
                 return None
