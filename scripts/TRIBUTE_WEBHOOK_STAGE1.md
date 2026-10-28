@@ -95,6 +95,48 @@ page opening are not proof that a particular person paid.
 A buyer should turn off future recurring charges after the controlled test
 if not intentionally keeping the subscription.
 
+## First REAL $1 payment received (2026-10-28)
+
+A genuine signed `new_subscription` event was received in the secure journal
+at approximately 17:44:35 UTC, for the private test offering:
+- `subscription_id=279302`, `period_id=528940`, `channel_id=547415`
+- `type=regular`, `period=monthly`, `currency=usd`, `amount=100` (minor units)
+- `telegram_user_id` was supplied as a distinct field from `user_id` and
+  `trb_user_id`; use **only** `telegram_user_id` for our Telegram bot user.
+- The event's `expires_at` specified a period through November 28, 2026
+  with nanosecond precision; Python timestamp parsing truncates to microseconds.
+
+The event was inserted as `pending_review`. It is already paid, so a second
+charge is **unnecessary**.
+
+### Owner-reviewed initial activation (not global automation)
+
+This guarded step can be run **only after** all local tests pass:
+
+1. Admin visits `/subscriptions/tribute-events`.
+2. For the exact test-offer event, clicks
+   **Учесть платёж и отправить приглашение**.
+3. The backend revalidates the signed saved record, expected test offer, period,
+   channel, event type, exact amount, currency, expiry interval, buyer IDs,
+   existence in our bot users table, and a bot-test-link claim by the same
+   Telegram ID immediately before the purchase.
+4. It atomically inserts/extends **only** a paid `subscriptions` record for
+   this one buyer, a hidden inactive `subscription_plans` record, a payment
+   receipt and audit record, and marks the inbox event `processed`.
+5. Once committed, it sends an ordinary one-use direct group invitation.
+   If sending fails, the already verified paid access is not undone: the owner
+   may retry using the same journal button; the user may obtain an invite
+   from their `/subscription` panel.
+
+No public tariffs are modified. No existing `access_grants`, lifetime rights,
+other offers, or existing group memberships are modified or revoked.
+**No automatic cancellation or removal is enabled.** Future subscription events
+continue to be recorded for review until a separate, well-tested automatic
+renewal/expiry processor is deployed.
+
+If owner approval returns HTTP 400, **do not pay again**. Diagnose the
+mismatch between the stored signed event and the test link claim first.
+
 ## Next steps (not implemented)
 
 - Validate real payload fields and the dedicated public-channel subscription ID.
