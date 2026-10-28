@@ -83,8 +83,8 @@ async def main():
     state=await verify_db()
     catalogue=fetch_live_catalogue()
     if catalogue is None:
-        print("Live catalogue not checked; compare offer IDs manually before enabling.")
-        return 0
+        print("CHECK FAILED: live Tribute catalogue is unavailable. Keep automation OFF.")
+        return 2
     problems=0
     for offer in state["offers"]:
         match=[x for x in catalogue
