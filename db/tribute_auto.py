@@ -12,6 +12,7 @@ import re
 from sqlalchemy import text
 
 from db.tribute_payment_test import TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
+from db.tribute_shared_checkout import PRODUCTION_OFFER_ID, is_expected_production_offer
 
 TEST_CHANNEL_ID = 547415
 TEST_PLAN_CODE = "tribute_test_279302_monthly"
@@ -248,6 +249,8 @@ async def register_auto_offer(offer_id, period_id, channel_id, amount_minor,
         raise AutoPaymentError("Нет администратора")
     if offer_id == TEST_SUBSCRIPTION_ID:
         raise AutoPaymentError("Тестовый тариф настраивается отдельно")
+    if offer_id == PRODUCTION_OFFER_ID:
+        raise AutoPaymentError("Этот общий тариф настраивается безопасным скриптом подготовки")
     async with SessionLocal() as s:
         async with s.begin():
             plan = (await s.execute(text("""
@@ -298,6 +301,8 @@ async def set_auto_offer_enabled(offer_id, period_id, enabled, actor):
             if not offer:
                 raise AutoPaymentError("Предложение Tribute не найдено")
             if enabled:
+                if offer_id == PRODUCTION_OFFER_ID and not is_expected_production_offer(dict(offer)):
+                    raise AutoPaymentError("Предложение не соответствует утверждённым четырём тарифам")
                 if offer["is_lifetime"] or offer["archived_at"]:
                     raise AutoPaymentError("Бессрочный или архивный тариф запрещён")
                 if not offer["require_test_claim"] and not offer["is_active"]:
@@ -444,6 +449,8 @@ async def activate_auto_event(event_id):
             """), {"offer":offer_id,"cycle":period_id})).mappings().first()
             if not offer or not offer["enabled"] or not setting["enabled"]:
                 return "disabled"
+            if offer_id == PRODUCTION_OFFER_ID and not is_expected_production_offer(dict(offer)):
+                raise AutoPaymentError("Подмена цен или периодов общего тарифа Tribute")
             if event["received_at"] < offer["enabled_at"] or event["received_at"] < setting["enabled_at"]:
                 return "older_than_activation"
             parsed = validate_paid_event(data, offer)
@@ -526,17 +533,33 @@ async def activate_auto_event(event_id):
                         WHERE a.telegram_id=:uid AND a.offer_version=f.offer_version
                         LIMIT 1
                     """), {"uid":uid})).first()
-                    selected = (await s.execute(text("""
-                        SELECT 1 FROM subscription_plan_selections
-                        WHERE telegram_id=:uid AND plan_id=:plan
-                          AND selected_at<=:when
-                          AND selected_at>=:earliest
-                        LIMIT 1
-                    """), {"uid":uid,"plan":offer["plan_id"],
-                            "when":event["received_at"],
-                            "earliest":event["received_at"]-timedelta(hours=48)})).first()
+                    if offer_id == PRODUCTION_OFFER_ID:
+                        # The customer chooses the actual period inside Tribute.
+                        # Bind the *offer* to the checkout click, not a guessed
+                        # plan/period. The event's period_id/price remain strict.
+                        selected = (await s.execute(text("""
+                            SELECT 1 FROM tribute_checkout_intents i
+                            JOIN bot_flow_settings f ON f.id=1
+                            WHERE i.telegram_id=:uid AND i.subscription_id=:offer
+                              AND i.offer_version=f.offer_version
+                              AND i.clicked_at<=:when
+                              AND i.clicked_at>=:earliest
+                            LIMIT 1
+                        """), {"uid":uid,"offer":offer_id,
+                                "when":event["received_at"],
+                                "earliest":event["received_at"]-timedelta(hours=48)})).first()
+                    else:
+                        selected = (await s.execute(text("""
+                            SELECT 1 FROM subscription_plan_selections
+                            WHERE telegram_id=:uid AND plan_id=:plan
+                              AND selected_at<=:when
+                              AND selected_at>=:earliest
+                            LIMIT 1
+                        """), {"uid":uid,"plan":offer["plan_id"],
+                                "when":event["received_at"],
+                                "earliest":event["received_at"]-timedelta(hours=48)})).first()
                     if not started or not selected:
-                        raise AutoPaymentError("Нет принятой оферты и выбора этого тарифа в боте")
+                        raise AutoPaymentError("Нет принятой оферты и перехода из бота к этому предложению")
 
             if current and current["telegram_id"] != uid:
                 raise AutoPaymentError("Оплаченная подписка привязана к другому пользователю")
