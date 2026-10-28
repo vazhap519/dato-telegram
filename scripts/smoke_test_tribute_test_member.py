@@ -88,7 +88,7 @@ async def read_test_buyer(telegram_id: int) -> dict:
               ON sub.id=b.subscription_row_id
              AND sub.telegram_id=b.telegram_id
              AND sub.provider='tribute'
-             AND sub.provider_subscription_id=CONCAT('test:', :offer_ref, ':', b.trb_user_id)
+             AND sub.provider_subscription_id=CONCAT('test:', CAST(:offer_ref AS TEXT), ':', b.trb_user_id)
              AND sub.status='active'
              AND sub.paid_until>NOW()
             JOIN subscription_plans plan
