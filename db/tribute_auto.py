@@ -583,7 +583,7 @@ async def finish_invite(event_id, delivered, reason=""):
                 UPDATE tribute_invite_outbox
                 SET state=:state,locked_until=NULL,
                     next_attempt_at=CASE WHEN :delivered THEN NOW()
-                                         ELSE NOW()+:delay END,
+                                         ELSE NOW()+CAST(:delay AS INTERVAL) END,
                     last_error=:reason,updated_at=NOW()
                 WHERE event_id=:event_id AND state='sending'
             """), {"event_id":event_id,
