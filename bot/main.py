@@ -11,6 +11,7 @@ from db.support import initialize_support
 from bot.support_handlers import support_start, support_callback, support_text
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
+from db.tribute_payment_test import initialize_tribute_payment_tests
 from db.group_access import initialize_group_access
 from db.expiry_monitor import initialize_expiry_monitor
 from db.subscription_automation import initialize_subscription_automation
@@ -51,6 +52,7 @@ async def main():
     await initialize_flow()
     await initialize_support()
     await initialize_subscriptions()
+    await initialize_tribute_payment_tests()
     await initialize_group_access()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
