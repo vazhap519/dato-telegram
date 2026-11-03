@@ -70,6 +70,24 @@ async def initialize_group_moderation():
             ON group_moderation_violations(chat_id,telegram_id,created_at DESC)
         """))
         await c.execute(text("""
+            CREATE TABLE IF NOT EXISTS group_moderation_manual_actions (
+                id BIGSERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
+                telegram_id BIGINT NOT NULL,
+                actor TEXT NOT NULL,
+                action TEXT NOT NULL,
+                duration_minutes INTEGER,
+                details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL,
+                error_detail TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await c.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_group_manual_user
+            ON group_moderation_manual_actions(chat_id,telegram_id,created_at DESC)
+        """))
+        await c.execute(text("""
             INSERT INTO group_moderation_statistics(id) VALUES(1)
             ON CONFLICT(id) DO NOTHING
         """))
@@ -220,3 +238,112 @@ async def clear_user_warnings(chat_id,uid):
                 VALUES (:chat,:uid,'admin_reset','reset')
             """),{"chat":chat_id,"uid":uid})
 
+
+
+async def moderation_offenders(chat_id, search="", page=1):
+    """Read-only summary based on recorded anti-spam violations."""
+    page=max(1,min(10000,int(page)))
+    q=(search or "").strip().lstrip("@")[:80]
+    async with SessionLocal() as s:
+        params={"chat":chat_id,"q":q,"offset":(page-1)*25}
+        base="""
+            FROM group_moderation_violations v
+            LEFT JOIN users u ON u.telegram_id=v.telegram_id
+            WHERE v.chat_id=:chat AND v.action IN ('deleted','muted','observed','failed')
+              AND (CAST(:q AS TEXT)='' OR CAST(v.telegram_id AS TEXT) ILIKE '%'||:q||'%'
+                OR COALESCE(u.username,'') ILIKE '%'||:q||'%'
+                OR COALESCE(u.first_name,'') ILIKE '%'||:q||'%')
+        """
+        total=(await s.execute(text("SELECT COUNT(DISTINCT v.telegram_id) "+base),params)).scalar_one()
+        rows=(await s.execute(text("""
+            SELECT v.telegram_id,MAX(u.username) username,
+                   MAX(u.first_name) first_name,
+                   COUNT(*) FILTER (WHERE v.action='deleted') deletions,
+                   COUNT(*) FILTER (WHERE v.action='observed') observations,
+                   COUNT(*) FILTER (WHERE v.action='muted') restrictions,
+                   MAX(v.created_at) latest_at
+        """+base+"""
+            GROUP BY v.telegram_id
+            ORDER BY latest_at DESC LIMIT 25 OFFSET :offset
+        """),params)).mappings().all()
+        return [dict(row) for row in rows],total
+
+async def moderation_user_details(chat_id,telegram_id):
+    async with SessionLocal() as s:
+        person=(await s.execute(text("""
+            SELECT telegram_id,username,first_name,last_name
+            FROM users WHERE telegram_id=:uid
+        """),{"uid":telegram_id})).mappings().first()
+        incidents=(await s.execute(text("""
+            SELECT reason,action,message_id,created_at
+            FROM group_moderation_violations
+            WHERE chat_id=:chat AND telegram_id=:uid
+            ORDER BY id DESC LIMIT 75
+        """),{"chat":chat_id,"uid":telegram_id})).mappings().all()
+        manual=(await s.execute(text("""
+            SELECT actor,action,duration_minutes,details,status,error_detail,created_at
+            FROM group_moderation_manual_actions
+            WHERE chat_id=:chat AND telegram_id=:uid
+            ORDER BY id DESC LIMIT 50
+        """),{"chat":chat_id,"uid":telegram_id})).mappings().all()
+        current=(await s.execute(text("""
+            SELECT COUNT(*) FROM group_moderation_violations v
+            WHERE chat_id=:chat AND telegram_id=:uid
+              AND action='deleted'
+              AND created_at>NOW()-INTERVAL '24 hours'
+              AND created_at>COALESCE((
+                SELECT MAX(created_at) FROM group_moderation_violations
+                WHERE chat_id=:chat AND telegram_id=:uid AND action='reset'
+              ),'-infinity'::timestamptz)
+        """),{"chat":chat_id,"uid":telegram_id})).scalar_one()
+        return {
+            "person":dict(person) if person else None,
+            "incidents":[dict(x) for x in incidents],
+            "manual":[dict(x) for x in manual],
+            "warnings":current,
+        }
+
+async def record_manual_action(chat_id,telegram_id,actor,action,status,
+                               duration_minutes=None,details="",error_detail=None):
+    async with SessionLocal() as s:
+        async with s.begin():
+            await s.execute(text("""
+                INSERT INTO group_moderation_manual_actions
+                  (chat_id,telegram_id,actor,action,status,duration_minutes,details,error_detail)
+                VALUES (:chat,:uid,:actor,:action,:status,:duration,:details,:error)
+            """),{"chat":chat_id,"uid":telegram_id,"actor":actor,"action":action,
+                  "status":status,"duration":duration_minutes,
+                  "details":(details or "")[:500],
+                  "error":(error_detail or "")[:300] if error_detail else None})
+
+async def moderation_manual_history(chat_id,limit=60):
+    async with SessionLocal() as s:
+        rows=(await s.execute(text("""
+            SELECT m.telegram_id,m.actor,m.action,m.status,m.duration_minutes,
+                   m.details,m.created_at,u.username
+            FROM group_moderation_manual_actions m
+            LEFT JOIN users u ON u.telegram_id=m.telegram_id
+            WHERE m.chat_id=:chat ORDER BY m.id DESC LIMIT :limit
+        """),{"chat":chat_id,"limit":max(1,min(int(limit),100))})).mappings().all()
+        return [dict(x) for x in rows]
+
+async def set_trusted_user(uid,enabled,actor):
+    if not 0 < uid <= 9999999999999:
+        raise ValueError("Недопустимый Telegram ID")
+    async with SessionLocal() as s:
+        async with s.begin():
+            row=(await s.execute(text("""
+                SELECT trusted_users FROM group_moderation_settings
+                WHERE id=1 FOR UPDATE
+            """))).mappings().one()
+            members=set(x.strip() for x in (row["trusted_users"] or "").replace(",","\n").splitlines() if x.strip())
+            if enabled:
+                members.add(str(uid))
+            else:
+                members.discard(str(uid))
+            if len(members)>100:
+                raise ValueError("Лимит: 100 доверенных участников")
+            await s.execute(text("""
+                UPDATE group_moderation_settings SET trusted_users=:members,
+                       updated_by=:actor,updated_at=NOW() WHERE id=1
+            """),{"members":"\n".join(sorted(members,key=int)),"actor":actor})
