@@ -106,6 +106,11 @@
 </div>
 </details>
 <section class="bg-gray-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+<form method="get" action="/moderation/offenders" class="flex flex-wrap items-end gap-2 w-full">
+<label class="flex-1 min-w-48 text-sm">Открыть карточку участника по Telegram ID или найти нарушителя
+<input type="text" name="search" placeholder="Telegram ID, имя или @username" class="w-full bg-gray-700 rounded-lg p-3 mt-2"></label>
+<button class="bg-gray-700 hover:bg-gray-600 rounded-lg px-4 py-3">Найти</button>
+</form>
 <div><h2 class="font-semibold text-lg">👥 Управление участниками</h2><p class="text-sm text-gray-400 mt-1">Просмотр нарушителей, ограничения, исключения и карточки участников</p></div>
 <a href="/moderation/offenders" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3 font-semibold">Открыть список нарушителей →</a>
 </section>
@@ -145,7 +150,7 @@
 <thead><tr class="text-gray-400 border-b border-gray-700"><th class="py-2 pr-3">Дата</th><th class="pr-3">Telegram ID</th><th class="pr-3">Причина</th><th>Действие</th></tr></thead><tbody>
 {% for event in moderation_history %}
 <tr class="border-b border-gray-700"><td class="py-2 pr-3 whitespace-nowrap">{{ event.created_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td>
-<td class="pr-3 font-mono text-xs">{{ event.telegram_id }}</td>
+<td class="pr-3 font-mono text-xs"><a href="/moderation/user/{{ event.telegram_id }}" class="underline text-blue-300">{{ event.telegram_id }}</a></td>
 <td class="pr-3">{{ {'link':'Ссылка','invite':'Приглашение','forward':'Пересылка','flood':'Флуд','duplicate':'Повтор','word':'Запрещённое слово','media':'Медиафайл','admin_reset':'Сброс'}.get(event.reason,event.reason) }}</td>
 <td>{{ {'deleted':'Удалено','failed':'Ошибка','muted':'Ограничен','observed':'Наблюдение','reset':'Сброс'}.get(event.action,event.action) }}</td></tr>
 {% else %}
