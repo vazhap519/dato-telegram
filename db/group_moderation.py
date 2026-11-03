@@ -175,7 +175,7 @@ async def log_violation(chat_id,uid,message_id,reason,action):
                 SELECT count(*) FROM group_moderation_violations
                 WHERE chat_id=:chat AND telegram_id=:uid
                   AND created_at>NOW()-INTERVAL '24 hours'
-                  AND action IN ('deleted','muted')
+                  AND action='deleted'
                   AND created_at>COALESCE((
                       SELECT MAX(created_at) FROM group_moderation_violations
                       WHERE chat_id=:chat AND telegram_id=:uid AND action='reset'
