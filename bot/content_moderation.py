@@ -63,7 +63,7 @@ def classify(message, cfg):
     if cfg["block_forwards"] and message.forward_origin is not None:
         return "forward"
     if cfg.get("block_media") and (message.photo or message.video or message.document
-                                   or message.animation or message.sticker):
+                                   or message.animation or message.sticker or message.voice or message.video_note):
         return "media"
     if cfg.get("blocked_words"):
         words = [w.strip().casefold() for w in
@@ -111,7 +111,8 @@ async def moderate_group_message(message):
     if message.new_chat_members or message.left_chat_member or message.pinned_message:
         return
     if not (message.text or message.caption or message.forward_origin or message.photo
-            or message.video or message.document or message.sticker):
+            or message.video or message.document or message.sticker or message.animation
+            or message.voice or message.video_note):
         return
     try:
         group=await group_settings()
