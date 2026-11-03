@@ -20,7 +20,7 @@ from db.payment_providers import initialize_payment_providers, providers as list
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
-from db.group_moderation import initialize_group_moderation, get_moderation_settings, save_moderation_settings, moderation_stats
+from db.group_moderation import initialize_group_moderation, get_moderation_settings, save_moderation_settings, moderation_stats, save_content_settings, moderation_history, moderation_summary, clear_user_warnings
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
 from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
@@ -88,6 +88,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/reliability/settings",
         "/reliability/test",
         "/moderation/settings",
+        "/moderation/content",
+        "/moderation/reset",
         "/subscriptions/grant",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
@@ -341,6 +343,8 @@ async def moderation_page(request: Request, user=Depends(get_current_user)):
         request=request, name="moderation.html", context={
             "moderation": await get_moderation_settings(),
             "moderation_stats": await moderation_stats(),
+            "moderation_history": await moderation_history(),
+            "moderation_summary": await moderation_summary(),
             "tg_group": await group_settings(),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
@@ -360,6 +364,53 @@ async def moderation_save(
         join_enabled, leave_enabled, pin_enabled, other_enabled, user["user"]
     )
     return RedirectResponse("/moderation?saved=1",status_code=303)
+
+
+@app.post("/moderation/content")
+async def moderation_content_save(
+    content_enabled: bool = Form(False),
+    block_links: bool = Form(False),
+    block_invites: bool = Form(False),
+    block_forwards: bool = Form(False),
+    block_flood: bool = Form(False),
+    block_duplicates: bool = Form(False),
+    notify_user: bool = Form(False),
+    flood_limit: int = Form(6),
+    flood_window_seconds: int = Form(10),
+    duplicate_window_seconds: int = Form(90),
+    warning_limit: int = Form(3),
+    mute_minutes: int = Form(0),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    try:
+        await save_content_settings({
+            "content_enabled":content_enabled,"block_links":block_links,
+            "block_invites":block_invites,"block_forwards":block_forwards,
+            "block_flood":block_flood,"block_duplicates":block_duplicates,
+            "notify_user":notify_user,"flood_limit":flood_limit,
+            "flood_window_seconds":flood_window_seconds,
+            "duplicate_window_seconds":duplicate_window_seconds,
+            "warning_limit":warning_limit,"mute_minutes":mute_minutes,
+        },user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/moderation?content_saved=1#anti-spam",status_code=303)
+
+
+@app.post("/moderation/reset")
+async def moderation_reset_user(
+    telegram_id: int = Form(...), confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    if confirm != "RESET_WARNINGS" or telegram_id<=0:
+        raise HTTPException(400,detail="Подтвердите сброс предупреждений")
+    config=await group_settings()
+    if not config.get("chat_id"):
+        raise HTTPException(400,detail="Telegram-группа не подключена")
+    await clear_user_warnings(config["chat_id"],telegram_id)
+    return RedirectResponse("/moderation?reset=1#moderation-history",status_code=303)
 
 
 @app.get("/reliability")
