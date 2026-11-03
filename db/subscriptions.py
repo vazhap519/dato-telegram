@@ -144,7 +144,8 @@ async def overview():
         ))).mappings()]
         return dict(summary),plans
 
-async def people(search='', page=1, status='all', payment_provider='all', buyers_only=False):
+async def people(search='', page=1, status='all', payment_provider='all', buyers_only=False,
+                 tag='', segment='all'):
     """Filter by effective rights, not by clicks or unverified payments."""
     if status not in ('all','active','lifetime','expiring','expired','none'):
         status='all'
@@ -152,6 +153,9 @@ async def people(search='', page=1, status='all', payment_provider='all', buyers
     payment_provider=(payment_provider or 'all').strip().lower()[:40]
     if payment_provider!='all' and not payment_provider.replace('-','').replace('_','').isalnum():
         payment_provider='all'
+    tag=(tag or '').strip()[:40]
+    if segment not in ('all','buyers','nonbuyers','active_buyers','active_unpaid','lifetime','expiring','inactive'):
+        segment='all'
     q=(search or '').strip().lstrip('@')[:80]
     base="""
     WITH access_state AS (
@@ -197,7 +201,14 @@ async def people(search='', page=1, status='all', payment_provider='all', buyers
           ORDER BY v.verified_at DESC,v.id DESC LIMIT 1) AS last_payment_provider_name,
         EXISTS(SELECT 1 FROM verified_payment_receipts v
           WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid'
-          AND (:provider='all' OR v.provider=:provider)) AS matching_verified_payment
+          AND (:provider='all' OR v.provider=:provider)) AS matching_verified_payment,
+        COALESCE((SELECT p.tags FROM subscriber_admin_profiles p
+          WHERE p.telegram_id=u.telegram_id),'') AS crm_tags,
+        EXISTS(SELECT 1 FROM subscriber_admin_profiles p
+          WHERE p.telegram_id=u.telegram_id
+          AND LOWER(:tag) = ANY (
+            SELECT LOWER(BTRIM(x)) FROM regexp_split_to_table(p.tags,',') x
+          )) AS matching_tag
       FROM users u
     )
     """
@@ -219,8 +230,22 @@ async def people(search='', page=1, status='all', payment_provider='all', buyers
     )
     AND (NOT CAST(:buyers_only AS BOOLEAN) OR verified_payment_count>0)
     AND (:provider='all' OR matching_verified_payment)
+    AND (:tag='' OR matching_tag)
+    AND (
+      :segment='all'
+      OR (:segment='buyers' AND verified_payment_count>0)
+      OR (:segment='nonbuyers' AND verified_payment_count=0)
+      OR (:segment='active_buyers' AND active_access AND verified_payment_count>0)
+      OR (:segment='active_unpaid' AND active_access AND verified_payment_count=0)
+      OR (:segment='lifetime' AND is_lifetime)
+      OR (:segment='expiring' AND active_access AND NOT is_lifetime
+          AND expiry BETWEEN NOW() AND NOW()+INTERVAL '7 days')
+      OR (:segment='inactive' AND NOT active_access)
+    )
     """
-    params={"q":q,"status":status,"offset":(page-1)*30,"provider":payment_provider,"buyers_only":buyers_only}
+    params={"q":q,"status":status,"offset":(page-1)*30,
+            "provider":payment_provider,"buyers_only":buyers_only,
+            "tag":tag,"segment":segment}
     async with SessionLocal() as s:
         total=(await s.execute(text(base+"SELECT COUNT(*) FROM access_state "+where),params)).scalar_one()
         rows=(await s.execute(text(base+"""
