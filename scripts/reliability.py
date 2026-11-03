@@ -275,6 +275,9 @@ def store_monitor_snapshot(issues,checked_at,backup):
         "backup_at":dt.datetime.fromtimestamp(backup.stat().st_mtime,dt.timezone.utc).isoformat()
                     if backup else None,
         "backup_size":backup.stat().st_size if backup else None,
+        "backup_ok":bool(backup) and not any(
+            "backup" in issue.lower() for issue in issues
+        ),
         "services":services,
     }
     payload=json.dumps(details,ensure_ascii=False)
