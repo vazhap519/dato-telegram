@@ -245,9 +245,38 @@ def notify(message):
         return False
 
 
+
+def store_monitor_snapshot(issues,checked_at,backup):
+    """Publish the observed state to the admin database, never fabricate health.
+
+    Database failures leave the previous snapshot stale so the UI can distinguish
+    a missing heartbeat from a successful inspection.
+    """
+    services=[x.strip() for x in os.getenv("DATO_MONITOR_SERVICES","").split(",") if x.strip()]
+    details={
+        "issues":issues,
+        "backup_at":dt.datetime.fromtimestamp(backup.stat().st_mtime,dt.timezone.utc).isoformat()
+                    if backup else None,
+        "backup_size":backup.stat().st_size if backup else None,
+        "services":services,
+    }
+    payload=json.dumps(details,ensure_ascii=False)
+    # psql's :'payload' quotes as a SQL literal; no interpolation into SQL.
+    try:
+        run(["psql","-X","-v","ON_ERROR_STOP=1","-v","payload="+payload,
+             "-v","checked_at="+checked_at.isoformat(),"-c",
+             "INSERT INTO monitor_health_snapshots(id,checked_at,details) "
+             "VALUES (1,:'checked_at'::timestamptz,:'payload'::jsonb) "
+             "ON CONFLICT(id) DO UPDATE SET checked_at=EXCLUDED.checked_at,"
+             "details=EXCLUDED.details"],env=postgres_environment(),timeout=12)
+    except Exception:
+        print("Unable to save health snapshot (the database may be unavailable)",file=sys.stderr)
+
+
 def monitor():
     ensure_private(STATE_DIR)
     issues = health()
+    store_monitor_snapshot(issues,dt.datetime.now(dt.timezone.utc),latest_backup())
     state_file = STATE_DIR / "last_alert.json"
     now = dt.datetime.now(dt.timezone.utc).timestamp()
     fingerprint = json.dumps(issues, ensure_ascii=False)
