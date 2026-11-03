@@ -23,6 +23,8 @@ from db.tribute_paid_removal import initialize_tribute_paid_removal
 from bot.expiry_worker import expiry_worker
 from bot.group_removal_worker import group_removal_test_worker
 from bot.group_handlers import group_join_request_handler, group_id_handler, managed_member_join_handler
+from db.group_moderation import initialize_group_moderation
+from bot.moderation_handlers import delete_service_message
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
 from bot.broadcast_worker import broadcast_worker
@@ -51,6 +53,16 @@ dp.callback_query.register(request_group_invite_handler, F.data == "request_grou
 dp.callback_query.register(broadcast_optout_handler, F.data == "broadcast_optout")
 dp.message.register(broadcast_optin_handler, Command("notifications"))
 dp.message.register(broadcast_stop_handler, Command("stopnotifications"))
+dp.message.register(
+    delete_service_message,
+    F.chat.type.in_({"group", "supergroup"}) &
+    (
+        F.new_chat_members | F.left_chat_member | F.pinned_message |
+        F.new_chat_title | F.new_chat_photo | F.delete_chat_photo |
+        F.group_chat_created | F.supergroup_chat_created |
+        F.message_auto_delete_timer_changed
+    )
+)
 dp.message.register(support_text)
 
 async def main():
@@ -62,6 +74,7 @@ async def main():
     await initialize_tribute_auto()
     await initialize_shared_checkout()
     await initialize_group_access()
+    await initialize_group_moderation()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
     await initialize_tribute_paid_removal()
