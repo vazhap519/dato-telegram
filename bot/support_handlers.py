@@ -109,7 +109,7 @@ async def support_text(message:types.Message):
         await message.answer("Пока можно отправлять текст, фотографии, голосовые и документы.")
         return
     try:
-        ticket_id=await add_support_chat_message(uid,body,kind,file_id)
+        ticket_id=await add_support_chat_message(uid,body,kind,file_id,message.message_id)
     except ValueError as exc:
         await message.answer(str(exc))
         return
