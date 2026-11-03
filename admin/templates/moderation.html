@@ -58,7 +58,8 @@
 ('block_invites','🚫 Приглашения','Удалять ссылки-приглашения в другие группы и каналы'),
 ('block_forwards','↗️ Пересланные сообщения','Удалять сообщения, пересланные из других чатов'),
 ('block_flood','💬 Флуд','Удалять сообщения сверх заданного лимита за промежуток времени'),
-('block_duplicates','📋 Повторяющийся текст','Удалять третье и последующие одинаковые текстовые сообщения')
+('block_duplicates','📋 Повторяющийся текст','Удалять третье и последующие одинаковые текстовые сообщения'),
+('block_media','🖼 Медиа и файлы','Удалять фото, видео, документы, анимации и стикеры')
 ] %}
 <label class="flex gap-3 items-start bg-gray-700/50 rounded-lg p-3">
 <input class="mt-1" type="checkbox" name="{{ field }}" value="true" {{ 'checked' if moderation[field] else '' }}>
@@ -82,6 +83,14 @@
 {% endfor %}
 </select>
 </label>
+</div>
+<div class="grid md:grid-cols-2 gap-3">
+<label class="block text-sm">Разрешённые домены
+<textarea name="allowed_domains" maxlength="1200" rows="4" placeholder="arutyun.me&#10;youtube.com&#10;t.me" class="mt-2 w-full rounded-lg p-3 bg-gray-700">{{ moderation.allowed_domains }}</textarea>
+<span class="block text-gray-400 text-xs mt-1">По одному домену в строке. Поддомены тоже разрешаются. Работает с фильтром ссылок.</span></label>
+<label class="block text-sm">Запрещённые слова и фразы
+<textarea name="blocked_words" maxlength="1200" rows="4" placeholder="Запрещённая фраза&#10;другое слово" class="mt-2 w-full rounded-lg p-3 bg-gray-700">{{ moderation.blocked_words }}</textarea>
+<span class="block text-gray-400 text-xs mt-1">По одному слову или фразе в строке. Пустое поле отключает фильтрацию слов.</span></label>
 </div>
 <label class="flex items-center gap-3 text-sm"><input name="notify_user" type="checkbox" value="true" {{ 'checked' if moderation.notify_user else '' }}>Уведомлять участника в личном чате о причине удаления</label>
 <p class="text-xs text-amber-200">Если срок ограничения равен нулю, применяются только удаления и предупреждения в журнале. Временное ограничение потребует от бота права блокировать участников. Счётчик нарушений учитывает последние 24 часа; история сообщений для антифлуда хранится в памяти и сбрасывается после перезапуска.</p>
@@ -113,7 +122,7 @@
 {% for event in moderation_history %}
 <tr class="border-b border-gray-700"><td class="py-2 pr-3 whitespace-nowrap">{{ event.created_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td>
 <td class="pr-3 font-mono text-xs">{{ event.telegram_id }}</td>
-<td class="pr-3">{{ {'link':'Ссылка','invite':'Приглашение','forward':'Пересылка','flood':'Флуд','duplicate':'Повтор','admin_reset':'Сброс'}.get(event.reason,event.reason) }}</td>
+<td class="pr-3">{{ {'link':'Ссылка','invite':'Приглашение','forward':'Пересылка','flood':'Флуд','duplicate':'Повтор','word':'Запрещённое слово','media':'Медиафайл','admin_reset':'Сброс'}.get(event.reason,event.reason) }}</td>
 <td>{{ {'deleted':'Удалено','failed':'Ошибка','muted':'Ограничен','reset':'Сброс'}.get(event.action,event.action) }}</td></tr>
 {% else %}
 <tr><td colspan="4" class="py-4 text-gray-400">Нарушений пока нет.</td></tr>
