@@ -37,6 +37,27 @@ async def initialize_support():
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )"""))
         await c.execute(text("""
+        ALTER TABLE support_messages
+        ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT
+        """))
+        await c.execute(text("""
+        ALTER TABLE support_messages
+        ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
+        """))
+        await c.execute(text("""
+        ALTER TABLE support_messages
+        ADD COLUMN IF NOT EXISTS deleted_by TEXT
+        """))
+        await c.execute(text("""
+        CREATE TABLE IF NOT EXISTS support_message_delete_audit(
+            id BIGSERIAL PRIMARY KEY,
+            message_id BIGINT NOT NULL,
+            ticket_id BIGINT NOT NULL,
+            actor TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """))
+        await c.execute(text("""
         CREATE INDEX IF NOT EXISTS support_messages_ticket_idx
           ON support_messages(ticket_id,id)
         """))
@@ -202,12 +223,15 @@ async def admin_reply(ticket_id,actor,body):
             """),{"id":ticket_id})
             return ticket["telegram_id"],mid
 
-async def mark_delivery(message_id,success):
+async def mark_delivery(message_id,success,telegram_message_id=None):
     async with SessionLocal() as s:
         async with s.begin():
             await s.execute(text("""
-                UPDATE support_messages SET delivery_status=:status WHERE id=:id
-            """),{"id":message_id,"status":"sent" if success else "failed"})
+                UPDATE support_messages SET delivery_status=:status,
+                    telegram_message_id=CASE WHEN :sent THEN :tg_id ELSE telegram_message_id END
+                WHERE id=:id
+            """),{"id":message_id,"status":"sent" if success else "failed",
+                  "sent":success,"tg_id":telegram_message_id})
 
 async def set_ticket_status(ticket_id,status):
     if status not in ("open","pending","closed"): raise ValueError("Недопустимый статус")
@@ -313,7 +337,7 @@ async def chat_is_active(uid):
             return True
 
 
-async def add_support_chat_message(uid,body,media_type="text",file_id=None):
+async def add_support_chat_message(uid,body,media_type="text",file_id=None,telegram_message_id=None):
     body=(body or "").strip()
     if media_type not in ("text","photo","voice","document"):
         raise ValueError("Неподдерживаемый формат")
@@ -346,9 +370,10 @@ async def add_support_chat_message(uid,body,media_type="text",file_id=None):
                     UPDATE support_chat_modes SET ticket_id=:ticket WHERE telegram_id=:uid
                 """),{"uid":uid,"ticket":ticket_id})
             await s.execute(text("""
-                INSERT INTO support_messages(ticket_id,actor,body,media_type,file_id)
-                VALUES (:ticket,'user',:body,:kind,:file)
-            """),{"ticket":ticket_id,"body":body,"kind":media_type,"file":file_id})
+                INSERT INTO support_messages(ticket_id,actor,body,media_type,file_id,telegram_message_id)
+                VALUES (:ticket,'user',:body,:kind,:file,:tg_mid)
+            """),{"ticket":ticket_id,"body":body,"kind":media_type,
+                  "file":file_id,"tg_mid":telegram_message_id})
             await s.execute(text("""
                 UPDATE support_tickets SET status='open',last_actor='user',
                     updated_at=NOW() WHERE id=:ticket
@@ -363,3 +388,31 @@ async def support_media_record(message_id):
             WHERE id=:id AND file_id IS NOT NULL AND actor='user'
         """),{"id":message_id})).mappings().first()
         return dict(row) if row else None
+
+
+async def support_message_for_delete(ticket_id,message_id):
+    async with SessionLocal() as s:
+        row=(await s.execute(text("""
+            SELECT m.id,m.ticket_id,m.actor,m.created_at,m.deleted_at,
+                   m.telegram_message_id,m.delivery_status,t.telegram_id
+            FROM support_messages m JOIN support_tickets t ON t.id=m.ticket_id
+            WHERE m.id=:mid AND m.ticket_id=:tid
+        """),{"mid":message_id,"tid":ticket_id})).mappings().first()
+        return dict(row) if row else None
+
+async def mark_support_message_deleted(ticket_id,message_id,actor):
+    async with SessionLocal() as s:
+        async with s.begin():
+            row=(await s.execute(text("""
+                UPDATE support_messages
+                SET deleted_at=NOW(),deleted_by=:actor,
+                    body='[Сообщение удалено из Telegram]',file_id=NULL
+                WHERE id=:mid AND ticket_id=:tid AND deleted_at IS NULL
+                RETURNING id
+            """),{"mid":message_id,"tid":ticket_id,"actor":actor})).first()
+            if not row: return False
+            await s.execute(text("""
+                INSERT INTO support_message_delete_audit(message_id,ticket_id,actor)
+                VALUES (:mid,:tid,:actor)
+            """),{"mid":message_id,"tid":ticket_id,"actor":actor})
+            return True
