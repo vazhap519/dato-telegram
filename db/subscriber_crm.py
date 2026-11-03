@@ -25,6 +25,14 @@ async def initialize_crm():
             )
         """))
         await db.execute(text("""
+            ALTER TABLE subscriber_direct_messages
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
+        """))
+        await db.execute(text("""
+            ALTER TABLE subscriber_direct_messages
+            ADD COLUMN IF NOT EXISTS deleted_by TEXT
+        """))
+        await db.execute(text("""
             CREATE INDEX IF NOT EXISTS subscriber_direct_messages_user_idx
             ON subscriber_direct_messages(telegram_id,created_at DESC)
         """))
@@ -103,7 +111,8 @@ async def crm_timeline(uid,limit=60):
 async def direct_message_history(uid,limit=25):
     async with SessionLocal() as db:
         rows=(await db.execute(text("""
-            SELECT actor,message,status,error_reason,created_at,finished_at
+            SELECT id,actor,message,status,error_reason,created_at,finished_at,
+                   telegram_message_id,deleted_at,deleted_by
             FROM subscriber_direct_messages
             WHERE telegram_id=:uid ORDER BY id DESC LIMIT :limit
         """),{"uid":uid,"limit":limit})).mappings().all()
@@ -119,3 +128,32 @@ async def crm_tags():
             ORDER BY tag LIMIT 150
         """))).all()
         return [x[0] for x in rows]
+
+
+async def direct_message_for_delete(uid,mid):
+    async with SessionLocal() as db:
+        row=(await db.execute(text("""
+            SELECT id,telegram_id,telegram_message_id,finished_at,status,deleted_at
+            FROM subscriber_direct_messages
+            WHERE id=:id AND telegram_id=:uid
+        """),{"uid":uid,"id":mid})).mappings().first()
+        return dict(row) if row else None
+
+async def mark_direct_message_deleted(uid,mid,actor):
+    async with SessionLocal() as db:
+        async with db.begin():
+            row=await db.execute(text("""
+                UPDATE subscriber_direct_messages
+                SET deleted_at=NOW(),deleted_by=:actor,
+                    message='[Сообщение удалено из Telegram]',error_reason=NULL
+                WHERE id=:id AND telegram_id=:uid AND deleted_at IS NULL
+                RETURNING id
+            """),{"id":mid,"uid":uid,"actor":actor})
+            if row.first():
+                await db.execute(text("""
+                    INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                    VALUES (:uid,'crm_message_deleted',:actor,
+                      jsonb_build_object('message_id',CAST(:mid AS BIGINT)))
+                """),{"uid":uid,"actor":actor,"mid":mid})
+                return True
+            return False
