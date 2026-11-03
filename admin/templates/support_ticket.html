@@ -20,6 +20,8 @@
 <div class="text-xs rounded-full bg-gray-700 px-3 py-2" id="status-label">{{ statuses.get(ticket.status,ticket.status) }}</div>
 </div>
 {% if request.query_params.get('sent') == 'fail' %}<div class="bg-red-900/50 p-2 text-red-200 text-sm">Telegram не доставил ответ. Используйте повторную отправку в сообщении.</div>{% endif %}
+{% if request.query_params.get('delete')=='done' %}<div class="bg-emerald-900/40 p-2 text-emerald-200 text-sm">Сообщение удалено в Telegram и отмечено в журнале.</div>
+{% elif request.query_params.get('delete')=='failed' %}<div class="bg-red-900/40 p-2 text-red-200 text-sm">Telegram не разрешил удалить сообщение. В истории оно сохранено.</div>{% endif %}
 <div id="chat-messages" class="flex-1 min-h-64 overflow-y-auto p-4 space-y-4" aria-live="polite">
 {% for m in messages %}
 <div class="flex {% if m.actor=='user' %}justify-start{% else %}justify-end{% endif %}" data-message-id="{{ m.id }}">
@@ -29,6 +31,14 @@
 {% if m.media_type=='voice' and m.file_id %}<audio controls preload="none" class="max-w-full"><source src="/support/media/{{ m.id }}" type="audio/ogg"></audio>{% endif %}
 {% if m.media_type=='document' and m.file_id %}<a href="/support/media/{{ m.id }}" target="_blank" class="text-sky-300 underline">📎 Открыть вложение</a>{% endif %}
 {% if m.body %}<p class="text-sm whitespace-pre-wrap break-words">{{ m.body }}</p>{% endif %}
+{% if m.deleted_at %}<span class="text-xs text-amber-200">Удалено у пользователя · {{ m.deleted_by }}</span>
+{% elif m.telegram_message_id and m.delivery_status=='sent' %}
+<form action="/support/{{ ticket.id }}/delete/{{ m.id }}" method="post" class="mt-2"
+onsubmit="return confirm('Удалить сообщение из Telegram-чата пользователя? Это нельзя отменить.')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="confirm" value="DELETE_BOTH">
+<button class="text-xs text-red-200 hover:text-white underline">🗑 Удалить у пользователя</button>
+</form>{% endif %}
 {% if m.delivery_status=='failed' %}<form action="/support/{{ ticket.id }}/retry/{{ m.id }}" method="post" class="mt-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-xs text-red-200 underline">Не доставлено · повторить</button></form>{% endif %}
 </div></div>
 {% else %}<p class="text-gray-400 text-sm">Сообщений пока нет.</p>{% endfor %}
@@ -77,6 +87,16 @@
       }
     }
     if(m.body){const p=document.createElement('p');p.className='text-sm whitespace-pre-wrap break-words';p.textContent=m.body;bubble.appendChild(p);}
+    if(m.deleted_at){const tag=document.createElement('small');tag.textContent='Удалено у пользователя';tag.className='text-amber-200';bubble.appendChild(tag);}
+    else if(m.can_delete){
+      const form=document.createElement('form');
+      form.method='post';form.action='/support/'+ticketId+'/delete/'+m.id;
+      form.className='mt-2';form.onsubmit=()=>confirm('Удалить сообщение у пользователя в Telegram?');
+      const csrf=document.createElement('input');csrf.type='hidden';csrf.name='csrf_token';csrf.value={{ csrf_token|tojson }};
+      const conf=document.createElement('input');conf.type='hidden';conf.name='confirm';conf.value='DELETE_BOTH';
+      const button=document.createElement('button');button.className='text-xs text-red-200 underline';button.textContent='🗑 Удалить у пользователя';
+      form.append(csrf,conf,button);bubble.appendChild(form);
+    }
     if(m.delivery_status==='failed'){
       const err=document.createElement('small');err.className='text-red-200';err.textContent='Не доставлено — обновите страницу для повтора';bubble.appendChild(err);
     }
