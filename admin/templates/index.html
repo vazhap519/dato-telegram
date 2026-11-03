@@ -1,124 +1,82 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Admin Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-
-<body class="bg-gray-900 text-white min-h-screen">
-
-<div class="max-w-5xl mx-auto p-6">
-
-    <!-- HEADER -->
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold">📊 Dashboard</h1>
-        <div class="bg-gray-800 px-4 py-2 rounded-lg">
-            Users: <span id="count" class="font-bold text-green-400">{{ count }}</span>
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Главная — Круг Души</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-[#0d1524] text-white min-h-screen">
+{% include "_sidebar.html" %}
+<main class="max-w-7xl mx-auto p-5 md:p-8 space-y-7">
+<header class="flex flex-wrap justify-between items-center gap-3">
+  <div><h1 class="text-3xl font-bold">Обзор системы</h1><p class="text-gray-400 mt-2 text-sm">Состояние подписок, обращений и активности «Круга Души»</p></div>
+  <div class="text-xs text-gray-400 bg-gray-800 rounded-lg px-3 py-2">Данные на момент открытия страницы</div>
+</header>
+<section class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+  {% for label,value,href,accent in [
+    ('Всего пользователей',stats.total,'/users','text-white'),
+    ('Действующий доступ',overview.active_access,'/subscriptions?status=active#subscribers','text-emerald-300'),
+    ('Постоянный доступ',overview.lifetime,'/subscriptions?status=lifetime#subscribers','text-sky-300'),
+    ('Подтверждённые покупатели',overview.verified_buyers,'/subscriptions?buyers_only=true#subscribers','text-indigo-300'),
+    ('Истекают за 7 дней',overview.expiring_7d,'/subscriptions?status=expiring#subscribers','text-amber-300'),
+    ('Новых за 7 дней',stats.week,'/users','text-white'),
+    ('Обращения без ответа',overview.support_waiting,'/support','text-amber-300'),
+    ('Рассылки в очереди',overview.broadcasts_pending,'/broadcast','text-white')
+  ] %}
+  <a href="{{ href }}" class="block bg-[#1d293b] border border-slate-700/50 rounded-2xl p-4 hover:border-blue-500 transition-colors">
+    <div class="text-gray-400 text-xs md:text-sm">{{ label }}</div>
+    <div class="text-2xl md:text-3xl font-bold mt-2 {{ accent }}">{{ value }}</div>
+  </a>
+  {% endfor %}
+</section>
+<div class="grid xl:grid-cols-[1.3fr_1fr] gap-5">
+  <div class="space-y-5">
+    <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
+      <div class="flex flex-wrap justify-between items-center gap-3"><h2 class="text-xl font-semibold">Центр внимания</h2><span class="text-xs text-gray-400">На основании записей базы</span></div>
+      {% if overview.support_waiting or overview.expiring_7d or overview.broadcasts_pending %}
+      <div class="space-y-2">
+        {% if overview.support_waiting %}<a href="/support" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">💬 Обращений без ответа: {{ overview.support_waiting }} — открыть поддержку</a>{% endif %}
+        {% if overview.expiring_7d %}<a href="/subscriptions?status=expiring#subscribers" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">⏳ Подписки истекают в ближайшие 7 дней: {{ overview.expiring_7d }}</a>{% endif %}
+        {% if overview.broadcasts_pending %}<a href="/broadcast" class="block rounded-xl p-3 bg-indigo-900/20 border border-indigo-800 text-indigo-200">✉️ Рассылки ожидают обработки: {{ overview.broadcasts_pending }}</a>{% endif %}
+      </div>
+      {% else %}<p class="text-sm text-gray-300 bg-slate-800 rounded-lg p-4">По отслеживаемым показателям нет задач, требующих внимания.</p>{% endif %}
+      <p class="text-xs text-gray-500">Ошибки доставки и мониторинга проверяются в соответствующих разделах, а не считаются автоматически исправными.</p>
+    </section>
+    <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center gap-3"><h2 class="text-xl font-semibold">Последние события</h2><span class="text-xs text-gray-400">До 15 записей</span></div>
+      <div class="divide-y divide-slate-700/60">
+        {% for e in recent_events %}
+        <div class="flex gap-3 py-3 items-start">
+          <span class="rounded-lg bg-slate-700/60 px-2 py-1">{{ {'registered':'👤','access':'🔑','payment':'💳','support':'💬'}.get(e.kind,'•') }}</span>
+          <div class="flex-1 min-w-0"><div class="text-sm font-medium">{{ e.description }}</div>
+            {% if e.telegram_id %}<a class="text-xs text-sky-300 hover:underline" href="/subscriptions/users/{{ e.telegram_id }}">Telegram ID: {{ e.telegram_id }}</a>{% endif %}
+          </div>
+          <span class="text-xs text-gray-400 whitespace-nowrap">{{ e.occurred_at|tbilisi_time('%d.%m %H:%M') }}</span>
         </div>
-    </div>
-
-    <div class="mb-6"><a href="/users" class="inline-block bg-indigo-600 hover:bg-indigo-500 px-5 py-3 rounded-xl font-semibold">👥 Пользователи — регистрации, оферта, подписка →</a></div>
-
-    <div class="mb-6"><a href="/broadcast" class="inline-block bg-blue-600 hover:bg-blue-500 px-5 py-3 rounded-xl font-semibold">📨 Рассылки — создать сообщение и посмотреть доставку →</a></div>
-
-    <div class="mb-6"><a href="/support" class="inline-block bg-violet-700 hover:bg-violet-600 px-5 py-3 rounded-xl font-semibold">🛟 Обращения — сообщения участников и ответы в Telegram {% if support_summary and support_summary.get("open",0) %}<span class="bg-amber-500 text-gray-900 rounded-full px-2 py-1 text-sm ml-2">{{ support_summary.get("open",0) }} новых</span>{% endif %} →</a></div>
-
-    <div class="mb-6"><a href="/subscriptions" class="inline-block bg-emerald-700 hover:bg-emerald-600 px-5 py-3 rounded-xl font-semibold">💳 Подписки — тарифы, права доступа и карточки участников →</a></div>
-
-    <div class="mb-6"><a href="/reliability" class="inline-block bg-sky-700 hover:bg-sky-600 px-5 py-3 rounded-xl font-semibold">🛡 Резервные копии и мониторинг — Telegram-уведомления →</a></div>
-
-    <div class="mb-6"><a href="/moderation" class="inline-block bg-teal-700 hover:bg-teal-600 px-5 py-3 rounded-xl font-semibold">🧹 Модерация Telegram-группы — служебные сообщения и настройки →</a></div>
-
-    <!-- USER STATISTICS -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div class="bg-gray-800 p-4 rounded-xl">Всего пользователей<div class="text-2xl text-green-400 font-bold">{{ stats.total }}</div></div>
-      <div class="bg-gray-800 p-4 rounded-xl">Новых сегодня<div class="text-2xl font-bold">{{ stats.today }}</div></div>
-      <div class="bg-gray-800 p-4 rounded-xl">Нажали подписку<div class="text-2xl font-bold">{{ stats.subscription_clicked }}</div></div>
-      <div class="bg-gray-800 p-4 rounded-xl">Приняли оферту<div class="text-2xl font-bold">{{ stats.accepted }}</div></div>
-    </div>
-    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
-        <h2 class="text-xl font-semibold mb-4">Настройки подписки</h2>
-        <p class="text-gray-300 text-sm mb-4">После /start бот отправляет видеокружочек (если задан file_id), затем оферту. Инструкция по подписке отправляется только после подтверждения условий.</p>
-        <div class="bg-gray-700 rounded-xl p-4 mb-4">
-          <h3 class="font-semibold mb-2">🎥 Загрузить видеокружочек через Telegram</h3>
-          <p class="text-sm text-gray-300 mb-3">Нажмите кнопку, отправьте появившуюся команду своему боту в личном чате, затем отправьте видеокружочек. Код действует 15 минут и используется один раз.</p>
-          <form method="post" action="/create-video-upload" class="mb-3">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded">Создать код загрузки</button>
-          </form>
-          {% if upload_command %}
-          <p class="text-sm text-green-300 mb-1">Отправьте боту эту команду (никому не передавайте):</p>
-          <code class="block bg-gray-900 p-3 rounded break-all select-all">{{ upload_command }}</code>
-          {% endif %}
-        </div>
-        <form method="post" action="/update-flow" class="grid gap-4">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label class="grid gap-1">Telegram file_id видеокружочка
-                <input name="video_note_file_id" value="{{ flow.video_note_file_id if flow else '' }}" placeholder="Необязательно; file_id именно video_note" class="p-2 rounded bg-gray-700">
-            </label>
-            <label class="grid gap-1">Текст сообщения с публичной офертой
-                <textarea name="offer_text" rows="4" class="p-2 rounded bg-gray-700">{{ flow.offer_text if flow else '' }}</textarea>
-            </label>
-            <label class="grid gap-1">Ссылка на публичную оферту
-                <input name="offer_url" type="url" value="{{ flow.offer_url if flow else '' }}" placeholder="https://..." class="p-2 rounded bg-gray-700">
-            </label>
-            <label class="grid gap-1">Версия оферты (изменяй при обновлении условий)
-                <input name="offer_version" required value="{{ flow.offer_version if flow else '1' }}" class="p-2 rounded bg-gray-700">
-            </label>
-            <label class="grid gap-1">Инструкция по оформлению подписки
-                <textarea name="subscription_text" rows="5" class="p-2 rounded bg-gray-700">{{ flow.subscription_text if flow else '' }}</textarea>
-            </label>
-            <label class="grid gap-1">Ссылка на оформление подписки
-                <input name="subscription_url" type="url" value="{{ flow.subscription_url if flow else '' }}" placeholder="https://..." class="p-2 rounded bg-gray-700">
-            </label>
-            <button class="bg-blue-500 hover:bg-blue-600 p-2 rounded font-semibold">💾 Сохранить настройки подписки</button>
-        </form>
-    </div>
-
-    <!-- LIVE EVENTS -->
-    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
-        <h2 class="text-xl font-semibold mb-4">📡 Live Users</h2>
-
-        <ul id="events" class="space-y-2 text-sm"></ul>
-    </div>
-
-    <!-- CHANGE PASSWORD -->
-    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
-        <h2 class="text-xl font-semibold mb-4">🔐 Change Credentials</h2>
-
-        <form method="post" action="/change-credentials" class="grid gap-4">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-            <input name="new_username"
-                placeholder="New Username"
-                class="p-2 rounded bg-gray-700">
-
-            <input name="new_password"
-                type="password"
-                placeholder="New Password"
-                class="p-2 rounded bg-gray-700">
-
-            <button class="bg-red-500 hover:bg-red-600 p-2 rounded font-semibold">
-                Change Credentials
-            </button>
-
-        </form>
-    </div>
-
+        {% else %}<p class="py-3 text-gray-400 text-sm">Событий пока нет.</p>{% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="space-y-5">
+    <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
+      <h2 class="text-xl font-semibold">Состояние компонентов</h2>
+      <div class="space-y-3 text-sm">
+        <div class="flex justify-between gap-3"><span>PostgreSQL</span><span class="text-emerald-300">● Запрос выполнен</span></div>
+        <div class="flex justify-between gap-3"><span>Telegram-бот</span><a href="/reliability" class="text-sky-300">Проверить состояние →</a></div>
+        <div class="flex justify-between gap-3"><span>Резервные копии</span><a href="/reliability" class="text-sky-300">Открыть мониторинг →</a></div>
+        <div class="flex justify-between gap-3"><span>Webhook и платежи</span><a href="/subscriptions/tribute-events" class="text-sky-300">Журнал событий →</a></div>
+      </div>
+      <p class="text-xs text-gray-500">Получение статистики подтверждает доступность БД для этого запроса, но не заменяет проверку системных служб.</p>
+    </section>
+    <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
+      <h2 class="text-xl font-semibold">Быстрые действия</h2>
+      <div class="grid sm:grid-cols-2 xl:grid-cols-1 gap-2 text-sm">
+        <a href="/subscriptions" class="rounded-lg bg-slate-700/50 hover:bg-slate-700 p-3">💳 Управлять подписками</a>
+        <a href="/broadcast#new-broadcast" class="rounded-lg bg-slate-700/50 hover:bg-slate-700 p-3">✉️ Создать рассылку</a>
+        <a href="/support" class="rounded-lg bg-slate-700/50 hover:bg-slate-700 p-3">💬 Открыть поддержку</a>
+        <a href="/settings/bot" class="rounded-lg bg-slate-700/50 hover:bg-slate-700 p-3">⚙️ Настроить бота</a>
+      </div>
+    </section>
+    <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-3">
+      <h2 class="text-xl font-semibold">Регистрация</h2>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Приняли оферту</span><span class="font-semibold">{{ stats.accepted }}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Нажали оформление подписки</span><span class="font-semibold">{{ stats.subscription_clicked }}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Новых сегодня</span><span class="font-semibold">{{ stats.today }}</span></div>
+    </section>
+  </div>
 </div>
-
-<script>
-const ws = new WebSocket("wss://" + location.host + "/ws");
-
-ws.onmessage = function(e) {
-    let li = document.createElement("li");
-    li.className = "bg-gray-700 p-2 rounded";
-    li.textContent = e.data;
-
-    document.getElementById("events").prepend(li);
-
-}
-</script>
-
-</body>
-</html>
+</main></body></html>
