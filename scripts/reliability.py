@@ -264,11 +264,14 @@ def store_monitor_snapshot(issues,checked_at,backup):
     # psql's :'payload' quotes as a SQL literal; no interpolation into SQL.
     try:
         run(["psql","-X","-v","ON_ERROR_STOP=1","-v","payload="+payload,
-             "-v","checked_at="+checked_at.isoformat(),"-c",
-             "INSERT INTO monitor_health_snapshots(id,checked_at,details) "
-             "VALUES (1,:'checked_at'::timestamptz,:'payload'::jsonb) "
-             "ON CONFLICT(id) DO UPDATE SET checked_at=EXCLUDED.checked_at,"
-             "details=EXCLUDED.details"],env=postgres_environment(),timeout=12)
+             "-v","checked_at="+checked_at.isoformat(),"-f","-"],
+            input=(
+              "INSERT INTO monitor_health_snapshots(id,checked_at,details) "
+              "VALUES (1,:'checked_at'::timestamptz,:'payload'::jsonb) "
+              "ON CONFLICT(id) DO UPDATE SET checked_at=EXCLUDED.checked_at,"
+              "details=EXCLUDED.details;"
+            ).encode("utf-8"),
+            env=postgres_environment(),timeout=12)
     except Exception:
         print("Unable to save health snapshot (the database may be unavailable)",file=sys.stderr)
 
