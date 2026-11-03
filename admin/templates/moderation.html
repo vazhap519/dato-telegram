@@ -105,6 +105,23 @@
 </form>
 </div>
 </details>
+<section class="bg-gray-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+<div><h2 class="font-semibold text-lg">👥 Управление участниками</h2><p class="text-sm text-gray-400 mt-1">Просмотр нарушителей, ограничения, исключения и карточки участников</p></div>
+<a href="/moderation/offenders" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3 font-semibold">Открыть список нарушителей →</a>
+</section>
+<details id="manual-actions" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+<summary class="cursor-pointer select-none list-none p-5 font-semibold text-xl">🛡 Действия модераторов <span class="text-gray-400 float-right">⌄</span></summary>
+<div class="p-5 pt-0 space-y-3">
+<p class="text-gray-400 text-sm">Журнал ручных решений из панели с именем администратора, временем и результатом. Записи сохраняются даже после сброса предупреждений.</p>
+<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400 border-b border-gray-700"><th class="py-2 pr-3">Дата</th><th class="pr-3">Администратор</th><th class="pr-3">Участник</th><th class="pr-3">Действие</th><th>Результат</th></tr></thead><tbody>
+{% for entry in manual_history %}
+<tr class="border-b border-gray-700"><td class="py-2 pr-3 whitespace-nowrap">{{ entry.created_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td>
+<td class="pr-3">{{ entry.actor }}</td><td class="pr-3"><a class="text-blue-300 underline" href="/moderation/user/{{ entry.telegram_id }}">{{ entry.username or entry.telegram_id }}</a></td>
+<td class="pr-3">{{ {'mute':'Ограничение','unmute':'Снятие ограничения','reset':'Сброс предупреждений','trust_on':'Добавлен в доверенные','trust_off':'Убран из доверенных'}.get(entry.action,entry.action) }}</td>
+<td class="{{ 'text-emerald-300' if entry.status=='success' else 'text-amber-300' }}">{{ 'Выполнено' if entry.status=='success' else 'Ошибка' }}</td></tr>
+{% else %}<tr><td colspan="5" class="py-4 text-gray-400">Ручных действий пока не было.</td></tr>{% endfor %}
+</tbody></table></div>
+</div></details>
 <details id="moderation-history" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden" {% if request.query_params.get('reset') %}open{% endif %}>
 <summary class="cursor-pointer select-none list-none p-5 flex items-center justify-between gap-2">
 <span class="font-semibold text-xl">📋 Журнал нарушений</span><span class="text-gray-400">⌄</span>
