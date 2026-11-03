@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
+from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
@@ -65,6 +66,7 @@ async def setup_onboarding():
     await initialize_subscriptions()
     await initialize_health_snapshots()
     await initialize_subscriber_profiles()
+    await initialize_crm()
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
     await initialize_tribute_auto()
@@ -98,6 +100,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/moderation/trusted",
         "/subscriptions/grant",
         "/subscriptions/profile",
+        "/subscriptions/message",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
         "/subscriptions/invites/history/clear",
@@ -1088,6 +1091,7 @@ async def tribute_webhook_journal(request: Request, user=Depends(get_current_use
 async def subscriptions_page(
     request: Request, search: str = "", page: int = 1, status: str = "all",
     payment_provider: str = "all", buyers_only: bool = False,
+    tag: str = "", segment: str = "all",
     user=Depends(get_current_user),
 ):
     from urllib.parse import urlencode
@@ -1107,7 +1111,9 @@ async def subscriptions_page(
     managed_total = await managed_count(tg_group.get('chat_id'))
     expiry_people = await expiry_overview()
     expiry_summary = await expiry_counts()
-    users, total = await subscription_people(search, page, status, payment_provider, buyers_only)
+    users, total = await subscription_people(
+        search, page, status, payment_provider, buyers_only, tag, segment
+    )
     page = max(1, min(page, 100000))
     return templates.TemplateResponse(
         request=request, name="subscriptions.html",
@@ -1116,12 +1122,13 @@ async def subscriptions_page(
             "payment_providers":payment_providers,"archived_payment_providers":archived_payment_providers,
             "provider_counts":provider_counts,
             "payment_provider_filter":payment_provider,"buyers_only":buyers_only,"access_filter":status,
+            "crm_tag":tag,"crm_segment":segment,"crm_tags":await crm_tags(),
             "subscription_automation":automation,"managed_total":managed_total,
             "expiry_people":expiry_people,"expiry_summary":expiry_summary,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
-            "next_url": "/subscriptions?" + urlencode({"search":search,"status":status,"payment_provider":payment_provider,"buyers_only":buyers_only,"page":page+1}),
-            "prev_url": "/subscriptions?" + urlencode({"search":search,"status":status,"payment_provider":payment_provider,"buyers_only":buyers_only,"page":page-1}),
+            "next_url": "/subscriptions?" + urlencode({"search":search,"status":status,"payment_provider":payment_provider,"buyers_only":buyers_only,"tag":tag,"segment":segment,"page":page+1}),
+            "prev_url": "/subscriptions?" + urlencode({"search":search,"status":status,"payment_provider":payment_provider,"buyers_only":buyers_only,"tag":tag,"segment":segment,"page":page-1}),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
@@ -1275,8 +1282,50 @@ async def subscription_user_page(
             "admin_profile":await get_subscriber_profile(telegram_id),
             "verified_payments":await subscriber_verified_payments(telegram_id),
             "access_summary":await subscriber_access_summary(telegram_id),
+            "crm_timeline":await crm_timeline(telegram_id),
+            "crm_messages":await direct_message_history(telegram_id),
+            "message_request_key":__import__("secrets").token_hex(16),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.post("/subscriptions/message")
+async def send_subscriber_direct_message(
+    telegram_id: int = Form(...), body: str = Form(...),
+    request_key: str = Form(...), confirm: str = Form(""),
+    csrf_check=Depends(verify_csrf), user=Depends(get_current_user)
+):
+    from aiogram import Bot
+    import logging
+    if confirm != "SEND_DIRECT" or not 0<telegram_id<=9999999999999:
+        raise HTTPException(400,detail="Подтвердите получателя и отправку")
+    try:
+        record_id=await begin_direct_message(telegram_id,user["user"],body,request_key)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    if record_id is None:
+        return RedirectResponse(
+            f"/subscriptions/users/{telegram_id}?message=duplicate#subscriber-direct",
+            status_code=303
+        )
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            sent=await bot.send_message(
+                telegram_id,body.strip(),parse_mode=None,
+                disable_web_page_preview=True
+            )
+        await finish_direct_message(record_id,True,sent.message_id)
+        result="sent"
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "CRM direct message not delivered uid=%s: %s",telegram_id,type(exc).__name__
+        )
+        await finish_direct_message(record_id,False,error=type(exc).__name__)
+        result="failed"
+    return RedirectResponse(
+        f"/subscriptions/users/{telegram_id}?message={result}#subscriber-direct",
+        status_code=303
     )
 
 
