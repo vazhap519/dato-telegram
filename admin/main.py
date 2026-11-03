@@ -811,7 +811,7 @@ async def support_delete_message(
     if row["delivery_status"] not in ("sent",):
         raise HTTPException(400,detail="Сообщение не было доставлено в Telegram")
     try:
-        ensure_telegram_message_deletable(row["telegram_message_id"],row["created_at"])
+        ensure_telegram_message_deletable(row["telegram_message_id"],row["telegram_sent_at"] if row["actor"]!="user" else row["created_at"])
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
     try:
