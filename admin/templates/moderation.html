@@ -39,6 +39,88 @@
 <button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-5 py-3 font-semibold">Сохранить настройки</button>
 </form>
 </section>
+<details id="anti-spam" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden" {% if request.query_params.get('content_saved') %}open{% endif %}>
+<summary class="cursor-pointer select-none list-none p-5 flex items-center justify-between gap-2">
+<span class="font-semibold text-xl">🛡 Антиспам и ограничения</span><span class="text-gray-400">⌄</span>
+</summary>
+<div class="p-5 pt-0 space-y-4">
+{% if request.query_params.get('content_saved') %}<p class="text-emerald-300 text-sm">Настройки антиспама сохранены.</p>{% endif %}
+<p class="text-gray-300 text-sm">Все фильтры изначально выключены. Проверяются только сообщения обычных участников в подключённой группе. Администраторы и боты исключены из проверки.</p>
+<form action="/moderation/content" method="post" class="space-y-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label class="flex gap-3 items-center bg-indigo-950/40 border border-indigo-800 rounded-lg p-4">
+<input type="checkbox" name="content_enabled" value="true" {{ 'checked' if moderation.content_enabled else '' }}>
+<span class="font-semibold">Включить антиспам (главный переключатель)</span>
+</label>
+<div class="grid md:grid-cols-2 gap-3">
+{% for field,title,explain in [
+('block_links','🔗 Ссылки','Удалять сообщения с URL и ссылками на сайты'),
+('block_invites','🚫 Приглашения','Удалять ссылки-приглашения в другие группы и каналы'),
+('block_forwards','↗️ Пересланные сообщения','Удалять сообщения, пересланные из других чатов'),
+('block_flood','💬 Флуд','Удалять сообщения сверх заданного лимита за промежуток времени'),
+('block_duplicates','📋 Повторяющийся текст','Удалять третье и последующие одинаковые текстовые сообщения')
+] %}
+<label class="flex gap-3 items-start bg-gray-700/50 rounded-lg p-3">
+<input class="mt-1" type="checkbox" name="{{ field }}" value="true" {{ 'checked' if moderation[field] else '' }}>
+<span><strong class="block">{{ title }}</strong><span class="text-gray-400 text-sm">{{ explain }}</span></span>
+</label>
+{% endfor %}
+</div>
+<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+<label class="block text-sm">Лимит сообщений во время флуда
+<input name="flood_limit" type="number" min="3" max="20" value="{{ moderation.flood_limit }}" class="mt-2 bg-gray-700 rounded-lg p-3 w-full"></label>
+<label class="block text-sm">Окно флуда, секунд
+<input name="flood_window_seconds" type="number" min="5" max="120" value="{{ moderation.flood_window_seconds }}" class="mt-2 bg-gray-700 rounded-lg p-3 w-full"></label>
+<label class="block text-sm">Окно повторов, секунд
+<input name="duplicate_window_seconds" type="number" min="15" max="600" value="{{ moderation.duplicate_window_seconds }}" class="mt-2 bg-gray-700 rounded-lg p-3 w-full"></label>
+<label class="block text-sm">Нарушений до ограничения
+<input name="warning_limit" type="number" min="1" max="10" value="{{ moderation.warning_limit }}" class="mt-2 bg-gray-700 rounded-lg p-3 w-full"></label>
+<label class="block text-sm">Ограничение отправки, минут
+<select name="mute_minutes" class="mt-2 bg-gray-700 rounded-lg p-3 w-full">
+{% for minutes,label in [(0,'Не ограничивать'),(1,'1 минута'),(5,'5 минут'),(15,'15 минут'),(30,'30 минут'),(60,'1 час'),(180,'3 часа'),(1440,'24 часа')] %}
+<option value="{{ minutes }}" {% if moderation.mute_minutes==minutes %}selected{% endif %}>{{ label }}</option>
+{% endfor %}
+</select>
+</label>
+</div>
+<label class="flex items-center gap-3 text-sm"><input name="notify_user" type="checkbox" value="true" {{ 'checked' if moderation.notify_user else '' }}>Уведомлять участника в личном чате о причине удаления</label>
+<p class="text-xs text-amber-200">Если срок ограничения равен нулю, применяются только удаления и предупреждения в журнале. Временное ограничение потребует от бота права блокировать участников. Счётчик нарушений учитывает последние 24 часа; история сообщений для антифлуда хранится в памяти и сбрасывается после перезапуска.</p>
+<button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-5 py-3 font-semibold">Сохранить антиспам</button>
+</form>
+</div>
+</details>
+<details id="moderation-history" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden" {% if request.query_params.get('reset') %}open{% endif %}>
+<summary class="cursor-pointer select-none list-none p-5 flex items-center justify-between gap-2">
+<span class="font-semibold text-xl">📋 Журнал нарушений</span><span class="text-gray-400">⌄</span>
+</summary>
+<div class="p-5 pt-0 space-y-4">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+<div class="bg-gray-700 rounded-lg p-3"><div class="text-xs text-gray-400">Удалено антиспамом</div><div class="font-semibold text-xl">{{ moderation_summary.deleted or 0 }}</div></div>
+<div class="bg-gray-700 rounded-lg p-3"><div class="text-xs text-gray-400">Ограничений</div><div class="font-semibold text-xl">{{ moderation_summary.muted or 0 }}</div></div>
+<div class="bg-gray-700 rounded-lg p-3"><div class="text-xs text-gray-400">Ошибок</div><div class="font-semibold text-xl">{{ moderation_summary.failed or 0 }}</div></div>
+<div class="bg-gray-700 rounded-lg p-3"><div class="text-xs text-gray-400">Участников за 7 дней</div><div class="font-semibold text-xl">{{ moderation_summary.users_7d or 0 }}</div></div>
+</div>
+{% if request.query_params.get('reset') %}<p class="text-emerald-300 text-sm">Предупреждения выбранного участника сброшены. История действий сохранена.</p>{% endif %}
+<form method="post" action="/moderation/reset" class="flex flex-wrap gap-2 items-end">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="confirm" value="RESET_WARNINGS">
+<label class="text-sm flex-1 min-w-48">Сбросить счётчик предупреждений по Telegram ID
+<input type="number" min="1" name="telegram_id" required class="bg-gray-700 rounded-lg p-3 mt-2 w-full" placeholder="Telegram ID участника"></label>
+<button class="bg-amber-700 hover:bg-amber-600 rounded-lg px-4 py-3" onclick="return confirm('Сбросить счётчик предупреждений этого участника?')">Сбросить</button>
+</form>
+<div class="overflow-x-auto"><table class="w-full text-left text-sm">
+<thead><tr class="text-gray-400 border-b border-gray-700"><th class="py-2 pr-3">Дата</th><th class="pr-3">Telegram ID</th><th class="pr-3">Причина</th><th>Действие</th></tr></thead><tbody>
+{% for event in moderation_history %}
+<tr class="border-b border-gray-700"><td class="py-2 pr-3 whitespace-nowrap">{{ event.created_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td>
+<td class="pr-3 font-mono text-xs">{{ event.telegram_id }}</td>
+<td class="pr-3">{{ {'link':'Ссылка','invite':'Приглашение','forward':'Пересылка','flood':'Флуд','duplicate':'Повтор','admin_reset':'Сброс'}.get(event.reason,event.reason) }}</td>
+<td>{{ {'deleted':'Удалено','failed':'Ошибка','muted':'Ограничен','reset':'Сброс'}.get(event.action,event.action) }}</td></tr>
+{% else %}
+<tr><td colspan="4" class="py-4 text-gray-400">Нарушений пока нет.</td></tr>
+{% endfor %}
+</tbody></table></div>
+</div>
+</details>
 <details class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
 <summary class="cursor-pointer list-none select-none p-4 md:p-5 font-semibold text-lg">🔐 Права бота и ограничения <span class="text-gray-400 float-right">⌄</span></summary>
 <div class="p-5 pt-0 space-y-3 text-sm text-gray-300">
