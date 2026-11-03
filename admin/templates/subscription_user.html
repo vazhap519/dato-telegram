@@ -43,7 +43,7 @@ onsubmit="return confirm('Отправить личное сообщение у�
 <span class="{{ 'text-emerald-300' if item.status=='sent' else 'text-amber-300' }}">{{ {'sent':'Отправлено','failed':'Ошибка доставки','pending':'Ожидает'}.get(item.status,item.status) }}</span></div>
 <div class="mt-2 whitespace-pre-wrap break-words">{{ item.message }}</div>
 {% if item.deleted_at %}<div class="text-xs text-amber-300 mt-2">Удалено у пользователя · {{ item.deleted_by }}</div>
-{% elif item.status=='sent' and item.telegram_message_id %}
+{% elif item.id in crm_deletable_ids %}
 <form method="post" action="/subscriptions/message/delete"
 onsubmit="return confirm('Удалить сообщение у пользователя в Telegram? Это действие нельзя отменить.')"
 class="mt-2">
