@@ -52,6 +52,10 @@
 <input type="checkbox" name="content_enabled" value="true" {{ 'checked' if moderation.content_enabled else '' }}>
 <span class="font-semibold">Включить антиспам (главный переключатель)</span>
 </label>
+<label class="flex gap-3 items-center bg-emerald-950/30 border border-emerald-800 rounded-lg p-4">
+<input type="checkbox" name="observe_only" value="true" {{ 'checked' if moderation.observe_only else '' }}>
+<span><strong class="block">🔎 Режим наблюдения — не удалять сообщения</strong><span class="text-xs text-gray-300">Бот будет фиксировать нарушения в журнале без удаления, предупреждений и блокировок. Рекомендуется для первоначального тестирования.</span></span>
+</label>
 <div class="grid md:grid-cols-2 gap-3">
 {% for field,title,explain in [
 ('block_links','🔗 Ссылки','Удалять сообщения с URL и ссылками на сайты'),
@@ -92,6 +96,9 @@
 <textarea name="blocked_words" maxlength="1200" rows="4" placeholder="Запрещённая фраза&#10;другое слово" class="mt-2 w-full rounded-lg p-3 bg-gray-700">{{ moderation.blocked_words }}</textarea>
 <span class="block text-gray-400 text-xs mt-1">По одному слову или фразе в строке. Пустое поле отключает фильтрацию слов.</span></label>
 </div>
+<label class="block text-sm">Доверенные участники (Telegram ID)
+<textarea name="trusted_users" rows="3" maxlength="1500" class="mt-2 w-full rounded-lg p-3 bg-gray-700" placeholder="123456789&#10;987654321">{{ moderation.trusted_users }}</textarea>
+<span class="block mt-1 text-xs text-gray-400">По одному числовому Telegram ID в строке, до 100 аккаунтов. На них не распространяется антиспам. Администраторы группы исключены автоматически.</span></label>
 <label class="flex items-center gap-3 text-sm"><input name="notify_user" type="checkbox" value="true" {{ 'checked' if moderation.notify_user else '' }}>Уведомлять участника в личном чате о причине удаления</label>
 <p class="text-xs text-amber-200">Если срок ограничения равен нулю, применяются только удаления и предупреждения в журнале. Временное ограничение потребует от бота права блокировать участников. Счётчик нарушений учитывает последние 24 часа; история сообщений для антифлуда хранится в памяти и сбрасывается после перезапуска.</p>
 <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-5 py-3 font-semibold">Сохранить антиспам</button>
@@ -123,7 +130,7 @@
 <tr class="border-b border-gray-700"><td class="py-2 pr-3 whitespace-nowrap">{{ event.created_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td>
 <td class="pr-3 font-mono text-xs">{{ event.telegram_id }}</td>
 <td class="pr-3">{{ {'link':'Ссылка','invite':'Приглашение','forward':'Пересылка','flood':'Флуд','duplicate':'Повтор','word':'Запрещённое слово','media':'Медиафайл','admin_reset':'Сброс'}.get(event.reason,event.reason) }}</td>
-<td>{{ {'deleted':'Удалено','failed':'Ошибка','muted':'Ограничен','reset':'Сброс'}.get(event.action,event.action) }}</td></tr>
+<td>{{ {'deleted':'Удалено','failed':'Ошибка','muted':'Ограничен','observed':'Наблюдение','reset':'Сброс'}.get(event.action,event.action) }}</td></tr>
 {% else %}
 <tr><td colspan="4" class="py-4 text-gray-400">Нарушений пока нет.</td></tr>
 {% endfor %}
