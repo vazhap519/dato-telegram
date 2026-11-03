@@ -32,7 +32,7 @@
 {% if m.media_type=='document' and m.file_id %}<a href="/support/media/{{ m.id }}" target="_blank" class="text-sky-300 underline">📎 Открыть вложение</a>{% endif %}
 {% if m.body %}<p class="text-sm whitespace-pre-wrap break-words">{{ m.body }}</p>{% endif %}
 {% if m.deleted_at %}<span class="text-xs text-amber-200">Удалено у пользователя · {{ m.deleted_by }}</span>
-{% elif m.telegram_message_id and m.delivery_status=='sent' %}
+{% elif m.id in support_deletable_ids %}
 <form action="/support/{{ ticket.id }}/delete/{{ m.id }}" method="post" class="mt-2"
 onsubmit="return confirm('Удалить сообщение из Telegram-чата пользователя? Это нельзя отменить.')">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
