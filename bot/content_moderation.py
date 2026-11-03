@@ -121,7 +121,7 @@ async def moderate_group_message(message):
         cfg=await get_moderation_settings()
         if not cfg["content_enabled"]:
             return
-        trusted={item.strip() for item in cfg.get("trusted_users","").replace(",","\\n").splitlines()
+        trusted={item.strip() for item in cfg.get("trusted_users","").replace(",","\n").splitlines()
                  if item.strip()}
         if str(message.from_user.id) in trusted:
             return
