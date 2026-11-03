@@ -24,6 +24,8 @@
 {% if request.query_params.get('message')=='sent' %}<p class="text-emerald-300 text-sm">Telegram принял сообщение к отправке.</p>
 {% elif request.query_params.get('message')=='failed' %}<p class="text-amber-300 text-sm">Отправить не удалось. Ошибка записана в историю, сообщение автоматически не повторяется.</p>
 {% elif request.query_params.get('message')=='duplicate' %}<p class="text-amber-300 text-sm">Повторная отправка этой формы заблокирована.</p>{% endif %}
+{% if request.query_params.get('delete')=='done' %}<p class="text-emerald-300 text-sm">Сообщение удалено из Telegram-чата пользователя; действие сохранено в журнале.</p>
+{% elif request.query_params.get('delete')=='failed' %}<p class="text-amber-300 text-sm">Telegram не разрешил удалить сообщение. В админке оно сохранено без изменений.</p>{% endif %}
 <form method="post" action="/subscriptions/message" class="space-y-3"
 onsubmit="return confirm('Отправить личное сообщение участнику {{ participant.telegram_id }} через Telegram-бота?')">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -40,6 +42,17 @@ onsubmit="return confirm('Отправить личное сообщение у�
 <div class="bg-gray-700/60 rounded-lg p-3 text-sm"><div class="flex flex-wrap justify-between gap-2 text-xs text-gray-400"><span>{{ item.actor }} · {{ item.created_at|tbilisi_time }}</span>
 <span class="{{ 'text-emerald-300' if item.status=='sent' else 'text-amber-300' }}">{{ {'sent':'Отправлено','failed':'Ошибка доставки','pending':'Ожидает'}.get(item.status,item.status) }}</span></div>
 <div class="mt-2 whitespace-pre-wrap break-words">{{ item.message }}</div>
+{% if item.deleted_at %}<div class="text-xs text-amber-300 mt-2">Удалено у пользователя · {{ item.deleted_by }}</div>
+{% elif item.status=='sent' and item.telegram_message_id %}
+<form method="post" action="/subscriptions/message/delete"
+onsubmit="return confirm('Удалить сообщение у пользователя в Telegram? Это действие нельзя отменить.')"
+class="mt-2">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="message_id" value="{{ item.id }}">
+<input type="hidden" name="confirm" value="DELETE_BOTH">
+<button class="text-xs text-red-300 hover:text-red-200 underline">🗑 Удалить у пользователя</button>
+</form>{% endif %}
 {% if item.error_reason %}<p class="text-xs text-amber-300 mt-2">Ошибка: {{ item.error_reason }}</p>{% endif %}</div>
 {% else %}<p class="text-gray-400 text-sm">Сообщений пока нет.</p>{% endfor %}
 </div></div></div></details>
