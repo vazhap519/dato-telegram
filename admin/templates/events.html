@@ -1,0 +1,29 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Журнал событий — Круг Души</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-[#0d1524] text-white min-h-screen">{% include "_sidebar.html" %}
+<main class="max-w-7xl mx-auto p-5 md:p-8 space-y-6">
+<header class="flex flex-wrap justify-between gap-3 items-center"><div><h1 class="text-3xl font-bold">📋 Журнал событий</h1><p class="text-gray-400 text-sm mt-2">Регистрации, подписки, подтверждённые операции и действия системы</p></div><a class="text-sky-300 text-sm" href="/dashboard">← Обзор</a></header>
+<section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-4 md:p-5 space-y-4">
+<form method="get" action="/events" class="grid md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_1fr_auto] gap-3 items-end">
+<label class="text-sm">Поиск по Telegram ID / описанию / источнику<input name="search" value="{{ search }}" maxlength="80" placeholder="ID, описание, Tribute..." class="mt-2 w-full bg-slate-700 p-3 rounded-lg"></label>
+<label class="text-sm">Тип события<select name="kind" class="mt-2 w-full bg-slate-700 p-3 rounded-lg">{% for key,name in event_types.items() %}<option value="{{ key }}" {% if key==kind %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+<label class="text-sm">От даты<input type="date" name="date_from" value="{{ date_from }}" class="mt-2 w-full bg-slate-700 p-3 rounded-lg"></label>
+<label class="text-sm">До даты<input type="date" name="date_to" value="{{ date_to }}" class="mt-2 w-full bg-slate-700 p-3 rounded-lg"></label>
+<button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3">Применить</button>
+</form>
+<div class="flex flex-wrap gap-3 items-center text-sm"><span class="text-gray-400">Найдено: <strong class="text-white">{{ total }}</strong></span><a class="text-sky-300 underline" href="/events">Сбросить фильтры</a></div>
+</section>
+<section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl overflow-hidden">
+<div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-slate-800/70 text-gray-400"><tr><th class="px-4 py-3">Дата (Тбилиси)</th><th class="px-4 py-3">Категория</th><th class="px-4 py-3">Событие</th><th class="px-4 py-3">Участник</th><th class="px-4 py-3">Источник</th></tr></thead>
+<tbody>{% for e in events %}<tr class="border-t border-slate-700/60"><td class="px-4 py-3 whitespace-nowrap text-gray-300">{{ e.occurred_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td>
+<td class="px-4 py-3 whitespace-nowrap">{{ event_types.get(e.kind,e.kind) }}</td>
+<td class="px-4 py-3"><strong class="font-medium">{{ e.description }}</strong>{% if e.details %}<div class="text-gray-400 text-xs mt-1 break-all">{{ e.details }}</div>{% endif %}</td>
+<td class="px-4 py-3">{% if e.telegram_id %}<a href="/subscriptions/users/{{ e.telegram_id }}" class="text-sky-300 underline whitespace-nowrap">{{ e.telegram_id }}</a>{% else %}<span class="text-gray-500">—</span>{% endif %}</td>
+<td class="px-4 py-3 text-gray-400">{{ e.actor or '—' }}</td></tr>
+{% else %}<tr><td colspan="5" class="px-4 py-8 text-gray-400">По выбранным условиям событий нет.</td></tr>{% endfor %}</tbody></table></div>
+<div class="p-4 flex justify-between items-center text-sm border-t border-slate-700/60">
+<span>{% if page>1 %}<a class="text-sky-300" href="{{ prev_url }}">← Назад</a>{% endif %}</span>
+<span class="text-gray-400">Страница {{ page }} из {{ pages }}</span>
+<span>{% if page<pages %}<a class="text-sky-300" href="{{ next_url }}">Далее →</a>{% endif %}</span>
+</div></section>
+<p class="text-xs text-gray-500">Журнал отображает существующие записи. Событие webhook само по себе не означает успешную оплату, а факт оплаты определяется только проверенной транзакцией.</p>
+</main></body></html>
