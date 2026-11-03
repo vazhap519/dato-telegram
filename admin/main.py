@@ -426,6 +426,13 @@ async def moderation_reset_user(
     return RedirectResponse("/moderation?reset=1#moderation-history",status_code=303)
 
 
+@app.get("/moderation/lookup")
+async def moderation_lookup(telegram_id: int, user=Depends(get_current_user)):
+    if telegram_id <= 0 or telegram_id > 9999999999999:
+        raise HTTPException(400,detail="Укажите правильный Telegram ID")
+    return RedirectResponse(f"/moderation/user/{telegram_id}",status_code=303)
+
+
 @app.get("/moderation/offenders")
 async def moderation_offenders_page(
     request: Request, search: str = "", page: int = 1,
