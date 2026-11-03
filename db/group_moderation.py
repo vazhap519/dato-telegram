@@ -35,7 +35,9 @@ async def initialize_group_moderation():
             ("notify_user","BOOLEAN NOT NULL DEFAULT TRUE"),
             ("allowed_domains","TEXT NOT NULL DEFAULT ''"),
             ("blocked_words","TEXT NOT NULL DEFAULT ''"),
-            ("block_media","BOOLEAN NOT NULL DEFAULT FALSE")
+            ("block_media","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("trusted_users","TEXT NOT NULL DEFAULT ''"),
+            ("observe_only","BOOLEAN NOT NULL DEFAULT TRUE")
         ):
             await c.execute(text(
                 "ALTER TABLE group_moderation_settings ADD COLUMN IF NOT EXISTS " + column + " " + kind
@@ -79,7 +81,7 @@ async def get_moderation_settings():
                    content_enabled,block_links,block_invites,block_forwards,
                    block_flood,block_duplicates,flood_limit,flood_window_seconds,
                    duplicate_window_seconds,warning_limit,mute_minutes,notify_user,
-                   allowed_domains,blocked_words,block_media,
+                   allowed_domains,blocked_words,block_media,trusted_users,observe_only,
                    updated_by,updated_at
             FROM group_moderation_settings WHERE id=1
         """))).mappings().one()
@@ -121,7 +123,7 @@ async def count_moderation_action(success):
 
 
 CONTENT_OPTIONS = ("content_enabled","block_links","block_invites","block_forwards",
-                   "block_flood","block_duplicates","notify_user","block_media")
+                   "block_flood","block_duplicates","notify_user","block_media","observe_only")
 CONTENT_RANGES = {
     "flood_limit":(3,20),
     "flood_window_seconds":(5,120),
@@ -139,10 +141,15 @@ async def save_content_settings(values,actor):
         if not lo <= value <= hi:
             raise ValueError(f"Неверное значение {key}: допустимо {lo}–{hi}")
         data[key]=value
-    for key, max_chars in (("allowed_domains",1200),("blocked_words",1200)):
+    for key, max_chars in (("allowed_domains",1200),("blocked_words",1200),("trusted_users",1500)):
         val=str(values.get(key,"") or "").strip()
         if len(val)>max_chars:
             raise ValueError(f"Слишком длинный список {key}")
+        if key=="trusted_users":
+            import re
+            members=[x.strip() for x in val.replace(",","\\n").splitlines() if x.strip()]
+            if len(members)>100 or any(not re.fullmatch(r"[1-9][0-9]{0,12}",u) for u in members):
+                raise ValueError("Доверенные участники: не более 100 корректных Telegram ID")
         data[key]=val
     data["actor"]=actor
     async with SessionLocal() as s:
@@ -157,6 +164,7 @@ async def save_content_settings(values,actor):
                     warning_limit=:warning_limit,mute_minutes=:mute_minutes,
                     notify_user=:notify_user,block_media=:block_media,
                     allowed_domains=:allowed_domains,blocked_words=:blocked_words,
+                    trusted_users=:trusted_users,observe_only=:observe_only,
                     updated_by=:actor,updated_at=NOW()
                 WHERE id=1
             """),data)
