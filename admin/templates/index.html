@@ -37,7 +37,7 @@
       <p class="text-xs text-gray-500">Ошибки доставки и мониторинга проверяются в соответствующих разделах, а не считаются автоматически исправными.</p>
     </section>
     <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
-      <div class="flex justify-between items-center gap-3"><h2 class="text-xl font-semibold">Последние события</h2><span class="text-xs text-gray-400">До 15 записей</span></div>
+      <div class="flex flex-wrap justify-between items-center gap-3"><h2 class="text-xl font-semibold">Последние события</h2><a href="/events" class="text-sm text-sky-300 hover:underline">Все события →</a></div>
       <div class="divide-y divide-slate-700/60">
         {% for e in recent_events %}
         <div class="flex gap-3 py-3 items-start">
@@ -54,13 +54,49 @@
   <div class="space-y-5">
     <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
       <h2 class="text-xl font-semibold">Состояние компонентов</h2>
+      {% set fresh = health.state == 'fresh' %}
+      {% set issues = health.details.get('issues',[]) if fresh else [] %}
+      {% set services = health.details.get('services',[]) if fresh else [] %}
+      {% set bot_units = services|select('equalto','dato-telegram-bot.service')|list %}
+      {% set admin_units = services|select('equalto','dato-telegram-admin.service')|list %}
+      {% set failed_service = 'Service not active: dato-telegram-bot.service' in issues %}
+      {% set failed_admin = 'Service not active: dato-telegram-admin.service' in issues %}
+      <p class="text-xs text-gray-400">
+        {% if health.checked_at %}
+          Последняя проверка: {{ health.checked_at|tbilisi_time('%d.%m.%Y %H:%M') }}
+          {% if not fresh %}<span class="text-amber-300"> · данные устарели</span>{% endif %}
+        {% else %}Мониторинг ещё не передал результаты{% endif %}
+      </p>
       <div class="space-y-3 text-sm">
-        <div class="flex justify-between gap-3"><span>PostgreSQL</span><span class="text-emerald-300">● Запрос выполнен</span></div>
-        <div class="flex justify-between gap-3"><span>Telegram-бот</span><a href="/reliability" class="text-sky-300">Проверить состояние →</a></div>
-        <div class="flex justify-between gap-3"><span>Резервные копии</span><a href="/reliability" class="text-sky-300">Открыть мониторинг →</a></div>
-        <div class="flex justify-between gap-3"><span>Webhook и платежи</span><a href="/subscriptions/tribute-events" class="text-sky-300">Журнал событий →</a></div>
+        <div class="flex flex-wrap justify-between gap-3"><span>PostgreSQL</span><span class="text-emerald-300">● Запрос выполнен</span></div>
+        <div class="flex flex-wrap justify-between gap-3"><span>Telegram-бот</span>
+        {% if not fresh %}<span class="text-gray-400">Нет свежих данных</span>
+        {% elif not bot_units %}<span class="text-gray-400">Проверка не настроена</span>
+        {% elif failed_service %}<span class="text-red-300">● Служба не работает</span>
+        {% elif 'Recent error logs for service: dato-telegram-bot.service' in issues %}<span class="text-amber-300">● Есть ошибки в журнале</span>
+        {% else %}<span class="text-emerald-300">● Служба активна</span>{% endif %}</div>
+        <div class="flex flex-wrap justify-between gap-3"><span>Админ-панель</span>
+        {% if not fresh %}<span class="text-gray-400">Нет свежих данных</span>
+        {% elif 'Admin HTTPS endpoint is unavailable' in issues %}<span class="text-red-300">● HTTPS недоступен</span>
+        {% elif admin_units and failed_admin %}<span class="text-red-300">● Служба не работает</span>
+        {% elif 'Recent error logs for service: dato-telegram-admin.service' in issues %}<span class="text-amber-300">● Есть ошибки в журнале</span>
+        {% else %}<span class="text-emerald-300">● HTTPS отвечает</span>{% endif %}</div>
+        <div class="flex flex-wrap justify-between gap-3"><span>Резервные копии</span>
+        {% if not fresh %}<span class="text-gray-400">Нет свежих данных</span>
+        {% elif not health.details.get('backup_at') %}<span class="text-red-300">● Нет резервной копии</span>
+        {% elif issues|select('equalto','Last backup archive cannot be read')|list %}<span class="text-red-300">● Ошибка архива</span>
+        {% elif issues|select('equalto','No PostgreSQL backup exists')|list %}<span class="text-red-300">● Копия отсутствует</span>
+        {% elif issues|select('equalto','Last backup is older than 36 hours')|list %}<span class="text-amber-300">● Копия устарела</span>
+        {% else %}<span class="text-emerald-300">● Копия проверена</span>{% endif %}</div>
+        {% if fresh and health.details.get('backup_at') %}
+        <p class="text-xs text-gray-400">Последний архив: {{ health.details.get('backup_at')[:10] }} (UTC)</p>{% endif %}
+        <div class="flex flex-wrap justify-between gap-3"><span>Webhook и платежи</span><a href="/subscriptions/tribute-events" class="text-sky-300">Журнал событий →</a></div>
       </div>
-      <p class="text-xs text-gray-500">Получение статистики подтверждает доступность БД для этого запроса, но не заменяет проверку системных служб.</p>
+      {% if fresh and issues %}
+      <div class="bg-amber-900/20 border border-amber-800 rounded-lg p-3 text-sm"><strong class="text-amber-300">Обнаруженные проблемы:</strong>
+      <ul class="mt-2 text-gray-300 list-disc pl-5">{% for issue in issues %}<li>{{ issue }}</li>{% endfor %}</ul></div>
+      {% endif %}
+      <p class="text-xs text-gray-500">Результаты получены от системного мониторинга. Если проверка не запускалась более 45 минут, статус не считается актуальным.</p>
     </section>
     <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
       <h2 class="text-xl font-semibold">Быстрые действия</h2>
