@@ -18,8 +18,8 @@ log = logging.getLogger(__name__)
 # Counters are intentionally short-lived and reset after a bot restart.
 recent = defaultdict(deque)
 MAX_KEYS = 3000
-URL = re.compile(r"(?i)(?:https?://|www\\.|(?:[a-z0-9-]+\\.)+(?:com|net|org|ru|ge|me|io|co|info|app|xyz|site|link|online|shop|gg|tv|dev)\\b)")
-INVITES = re.compile(r"(?i)(?:t\\.me/(?:joinchat/|\\+)|telegram\\.me/(?:joinchat/|\\+)|discord\\.gg/)")
+URL = re.compile(r"(?i)(?:https?://|www\.|(?:[a-z0-9-]+\.)+(?:com|net|org|ru|ge|me|io|co|info|app|xyz|site|link|online|shop|gg|tv|dev)\b)")
+INVITES = re.compile(r"(?i)(?:t\.me/(?:joinchat/|\+)|telegram\.me/(?:joinchat/|\+)|discord\.gg/)")
 REASONS = {
     "invite":"Приглашение в стороннюю группу",
     "link":"Ссылка",
@@ -34,11 +34,10 @@ def classify(message, cfg):
     entities = list(message.entities or []) + list(message.caption_entities or [])
     entity_urls = [
         str(getattr(entity,"url", "") or "") for entity in entities
-        if getattr(entity, "type", None) in ("text_link", "url")
-        or str(getattr(entity,"type","")) in ("MessageEntityType.TEXT_LINK","MessageEntityType.URL")
+        if str(getattr(entity,"type", "")) in ("text_link","url","MessageEntityType.TEXT_LINK","MessageEntityType.URL")
     ]
-    # Entity URLs may be represented in the message's text instead of .url.
-    has_link = bool(URL.search(content) or any(entity_urls))
+    # A 'url' entity can have its text in content, not in .url.
+    has_link = bool(URL.search(content) or entity_urls)
     has_invite = bool(INVITES.search(content) or any(INVITES.search(url) for url in entity_urls))
     if cfg["block_invites"] and has_invite:
         return "invite"
