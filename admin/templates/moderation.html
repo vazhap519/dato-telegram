@@ -113,6 +113,11 @@
 </form>
 <div><h2 class="font-semibold text-lg">👥 Управление участниками</h2><p class="text-sm text-gray-400 mt-1">Просмотр нарушителей, ограничения, исключения и карточки участников</p></div>
 <a href="/moderation/offenders" class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3 font-semibold">Открыть список нарушителей →</a>
+<form method="get" action="/moderation/lookup" class="flex gap-2 flex-wrap items-end w-full">
+<label class="flex-1 min-w-44 text-sm">Открыть карточку любого участника по Telegram ID
+<input type="number" name="telegram_id" min="1" required placeholder="Telegram ID" class="w-full mt-2 bg-gray-700 rounded-lg p-3"></label>
+<button class="bg-gray-700 hover:bg-gray-600 rounded-lg px-4 py-3">Открыть карточку</button>
+</form>
 </section>
 <details id="manual-actions" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
 <summary class="cursor-pointer select-none list-none p-5 font-semibold text-xl">🛡 Действия модераторов <span class="text-gray-400 float-right">⌄</span></summary>
