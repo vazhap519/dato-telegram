@@ -147,7 +147,7 @@ async def save_content_settings(values,actor):
             raise ValueError(f"Слишком длинный список {key}")
         if key=="trusted_users":
             import re
-            members=[x.strip() for x in val.replace(",","\\n").splitlines() if x.strip()]
+            members=[x.strip() for x in val.replace(",","\n").splitlines() if x.strip()]
             if len(members)>100 or any(not re.fullmatch(r"[1-9][0-9]{0,12}",u) for u in members):
                 raise ValueError("Доверенные участники: не более 100 корректных Telegram ID")
         data[key]=val
