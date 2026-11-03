@@ -77,7 +77,7 @@ async def subscriber_access_summary(telegram_id):
                  AND (g.ends_at IS NULL OR g.ends_at>NOW()))
               OR EXISTS(SELECT 1 FROM subscriptions sub
                WHERE sub.telegram_id=:uid AND sub.status='active'
-                 AND (sub.paid_until IS NULL OR sub.paid_until>NOW())) AS active,
+                 AND sub.paid_until>NOW()) AS active,
              (SELECT MAX(expiry) FROM (
                 SELECT ends_at expiry FROM access_grants
                 WHERE telegram_id=:uid AND resource='community'
