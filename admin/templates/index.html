@@ -84,9 +84,7 @@
         <div class="flex flex-wrap justify-between gap-3"><span>Резервные копии</span>
         {% if not fresh %}<span class="text-gray-400">Нет свежих данных</span>
         {% elif not health.details.get('backup_at') %}<span class="text-red-300">● Нет резервной копии</span>
-        {% elif issues|select('equalto','Last backup archive cannot be read')|list %}<span class="text-red-300">● Ошибка архива</span>
-        {% elif issues|select('equalto','No PostgreSQL backup exists')|list %}<span class="text-red-300">● Копия отсутствует</span>
-        {% elif issues|select('equalto','Last backup is older than 36 hours')|list %}<span class="text-amber-300">● Копия устарела</span>
+        {% elif not health.details.get('backup_ok',False) %}<span class="text-amber-300">● Нужна проверка копии</span>
         {% else %}<span class="text-emerald-300">● Копия проверена</span>{% endif %}</div>
         {% if fresh and health.details.get('backup_at') %}
         <p class="text-xs text-gray-400">Последний архив: {{ health.details.get('backup_at')[:10] }} (UTC)</p>{% endif %}
