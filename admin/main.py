@@ -420,6 +420,8 @@ async def moderation_reset_user(
     if not config.get("chat_id"):
         raise HTTPException(400,detail="Telegram-группа не подключена")
     await clear_user_warnings(config["chat_id"],telegram_id)
+    await record_manual_action(config["chat_id"],telegram_id,user["user"],
+                               "reset","success")
     return RedirectResponse("/moderation?reset=1#moderation-history",status_code=303)
 
 
