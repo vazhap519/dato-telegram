@@ -150,6 +150,23 @@ def restore_test(archive=None):
             run(["dropdb", "--if-exists", dbname], env=env, timeout=40)
             print("Temporary restore database removed:", dbname)
 
+
+def monitored_services():
+    configured=[x.strip() for x in os.getenv("DATO_MONITOR_SERVICES","").split(",") if x.strip()]
+    if configured:
+        return configured
+    # Only auto-detect known units which are actually installed.
+    installed=[]
+    for name in ("dato-telegram-bot.service","dato-telegram-admin.service"):
+        try:
+            result=run(["systemctl","show",name,"--property=LoadState","--value"],timeout=5)
+            if result.stdout.strip()==b"loaded":
+                installed.append(name)
+        except Exception:
+            continue
+    return installed
+
+
 def health():
     issues = []
     try:
@@ -180,7 +197,7 @@ def health():
             issues.append("Admin HTTPS error: " + str(exc.code))
     except Exception:
         issues.append("Admin HTTPS endpoint is unavailable")
-    for service in os.getenv("DATO_MONITOR_SERVICES", "").split(","):
+    for service in monitored_services():
         service = service.strip()
         if service:
             import re
@@ -252,7 +269,7 @@ def store_monitor_snapshot(issues,checked_at,backup):
     Database failures leave the previous snapshot stale so the UI can distinguish
     a missing heartbeat from a successful inspection.
     """
-    services=[x.strip() for x in os.getenv("DATO_MONITOR_SERVICES","").split(",") if x.strip()]
+    services=monitored_services()
     details={
         "issues":issues,
         "backup_at":dt.datetime.fromtimestamp(backup.stat().st_mtime,dt.timezone.utc).isoformat()
