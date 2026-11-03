@@ -26,6 +26,8 @@ REASONS = {
     "forward":"Пересланное сообщение",
     "flood":"Слишком частые сообщения",
     "duplicate":"Повторяющееся сообщение",
+    "word":"Запрещённое слово",
+    "media":"Запрещённое вложение",
 }
 
 
@@ -37,14 +39,39 @@ def classify(message, cfg):
         if str(getattr(entity,"type", "")) in ("text_link","url","MessageEntityType.TEXT_LINK","MessageEntityType.URL")
     ]
     # A 'url' entity can have its text in content, not in .url.
-    has_link = bool(URL.search(content) or entity_urls)
-    has_invite = bool(INVITES.search(content) or any(INVITES.search(url) for url in entity_urls))
+    import urllib.parse
+    urls = re.findall(r"(?i)(?:https?://|www\\.)[^\\s<>]+",content)
+    urls.extend(url for url in entity_urls if url)
+    allow = [domain.strip().lower().lstrip(".") for domain in
+             cfg.get("allowed_domains","").replace(",","\\n").splitlines()
+             if domain.strip()]
+    def is_allowed(url):
+        if not allow:
+            return False
+        normalized = url if url.lower().startswith(("http://","https://")) else "https://"+url
+        hostname=(urllib.parse.urlsplit(normalized).hostname or "").lower().rstrip(".")
+        return bool(hostname and any(hostname==domain or hostname.endswith("."+domain)
+                                     for domain in allow))
+    # Keep inline Telegram formatting entities grounded in Telegram text.
+    permitted = bool(urls) and all(is_allowed(url) for url in urls)
+    has_link = bool(URL.search(content) or entity_urls) and not permitted
+    has_invite = bool(INVITES.search(content) or any(INVITES.search(url) for url in entity_urls)) and not permitted
     if cfg["block_invites"] and has_invite:
         return "invite"
     if cfg["block_links"] and has_link:
         return "link"
     if cfg["block_forwards"] and message.forward_origin is not None:
         return "forward"
+    if cfg.get("block_media") and (message.photo or message.video or message.document
+                                   or message.animation or message.sticker):
+        return "media"
+    if cfg.get("blocked_words"):
+        words = [w.strip().casefold() for w in
+                 cfg["blocked_words"].replace(",","\\n").splitlines() if w.strip()]
+        lowered=content.casefold()
+        for word in words[:100]:
+            if len(word)>=2 and re.search(r"(?<!\\w)"+re.escape(word)+r"(?!\\w)",lowered):
+                return "word"
 
     if not (cfg["block_flood"] or cfg["block_duplicates"]):
         return None
