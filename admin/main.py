@@ -777,7 +777,9 @@ async def support_new_messages(ticket_id:int,after:int=0,user=Depends(get_curren
         "has_file":bool(m.get("file_id")),
         "delivery_status":m["delivery_status"],
         "deleted_at":bool(m.get("deleted_at")),
-        "can_delete":bool(m.get("telegram_message_id")) and not bool(m.get("deleted_at")) and m["delivery_status"]=="sent",
+        "can_delete":not bool(m.get("deleted_at")) and m["delivery_status"]=="sent"
+            and telegram_deletion_available(m.get("telegram_message_id"),
+                m.get("telegram_sent_at") if m["actor"]!="user" else m["created_at"]),
         "time":tbilisi_time(m["created_at"])
     } for m in messages if m["id"]>max(0,after)]})
 
@@ -788,8 +790,13 @@ async def support_thread(request: Request,ticket_id:int,
     ticket,messages=await ticket_detail(ticket_id)
     if not ticket: raise HTTPException(404,detail="Обращение не найдено")
     chats,_=await list_tickets(page=1)
+    support_deletable_ids={m["id"] for m in messages if not m.get("deleted_at")
+        and m["delivery_status"]=="sent"
+        and telegram_deletion_available(m.get("telegram_message_id"),
+            m.get("telegram_sent_at") if m["actor"]!="user" else m["created_at"])}
     return templates.TemplateResponse(request=request,name="support_ticket.html",context={
         "ticket":ticket,"messages":messages,"chats":chats,
+        "support_deletable_ids":support_deletable_ids,
         "categories":SUPPORT_CATEGORIES,"statuses":SUPPORT_STATUSES,
         "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
     })
@@ -1310,6 +1317,7 @@ async def subscription_user_page(
 
     from zoneinfo import ZoneInfo
     tbilisi_tz = ZoneInfo("Asia/Tbilisi")
+    direct_messages=await direct_message_history(telegram_id)
     return templates.TemplateResponse(
         request=request, name="subscription_user.html",
         context={
@@ -1322,7 +1330,10 @@ async def subscription_user_page(
             "verified_payments":await subscriber_verified_payments(telegram_id),
             "access_summary":await subscriber_access_summary(telegram_id),
             "crm_timeline":await crm_timeline(telegram_id),
-            "crm_messages":await direct_message_history(telegram_id),
+            "crm_messages":direct_messages,
+            "crm_deletable_ids":{item["id"] for item in direct_messages
+                if not item["deleted_at"] and item["status"]=="sent" and
+                telegram_deletion_available(item["telegram_message_id"],item["finished_at"])},
             "message_request_key":__import__("secrets").token_hex(16),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
@@ -1336,6 +1347,13 @@ def ensure_telegram_message_deletable(message_id,created_at):
         raise ValueError("У этого сообщения не сохранён Telegram ID — удалить его у пользователя невозможно")
     if datetime.now(timezone.utc)-created_at > timedelta(hours=47,minutes=55):
         raise ValueError("Telegram разрешает удалять сообщения только в течение 48 часов")
+
+
+def telegram_deletion_available(message_id,created_at):
+    from datetime import datetime,timezone,timedelta
+    return bool(message_id and created_at and
+                timedelta(0) <= datetime.now(timezone.utc)-created_at
+                < timedelta(hours=47,minutes=55))
 
 
 @app.post("/subscriptions/message/delete")
