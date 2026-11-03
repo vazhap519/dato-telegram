@@ -20,7 +20,7 @@ from db.payment_providers import initialize_payment_providers, providers as list
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
-from db.group_moderation import initialize_group_moderation, get_moderation_settings, save_moderation_settings, moderation_stats, save_content_settings, moderation_history, moderation_summary, clear_user_warnings
+from db.group_moderation import initialize_group_moderation, get_moderation_settings, save_moderation_settings, moderation_stats, save_content_settings, moderation_history, moderation_summary, clear_user_warnings, moderation_offenders, moderation_user_details, record_manual_action, moderation_manual_history, set_trusted_user
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
 from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
@@ -90,6 +90,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/moderation/settings",
         "/moderation/content",
         "/moderation/reset",
+        "/moderation/manual",
+        "/moderation/trusted",
         "/subscriptions/grant",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
@@ -418,6 +420,171 @@ async def moderation_reset_user(
         raise HTTPException(400,detail="Telegram-группа не подключена")
     await clear_user_warnings(config["chat_id"],telegram_id)
     return RedirectResponse("/moderation?reset=1#moderation-history",status_code=303)
+
+
+@app.get("/moderation/offenders")
+async def moderation_offenders_page(
+    request: Request, search: str = "", page: int = 1,
+    user=Depends(get_current_user)
+):
+    from urllib.parse import urlencode
+    cfg=await group_settings()
+    chat_id=cfg.get("chat_id")
+    people,total=(await moderation_offenders(chat_id,search,page)) if chat_id else ([],0)
+    page=max(1,min(int(page),10000))
+    return templates.TemplateResponse(
+        request=request,name="moderation_offenders.html",context={
+            "tg_group":cfg,"people":people,"total":total,"search":search,
+            "page":page,"pages":max(1,(total+24)//25),
+            "prev_url":"/moderation/offenders?"+urlencode({"search":search,"page":page-1}),
+            "next_url":"/moderation/offenders?"+urlencode({"search":search,"page":page+1}),
+        },headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.get("/moderation/user/{telegram_id}")
+async def moderation_user_page(
+    telegram_id: int, request: Request,
+    user=Depends(get_current_user)
+):
+    if telegram_id<=0:
+        raise HTTPException(400,detail="Некорректный Telegram ID")
+    cfg=await group_settings()
+    chat_id=cfg.get("chat_id")
+    if not chat_id:
+        raise HTTPException(400,detail="Сначала подключите группу")
+    profile=await moderation_user_details(chat_id,telegram_id)
+    settings=await get_moderation_settings()
+    trusted={x.strip() for x in (settings.get("trusted_users") or "").splitlines()}
+    member_status="Не удалось проверить"
+    member_permissions=""
+    from aiogram import Bot
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            member=await telegram.get_chat_member(chat_id,telegram_id)
+            member_status=str(member.status)
+            if member.status=="restricted" or getattr(member.status,"value","")=="restricted":
+                member_permissions="Ограничен до: "+str(getattr(member,"until_date","—"))
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("Unable to check moderation user status uid=%s",telegram_id)
+    return templates.TemplateResponse(
+        request=request,name="moderation_user.html",context={
+            "uid":telegram_id,"profile":profile,"tg_group":cfg,
+            "member_status":member_status,"member_permissions":member_permissions,
+            "trusted":str(telegram_id) in trusted,
+            "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
+        },headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.post("/moderation/trusted")
+async def moderation_trusted_update(
+    telegram_id: int=Form(...),enabled: bool=Form(False),
+    confirm: str=Form(""),csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    if confirm!="CHANGE_TRUST":
+        raise HTTPException(400,detail="Подтвердите изменение исключения")
+    try:
+        await set_trusted_user(telegram_id,enabled,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    cfg=await group_settings()
+    if cfg.get("chat_id"):
+        await record_manual_action(cfg["chat_id"],telegram_id,user["user"],
+                                   "trust_on" if enabled else "trust_off","success")
+    return RedirectResponse(f"/moderation/user/{telegram_id}?trust=saved",status_code=303)
+
+
+@app.post("/moderation/manual")
+async def moderation_manual_action(
+    telegram_id: int=Form(...),action: str=Form(...),
+    duration_minutes: int=Form(15),reason: str=Form(""),
+    confirm: str=Form(""),csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    from aiogram import Bot
+    from aiogram.enums import ChatMemberStatus
+    from aiogram.types import ChatPermissions
+    from datetime import datetime,timedelta,timezone
+    import logging
+    if action not in ("mute","unmute","reset"):
+        raise HTTPException(400,detail="Недопустимое действие")
+    if confirm!="MODERATE":
+        raise HTTPException(400,detail="Подтвердите действие")
+    if telegram_id<=0 or telegram_id>9999999999999:
+        raise HTTPException(400,detail="Некорректный Telegram ID")
+    if len(reason)>500:
+        raise HTTPException(400,detail="Слишком длинная причина")
+    if action=="mute" and duration_minutes not in (5,15,30,60,180,1440,10080):
+        raise HTTPException(400,detail="Выберите разрешённый срок ограничения")
+    cfg=await group_settings()
+    chat_id=cfg.get("chat_id")
+    if not chat_id:
+        raise HTTPException(400,detail="Группа не подключена")
+    if action=="reset":
+        await clear_user_warnings(chat_id,telegram_id)
+        await record_manual_action(chat_id,telegram_id,user["user"],"reset",
+                                   "success",details=reason)
+        return RedirectResponse(f"/moderation/user/{telegram_id}?result=reset",status_code=303)
+    status="failed"
+    error=None
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            me=await telegram.get_me()
+            admin=await telegram.get_chat_member(chat_id,me.id)
+            can_restrict=(admin.status==ChatMemberStatus.CREATOR or (
+                admin.status==ChatMemberStatus.ADMINISTRATOR
+                and bool(getattr(admin,"can_restrict_members",False))
+            ))
+            if not can_restrict:
+                raise ValueError("Боту необходимо право ограничивать участников")
+            if telegram_id==me.id:
+                raise ValueError("Нельзя ограничивать самого бота")
+            target=await telegram.get_chat_member(chat_id,telegram_id)
+            if target.status in (ChatMemberStatus.CREATOR,ChatMemberStatus.ADMINISTRATOR):
+                raise ValueError("Нельзя изменять права администратора группы")
+            if action=="mute":
+                if target.status in (ChatMemberStatus.LEFT,ChatMemberStatus.KICKED):
+                    raise ValueError("Участник не состоит в группе")
+                await telegram.restrict_chat_member(
+                    chat_id,telegram_id,
+                    permissions=ChatPermissions(can_send_messages=False),
+                    until_date=datetime.now(timezone.utc)+timedelta(minutes=duration_minutes),
+                    use_independent_chat_permissions=False,
+                )
+            else:
+                if target.status in (ChatMemberStatus.LEFT,ChatMemberStatus.KICKED):
+                    raise ValueError("Участник не состоит в группе")
+                # Restores group-default permissions for ordinary communication.
+                chat=await telegram.get_chat(chat_id)
+                permissions=getattr(chat,"permissions",None) or ChatPermissions(
+                    can_send_messages=True,can_send_audios=True,
+                    can_send_documents=True,can_send_photos=True,
+                    can_send_videos=True,can_send_video_notes=True,
+                    can_send_voice_notes=True,can_send_polls=True,
+                    can_send_other_messages=True,can_add_web_page_previews=True,
+                    can_invite_users=True
+                )
+                await telegram.restrict_chat_member(
+                    chat_id,telegram_id,permissions=permissions,
+                    use_independent_chat_permissions=False
+                )
+            status="success"
+    except Exception as exc:
+        error=str(exc)[:300]
+        logging.getLogger(__name__).warning(
+            "Manual moderation failed action=%s uid=%s: %s",action,telegram_id,error
+        )
+    await record_manual_action(chat_id,telegram_id,user["user"],action,status,
+                               duration_minutes if action=="mute" else None,
+                               reason,error)
+    from urllib.parse import urlencode
+    return RedirectResponse(
+        f"/moderation/user/{telegram_id}?"+urlencode({"result":status,"action":action}),
+        status_code=303
+    )
 
 
 @app.get("/reliability")
