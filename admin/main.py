@@ -347,6 +347,7 @@ async def moderation_page(request: Request, user=Depends(get_current_user)):
             "moderation_stats": await moderation_stats(),
             "moderation_history": await moderation_history(),
             "moderation_summary": await moderation_summary(),
+            "manual_history": await moderation_manual_history((await group_settings()).get("chat_id")) if (await group_settings()).get("chat_id") else [],
             "tg_group": await group_settings(),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
