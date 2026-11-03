@@ -20,6 +20,23 @@ async def initialize_group_moderation():
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """))
+        for column, kind in (
+            ("content_enabled","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("block_links","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("block_invites","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("block_forwards","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("block_flood","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("block_duplicates","BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("flood_limit","INTEGER NOT NULL DEFAULT 6"),
+            ("flood_window_seconds","INTEGER NOT NULL DEFAULT 10"),
+            ("duplicate_window_seconds","INTEGER NOT NULL DEFAULT 90"),
+            ("warning_limit","INTEGER NOT NULL DEFAULT 3"),
+            ("mute_minutes","INTEGER NOT NULL DEFAULT 0"),
+            ("notify_user","BOOLEAN NOT NULL DEFAULT TRUE")
+        ):
+            await c.execute(text(
+                "ALTER TABLE group_moderation_settings ADD COLUMN IF NOT EXISTS " + column + " " + kind
+            ))
         await c.execute(text("""
             INSERT INTO group_moderation_settings(id) VALUES(1)
             ON CONFLICT(id) DO NOTHING
@@ -33,6 +50,21 @@ async def initialize_group_moderation():
             )
         """))
         await c.execute(text("""
+            CREATE TABLE IF NOT EXISTS group_moderation_violations (
+                id BIGSERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
+                telegram_id BIGINT NOT NULL,
+                message_id BIGINT,
+                reason TEXT NOT NULL,
+                action TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+        await c.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_mod_violations_user
+            ON group_moderation_violations(chat_id,telegram_id,created_at DESC)
+        """))
+        await c.execute(text("""
             INSERT INTO group_moderation_statistics(id) VALUES(1)
             ON CONFLICT(id) DO NOTHING
         """))
@@ -41,6 +73,9 @@ async def get_moderation_settings():
     async with SessionLocal() as s:
         row=(await s.execute(text("""
             SELECT join_enabled,leave_enabled,pin_enabled,other_enabled,
+                   content_enabled,block_links,block_invites,block_forwards,
+                   block_flood,block_duplicates,flood_limit,flood_window_seconds,
+                   duplicate_window_seconds,warning_limit,mute_minutes,notify_user,
                    updated_by,updated_at
             FROM group_moderation_settings WHERE id=1
         """))).mappings().one()
@@ -79,3 +114,90 @@ async def count_moderation_action(success):
                     UPDATE group_moderation_statistics
                     SET failed_total=failed_total+1 WHERE id=1
                 """))
+
+
+CONTENT_OPTIONS = ("content_enabled","block_links","block_invites","block_forwards",
+                   "block_flood","block_duplicates","notify_user")
+CONTENT_RANGES = {
+    "flood_limit":(3,20),
+    "flood_window_seconds":(5,120),
+    "duplicate_window_seconds":(15,600),
+    "warning_limit":(1,10),
+    "mute_minutes":(0,1440),
+}
+
+async def save_content_settings(values,actor):
+    data={}
+    for key in CONTENT_OPTIONS:
+        data[key]=bool(values.get(key,False))
+    for key,(lo,hi) in CONTENT_RANGES.items():
+        value=int(values[key])
+        if not lo <= value <= hi:
+            raise ValueError(f"Неверное значение {key}: допустимо {lo}–{hi}")
+        data[key]=value
+    data["actor"]=actor
+    async with SessionLocal() as s:
+        async with s.begin():
+            await s.execute(text("""
+                UPDATE group_moderation_settings SET
+                    content_enabled=:content_enabled,block_links=:block_links,
+                    block_invites=:block_invites,block_forwards=:block_forwards,
+                    block_flood=:block_flood,block_duplicates=:block_duplicates,
+                    flood_limit=:flood_limit,flood_window_seconds=:flood_window_seconds,
+                    duplicate_window_seconds=:duplicate_window_seconds,
+                    warning_limit=:warning_limit,mute_minutes=:mute_minutes,
+                    notify_user=:notify_user,updated_by=:actor,updated_at=NOW()
+                WHERE id=1
+            """),data)
+
+async def log_violation(chat_id,uid,message_id,reason,action):
+    """Record action and count violations within a rolling 24-hour window."""
+    async with SessionLocal() as s:
+        async with s.begin():
+            await s.execute(text("""
+                INSERT INTO group_moderation_violations
+                  (chat_id,telegram_id,message_id,reason,action)
+                VALUES (:chat,:uid,:mid,:reason,:action)
+            """),{"chat":chat_id,"uid":uid,"mid":message_id,
+                  "reason":reason,"action":action})
+            return (await s.execute(text("""
+                SELECT count(*) FROM group_moderation_violations
+                WHERE chat_id=:chat AND telegram_id=:uid
+                  AND created_at>NOW()-INTERVAL '24 hours'
+                  AND action IN ('deleted','muted')
+                  AND created_at>COALESCE((
+                      SELECT MAX(created_at) FROM group_moderation_violations
+                      WHERE chat_id=:chat AND telegram_id=:uid AND action='reset'
+                  ),'-infinity'::timestamptz)
+            """),{"chat":chat_id,"uid":uid})).scalar_one()
+
+async def moderation_history(limit=60):
+    async with SessionLocal() as s:
+        rows=(await s.execute(text("""
+            SELECT chat_id,telegram_id,message_id,reason,action,created_at
+            FROM group_moderation_violations ORDER BY id DESC LIMIT :limit
+        """),{"limit":min(100,max(1,int(limit)))})).mappings().all()
+        return [dict(row) for row in rows]
+
+async def moderation_summary():
+    async with SessionLocal() as s:
+        row=(await s.execute(text("""
+            SELECT count(*) FILTER (WHERE action='deleted') deleted,
+                   count(*) FILTER (WHERE action='muted') muted,
+                   count(*) FILTER (WHERE action='failed') failed,
+                   count(DISTINCT telegram_id) FILTER (WHERE created_at>NOW()-INTERVAL '7 days') users_7d
+            FROM group_moderation_violations
+        """))).mappings().one()
+        return dict(row)
+
+async def clear_user_warnings(chat_id,uid):
+    async with SessionLocal() as s:
+        async with s.begin():
+            # Don't destroy moderation history. Reset the rolling counter via
+            # a separate reset marker, so past actions are still auditable.
+            await s.execute(text("""
+                INSERT INTO group_moderation_violations
+                 (chat_id,telegram_id,reason,action)
+                VALUES (:chat,:uid,'admin_reset','reset')
+            """),{"chat":chat_id,"uid":uid})
+
