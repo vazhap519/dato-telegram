@@ -42,6 +42,10 @@ async def initialize_support():
         """))
         await c.execute(text("""
         ALTER TABLE support_messages
+        ADD COLUMN IF NOT EXISTS telegram_sent_at TIMESTAMPTZ
+        """))
+        await c.execute(text("""
+        ALTER TABLE support_messages
         ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
         """))
         await c.execute(text("""
@@ -228,7 +232,8 @@ async def mark_delivery(message_id,success,telegram_message_id=None):
         async with s.begin():
             await s.execute(text("""
                 UPDATE support_messages SET delivery_status=:status,
-                    telegram_message_id=CASE WHEN :sent THEN :tg_id ELSE telegram_message_id END
+                    telegram_message_id=CASE WHEN :sent THEN :tg_id ELSE telegram_message_id END,
+                    telegram_sent_at=CASE WHEN :sent THEN NOW() ELSE telegram_sent_at END
                 WHERE id=:id
             """),{"id":message_id,"status":"sent" if success else "failed",
                   "sent":success,"tg_id":telegram_message_id})
@@ -394,7 +399,7 @@ async def support_message_for_delete(ticket_id,message_id):
     async with SessionLocal() as s:
         row=(await s.execute(text("""
             SELECT m.id,m.ticket_id,m.actor,m.created_at,m.deleted_at,
-                   m.telegram_message_id,m.delivery_status,t.telegram_id
+                   m.telegram_message_id,m.telegram_sent_at,m.delivery_status,t.telegram_id
             FROM support_messages m JOIN support_tickets t ON t.id=m.ticket_id
             WHERE m.id=:mid AND m.ticket_id=:tid
         """),{"mid":message_id,"tid":ticket_id})).mappings().first()
