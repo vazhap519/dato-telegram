@@ -37,7 +37,7 @@
 <tr class="border-b border-gray-700"><td class="py-3 pr-3 whitespace-nowrap">{{ payment.verified_at|tbilisi_time('%d.%m.%Y') }}</td><td class="pr-3">{{ payment.provider_name or payment.provider }}</td><td class="pr-3">{{ payment.amount if payment.amount is not none else '—' }} {{ payment.currency or '' }}</td><td class="pr-3">{{ {'paid':'Подтверждён','refunded':'Возврат','chargeback':'Оспорен'}.get(payment.payment_status,payment.payment_status) }}</td><td class="font-mono text-xs break-all">{{ payment.provider_payment_id }}</td></tr>
 {% else %}<tr><td colspan="5" class="py-4 text-gray-400">Подтверждённых платежей пока нет.</td></tr>{% endfor %}
 </tbody></table></div></div></details>
-<div class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Здесь ведётся только внутренний учёт прав. Добавление или отзыв права <strong>не меняет членство в Telegram</strong> и не подтверждает оплату.</div>
+<div class="bg-gray-800 border border-amber-700 rounded-xl p-4 text-sm">Доступ, платежи и фактическое членство в Telegram — разные состояния. Назначение права может отправить приглашение, а отзыв — исключить участника при выполнении условий. Ручные операции <strong>не считаются подтверждённой оплатой</strong>.</div>
 {% if request.query_params.get('revoke_result') == 'removed' %}
 <p class="rounded-lg bg-green-900/40 p-3 text-sm text-green-300">Доступ отозван. Участник исключён из Telegram-группы.</p>
 {% elif request.query_params.get('revoke_result') == 'other_access' %}
@@ -252,7 +252,7 @@
 <p class="text-xs text-gray-500">Нажмите на запись для подробностей. Очистка скрывает только отозванные доступы, не удаляя их из базы.</p>
 </div></details>
 <details id="subscriber-registered" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-<summary class="cursor-pointer select-none list-none px-5 py-4 flex justify-between items-center gap-3 font-semibold text-xl"><span>Учётные подписки</span><span class="text-gray-400">⌄</span></summary><div class="px-5 pb-5 pt-1 space-y-3"><p class="text-gray-400 text-sm">Платёжный модуль ещё не подключён.</p>
+<summary class="cursor-pointer select-none list-none px-5 py-4 flex justify-between items-center gap-3 font-semibold text-xl"><span>Учётные подписки</span><span class="text-gray-400">⌄</span></summary><div class="px-5 pb-5 pt-1 space-y-3"><p class="text-gray-400 text-sm">Учётные подписки из нашей базы; подтверждённые платежи показаны отдельно выше.</p>
 {% for s in subscriptions %}<div class="p-3 border-t border-gray-700 text-sm">{{ s.plan_name or 'Тариф не указан' }} · {{ s.status }} · {{ s.provider }} · {{ s.paid_until|tbilisi_time('%d.%m.%Y %H:%M') if s.paid_until else 'без подтверждённого периода' }}</div>{% else %}<p class="text-gray-400">Подписок пока нет.</p>{% endfor %}</div></details>
 <details id="subscriber-audit" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
 <summary class="cursor-pointer select-none list-none px-5 py-4 flex justify-between items-center gap-3 font-semibold text-xl"><span>Журнал изменений</span><span class="text-gray-400">⌄</span></summary><div class="px-5 pb-5 pt-1 space-y-3">
