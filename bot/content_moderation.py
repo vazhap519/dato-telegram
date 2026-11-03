@@ -40,10 +40,10 @@ def classify(message, cfg):
     ]
     # A 'url' entity can have its text in content, not in .url.
     import urllib.parse
-    urls = re.findall(r"(?i)(?:https?://|www\\.)[^\\s<>]+",content)
+    urls = re.findall(r"(?i)(?:https?://|www\.)[^\s<>]+",content)
     urls.extend(url for url in entity_urls if url)
     allow = [domain.strip().lower().lstrip(".") for domain in
-             cfg.get("allowed_domains","").replace(",","\\n").splitlines()
+             cfg.get("allowed_domains","").replace(",","\n").splitlines()
              if domain.strip()]
     def is_allowed(url):
         if not allow:
@@ -67,10 +67,10 @@ def classify(message, cfg):
         return "media"
     if cfg.get("blocked_words"):
         words = [w.strip().casefold() for w in
-                 cfg["blocked_words"].replace(",","\\n").splitlines() if w.strip()]
+                 cfg["blocked_words"].replace(",","\n").splitlines() if w.strip()]
         lowered=content.casefold()
         for word in words[:100]:
-            if len(word)>=2 and re.search(r"(?<!\\w)"+re.escape(word)+r"(?!\\w)",lowered):
+            if len(word)>=2 and re.search(r"(?<!\w)"+re.escape(word)+r"(?!\w)",lowered):
                 return "word"
 
     if not (cfg["block_flood"] or cfg["block_duplicates"]):
