@@ -1,0 +1,76 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Настройки бота — Круг Души</title><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-gray-900 text-white min-h-screen">
+{% include "_sidebar.html" %}
+<main class="max-w-4xl mx-auto p-5 md:p-8 space-y-6">
+<header><h1 class="text-3xl font-bold">⚙ Настройки бота</h1><p class="text-sm text-gray-400 mt-2">Сценарий приветствия, публичная оферта, инструкции и безопасность администратора</p></header>
+{% if request.query_params.get('saved') %}<p class="p-3 bg-emerald-900/30 rounded-xl text-emerald-300">Настройки бота сохранены.</p>{% endif %}
+<details id="onboarding" open class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+<summary class="p-5 cursor-pointer font-semibold text-xl">🤖 Приветствие, оферта и подписка</summary>
+<div class="p-5 pt-0">    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg mb-6">
+        <h2 class="text-xl font-semibold mb-4">Настройки подписки</h2>
+        <p class="text-gray-300 text-sm mb-4">После /start бот отправляет видеокружочек (если задан file_id), затем оферту. Инструкция по подписке отправляется только после подтверждения условий.</p>
+        <div class="bg-gray-700 rounded-xl p-4 mb-4">
+          <h3 class="font-semibold mb-2">🎥 Загрузить видеокружочек через Telegram</h3>
+          <p class="text-sm text-gray-300 mb-3">Нажмите кнопку, отправьте появившуюся команду своему боту в личном чате, затем отправьте видеокружочек. Код действует 15 минут и используется один раз.</p>
+          <form method="post" action="/create-video-upload" class="mb-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded">Создать код загрузки</button>
+          </form>
+          {% if upload_command %}
+          <p class="text-sm text-green-300 mb-1">Отправьте боту эту команду (никому не передавайте):</p>
+          <code class="block bg-gray-900 p-3 rounded break-all select-all">{{ upload_command }}</code>
+          {% endif %}
+        </div>
+        <form method="post" action="/update-flow" class="grid gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="grid gap-1">Telegram file_id видеокружочка
+                <input name="video_note_file_id" value="{{ flow.video_note_file_id if flow else '' }}" placeholder="Необязательно; file_id именно video_note" class="p-2 rounded bg-gray-700">
+            </label>
+            <label class="grid gap-1">Текст сообщения с публичной офертой
+                <textarea name="offer_text" rows="4" class="p-2 rounded bg-gray-700">{{ flow.offer_text if flow else '' }}</textarea>
+            </label>
+            <label class="grid gap-1">Ссылка на публичную оферту
+                <input name="offer_url" type="url" value="{{ flow.offer_url if flow else '' }}" placeholder="https://..." class="p-2 rounded bg-gray-700">
+            </label>
+            <label class="grid gap-1">Версия оферты (изменяй при обновлении условий)
+                <input name="offer_version" required value="{{ flow.offer_version if flow else '1' }}" class="p-2 rounded bg-gray-700">
+            </label>
+            <label class="grid gap-1">Инструкция по оформлению подписки
+                <textarea name="subscription_text" rows="5" class="p-2 rounded bg-gray-700">{{ flow.subscription_text if flow else '' }}</textarea>
+            </label>
+            <label class="grid gap-1">Ссылка на оформление подписки
+                <input name="subscription_url" type="url" value="{{ flow.subscription_url if flow else '' }}" placeholder="https://..." class="p-2 rounded bg-gray-700">
+            </label>
+            <button class="bg-blue-500 hover:bg-blue-600 p-2 rounded font-semibold">💾 Сохранить настройки подписки</button>
+        </form>
+    </div>
+
+</div></details>
+<details id="security" class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+<summary class="p-5 cursor-pointer font-semibold text-xl">🔐 Учётные данные администратора</summary>
+<div class="p-5 pt-0">    <!-- CHANGE PASSWORD -->
+    <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
+        <h2 class="text-xl font-semibold mb-4">🔐 Change Credentials</h2>
+
+        <form method="post" action="/change-credentials" class="grid gap-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <input name="new_username"
+                placeholder="New Username"
+                class="p-2 rounded bg-gray-700">
+
+            <input name="new_password"
+                type="password"
+                placeholder="New Password"
+                class="p-2 rounded bg-gray-700">
+
+            <button class="bg-red-500 hover:bg-red-600 p-2 rounded font-semibold">
+                Change Credentials
+            </button>
+
+        </form>
+    </div>
+</div></details>
+</main><script>
+function reveal(){const el=document.getElementById(location.hash.slice(1));if(el&&el.tagName==='DETAILS')el.open=true;}
+window.addEventListener('hashchange',reveal);reveal();
+</script></body></html>
