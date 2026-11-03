@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
-from db.dashboard import dashboard_data
+from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
@@ -63,6 +63,7 @@ async def setup_onboarding():
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
+    await initialize_health_snapshots()
     await initialize_subscriber_profiles()
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
@@ -318,10 +319,44 @@ async def verify_csrf(
 async def dashboard(request: Request,user=Depends(get_current_user)):
     stats=await registration_stats()
     overview,recent_events=await dashboard_data()
+    health_snapshot=await last_health_snapshot()
     return templates.TemplateResponse(
         request=request,name="index.html",
-        context={"stats":stats,"overview":overview,"recent_events":recent_events},
+        context={"stats":stats,"overview":overview,"recent_events":recent_events,
+                 "health":health_snapshot},
         headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.get("/events")
+async def event_journal_page(
+    request: Request,search: str="",kind: str="all",
+    date_from: str="",date_to: str="",page: int=1,
+    user=Depends(get_current_user)
+):
+    from datetime import date
+    from urllib.parse import urlencode
+    def read_date(value):
+        if not value: return None
+        try: return date.fromisoformat(value)
+        except ValueError: raise HTTPException(400,detail="Неверная дата")
+    if kind not in EVENT_TYPES:
+        kind="all"
+    page=max(1,min(int(page),100000))
+    try:
+        items,total=await event_journal(search,kind,read_date(date_from),
+                                        read_date(date_to),page)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    options={"search":search,"kind":kind,"date_from":date_from,"date_to":date_to}
+    return templates.TemplateResponse(
+        request=request,name="events.html",context={
+            "events":items,"total":total,"page":page,
+            "pages":max(1,(total+29)//30),"search":search,"kind":kind,
+            "date_from":date_from,"date_to":date_to,"event_types":EVENT_TYPES,
+            "prev_url":"/events?"+urlencode({**options,"page":page-1}),
+            "next_url":"/events?"+urlencode({**options,"page":page+1})
+        },headers={"Cache-Control":"no-store"}
     )
 
 
