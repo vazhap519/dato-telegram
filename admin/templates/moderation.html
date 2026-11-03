@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Модерация группы</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 min-h-screen text-white">
+<main class="max-w-4xl mx-auto p-5 md:p-8 space-y-5">
+<header class="flex flex-wrap items-center justify-between gap-3">
+<div><h1 class="text-2xl md:text-3xl font-bold">🧹 Модерация Telegram-группы</h1>
+<p class="mt-1 text-sm text-gray-400">Уборка системных сообщений, не затрагивающая обычную переписку</p></div>
+<a href="/dashboard" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">← Админка</a>
+</header>
+<section class="grid sm:grid-cols-3 gap-3">
+<div class="bg-gray-800 rounded-xl p-4"><div class="text-xs text-gray-400">Подключённая группа</div>
+<div class="font-semibold mt-2 break-words">{{ tg_group.chat_title or 'Не подключена' }}</div>
+{% if tg_group.chat_id %}<div class="font-mono text-xs text-gray-400 mt-1">{{ tg_group.chat_id }}</div>{% endif %}</div>
+<div class="bg-gray-800 rounded-xl p-4"><div class="text-xs text-gray-400">Удалено служебных сообщений</div>
+<div class="text-2xl font-semibold mt-2 text-emerald-300">{{ moderation_stats.deleted_total }}</div></div>
+<div class="bg-gray-800 rounded-xl p-4"><div class="text-xs text-gray-400">Не удалось удалить</div>
+<div class="text-2xl font-semibold mt-2 text-amber-300">{{ moderation_stats.failed_total }}</div></div>
+</section>
+{% if not tg_group.chat_id %}
+<p class="p-4 rounded-xl bg-amber-900/30 border border-amber-800 text-amber-200 text-sm">
+Сначала подключи группу в разделе «Подписки» → «Telegram-группа».</p>
+{% endif %}
+<section class="bg-gray-800 rounded-xl p-5 space-y-4">
+<div><h2 class="text-xl font-semibold">⚙️ Очистка служебных сообщений</h2>
+<p class="text-sm text-gray-400 mt-2">Бот удаляет только системные сообщения в подключённой группе. Сообщения участников, комментарии и обычные публикации не удаляются.</p></div>
+{% if request.query_params.get('saved') %}<p class="text-sm text-emerald-300 bg-emerald-900/20 p-3 rounded-lg">Настройки модерации сохранены.</p>{% endif %}
+<form method="post" action="/moderation/settings" class="space-y-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label class="flex items-start gap-3 p-3 bg-gray-700/60 rounded-lg"><input type="checkbox" class="mt-1" name="join_enabled" value="true" {{ 'checked' if moderation.join_enabled else '' }}>
+<span><strong>👋 Удалять уведомления о вступлении</strong><span class="block text-sm text-gray-300">«Пользователь присоединился к группе», в том числе по пригласительной ссылке.</span></span></label>
+<label class="flex items-start gap-3 p-3 bg-gray-700/60 rounded-lg"><input type="checkbox" class="mt-1" name="leave_enabled" value="true" {{ 'checked' if moderation.leave_enabled else '' }}>
+<span><strong>🚪 Удалять уведомления о выходе</strong><span class="block text-sm text-gray-300">«Пользователь покинул группу» или был исключён.</span></span></label>
+<label class="flex items-start gap-3 p-3 bg-gray-700/60 rounded-lg"><input type="checkbox" class="mt-1" name="pin_enabled" value="true" {{ 'checked' if moderation.pin_enabled else '' }}>
+<span><strong>📌 Удалять служебные уведомления о закреплении</strong><span class="block text-sm text-gray-300">Само закреплённое сообщение останется на месте, удалится только сервисная запись.</span></span></label>
+<label class="flex items-start gap-3 p-3 bg-gray-700/60 rounded-lg"><input type="checkbox" class="mt-1" name="other_enabled" value="true" {{ 'checked' if moderation.other_enabled else '' }}>
+<span><strong>🛠 Удалять прочие системные сообщения</strong><span class="block text-sm text-gray-300">Изменение названия, фотографии группы, таймера автоудаления и некоторые другие служебные события.</span></span></label>
+<button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-5 py-3 font-semibold">Сохранить настройки</button>
+</form>
+</section>
+<details class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+<summary class="cursor-pointer list-none select-none p-4 md:p-5 font-semibold text-lg">🔐 Права бота и ограничения <span class="text-gray-400 float-right">⌄</span></summary>
+<div class="p-5 pt-0 space-y-3 text-sm text-gray-300">
+<p>Для удаления сообщений бот должен быть администратором группы с правом <strong>«Удаление сообщений»</strong> (can_delete_messages). При отсутствии прав удаление не сработает и ошибка отобразится в счётчике.</p>
+<p>Эта функция не удаляет системные баннеры в личном интерфейсе Telegram, включая «Ваша заявка на вступление в канал принята» — они не являются обычными сообщениями группы и Telegram Bot API не предоставляет боту способа их удалить.</p>
+<p>Модерация работает только для новых сообщений, полученных ботом после включения. Старые записи и личные уведомления Telegram она не очищает.</p>
+</div>
+</details>
+</main></body></html>
