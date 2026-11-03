@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.dashboard import dashboard_data
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
@@ -314,31 +315,26 @@ async def verify_csrf(
 
 # 📊 DASHBOARD
 @app.get("/dashboard")
-async def dashboard(
-    request: Request,
-    user=Depends(get_current_user)
-):
-    count = await get_users_count()
-    settings = await get_settings()
-    flow = await get_flow_settings()
-    stats = await registration_stats()
-    support_summary = await support_counts()
-    csrf_token = make_csrf_token(
-        request.cookies.get("access_token", "")
+async def dashboard(request: Request,user=Depends(get_current_user)):
+    stats=await registration_stats()
+    overview,recent_events=await dashboard_data()
+    return templates.TemplateResponse(
+        request=request,name="index.html",
+        context={"stats":stats,"overview":overview,"recent_events":recent_events},
+        headers={"Cache-Control":"no-store"}
     )
 
+
+@app.get("/settings/bot")
+async def bot_settings_page(request: Request,user=Depends(get_current_user)):
+    flow=await get_flow_settings()
     return templates.TemplateResponse(
-        request=request,
-        name="index.html",
+        request=request,name="bot_settings.html",
         context={
-            "count": count,
-            "settings": settings,
-            "flow": flow,
-            "stats": stats,
-            "support_summary": support_summary,
-            "user": user,
-            "csrf_token": csrf_token
-        }
+            "flow":flow,"csrf_token":make_csrf_token(
+                request.cookies.get("access_token","")
+            ),
+        },headers={"Cache-Control":"no-store"}
     )
 
 
@@ -651,18 +647,13 @@ async def create_video_upload(request: Request, csrf_check=Depends(verify_csrf),
     import secrets
     code = secrets.token_urlsafe(24)
     await create_upload_code(code)
-    settings = await get_settings()
-    flow = await get_flow_settings()
-    stats = await registration_stats()
     return templates.TemplateResponse(
-        request=request, name="index.html",
+        request=request, name="bot_settings.html",
         context={
-            "count": stats["total"], "settings": settings, "flow": flow,
-            "stats": stats, "user": user,
-            "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
-            "upload_command": "/upload " + code
-        },
-        headers={"Cache-Control": "no-store"}
+            "flow":await get_flow_settings(),
+            "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
+            "upload_command":"/upload "+code,
+        },headers={"Cache-Control":"no-store"}
     )
 
 
@@ -1705,8 +1696,8 @@ async def update_settings(
         await session.commit()
 
     return RedirectResponse(
-        url="/dashboard",
-        status_code=302
+        url="/settings/bot?saved=1",
+        status_code=303
     )
 
 
@@ -1746,7 +1737,7 @@ async def update_flow(
         "subscription_text": subscription_text.strip(),
         "subscription_url": clean_url(subscription_url)
     })
-    return RedirectResponse(url="/dashboard", status_code=303)
+    return RedirectResponse(url="/settings/bot?saved=1", status_code=303)
 
 
 # 🔐 CHANGE CREDENTIALS
