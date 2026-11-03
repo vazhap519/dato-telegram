@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
 from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts, archive_provider, archived_providers, restore_provider
@@ -61,6 +62,7 @@ async def setup_onboarding():
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
+    await initialize_subscriber_profiles()
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
     await initialize_tribute_auto()
@@ -93,6 +95,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/moderation/manual",
         "/moderation/trusted",
         "/subscriptions/grant",
+        "/subscriptions/profile",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
         "/subscriptions/invites/history/clear",
@@ -1243,8 +1246,28 @@ async def subscription_user_page(
             "tg_group":tg_group, "recent_invites":recent_invites, "can_invite":can_invite,
             "removal_test":removal_test, "removal_diagnostics":removal_diagnostics,
             "tbilisi_tz":tbilisi_tz,
+            "admin_profile":await get_subscriber_profile(telegram_id),
+            "verified_payments":await subscriber_verified_payments(telegram_id),
+            "access_summary":await subscriber_access_summary(telegram_id),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.post("/subscriptions/profile")
+async def update_subscriber_profile(
+    telegram_id: int=Form(...), note: str=Form(""), tags: str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user),
+):
+    if telegram_id<=0:
+        raise HTTPException(400,detail="Некорректный Telegram ID")
+    try:
+        await save_subscriber_profile(telegram_id,note,tags,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse(
+        f"/subscriptions/users/{telegram_id}?profile=saved#subscriber-notes",
+        status_code=303
     )
 
 
