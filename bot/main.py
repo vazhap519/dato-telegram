@@ -25,6 +25,7 @@ from bot.group_removal_worker import group_removal_test_worker
 from bot.group_handlers import group_join_request_handler, group_id_handler, managed_member_join_handler
 from db.group_moderation import initialize_group_moderation
 from bot.moderation_handlers import delete_service_message
+from bot.content_moderation import moderate_group_message
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
 from bot.broadcast_worker import broadcast_worker
@@ -63,6 +64,7 @@ dp.message.register(
         F.message_auto_delete_timer_changed
     )
 )
+dp.message.register(moderate_group_message, F.chat.type.in_({"group", "supergroup"}))
 dp.message.register(support_text)
 
 async def main():
