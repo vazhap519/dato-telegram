@@ -1,0 +1,43 @@
+{# Shared admin navigation; include immediately after <body>. #}
+<style>
+  .dato-sidebar { position:fixed;inset:0 auto 0 0;width:248px;z-index:50;background:#111b2c;border-right:1px solid #263449;display:flex;flex-direction:column;transform:translateX(-100%);transition:transform .2s ease; }
+  .dato-sidebar.open { transform:translateX(0); }
+  .dato-sidebar nav { overflow:auto; padding:12px;display:flex;flex-direction:column;gap:4px; }
+  .dato-sidebar .nav-link { display:flex;gap:12px;align-items:center;border-radius:10px;padding:11px 12px;color:#aebed2;font-size:14px;text-decoration:none; }
+  .dato-sidebar .nav-link:hover { background:#24334b;color:white; }
+  .dato-sidebar .nav-link.active { background:#293c58;color:#f8fafc;font-weight:600; }
+  .dato-shade { display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:49; }
+  .dato-shade.open { display:block; }
+  .dato-menu-toggle { position:fixed;right:16px;bottom:16px;z-index:48;background:#2563eb;color:white;border:1px solid #6b9fff;padding:12px 17px;border-radius:999px;box-shadow:0 8px 28px #0007;font-size:14px;font-weight:700;cursor:pointer; }
+  @media(min-width:1024px) { body {padding-left:248px;} .dato-sidebar {transform:translateX(0);} .dato-shade,.dato-menu-toggle{display:none!important;} }
+</style>
+<div class="dato-shade" id="dato-shade" onclick="datoCloseMenu()"></div>
+<aside class="dato-sidebar" id="dato-sidebar" aria-label="Навигация по админке">
+  <div style="padding:24px 20px 16px;border-bottom:1px solid #263449">
+    <a href="/dashboard" style="font-weight:800;font-size:21px;color:white;text-decoration:none">◈ Круг Души</a>
+    <p style="font-size:12px;color:#8fa2b9;margin-top:5px">Панель управления</p>
+  </div>
+  <nav>
+    {% set navlinks=[
+      ('/dashboard','⌂','Главная'),
+      ('/users','♙','Пользователи'),
+      ('/subscriptions','▣','Подписки'),
+      ('/subscriptions#payment-providers','◇','Платежи'),
+      ('/broadcast','✉','Рассылки'),
+      ('/support','☏','Поддержка'),
+      ('/moderation','♜','Модерация'),
+      ('/reliability','◈','Мониторинг'),
+      ('/settings/bot','⚙','Настройки бота')
+    ] %}
+    {% for url,icon,label in navlinks %}
+      <a class="nav-link{% if request.url.path == url.split('#')[0] %} active{% endif %}" href="{{ url }}"><span style="font-size:18px;width:23px;text-align:center">{{ icon }}</span>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <div style="margin-top:auto;padding:16px;border-top:1px solid #263449;color:#8293aa;font-size:12px">Администрирование Telegram-бота</div>
+</aside>
+<button type="button" class="dato-menu-toggle" onclick="datoOpenMenu()" aria-controls="dato-sidebar" aria-label="Открыть меню">☰ Меню</button>
+<script>
+function datoOpenMenu(){document.getElementById('dato-sidebar').classList.add('open');document.getElementById('dato-shade').classList.add('open');}
+function datoCloseMenu(){document.getElementById('dato-sidebar').classList.remove('open');document.getElementById('dato-shade').classList.remove('open');}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')datoCloseMenu();});
+</script>
