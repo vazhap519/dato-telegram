@@ -20,6 +20,7 @@ from db.payment_providers import initialize_payment_providers, providers as list
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
+from db.group_moderation import initialize_group_moderation, get_moderation_settings, save_moderation_settings, moderation_stats
 from db.group_access import initialize_group_access, group_settings, save_group, has_group_access, record_invite, latest_invites, clear_completed_invite_history, group_removal_test, set_group_removal_test
 from db.tribute_payment_test import initialize_tribute_payment_tests, create_tribute_test_link, recent_tribute_test_links, TEST_SUBSCRIPTION_ID, TEST_PERIOD_ID
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
@@ -67,6 +68,7 @@ async def setup_onboarding():
     await initialize_payment_providers()
     await initialize_reliability_settings()
     await initialize_group_access()
+    await initialize_group_moderation()
     await initialize_expiry_monitor()
     await initialize_subscription_automation()
     await initialize_tribute_paid_removal()
@@ -85,6 +87,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/broadcast/rule",
         "/reliability/settings",
         "/reliability/test",
+        "/moderation/settings",
         "/subscriptions/grant",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
@@ -330,6 +333,33 @@ async def dashboard(
             "csrf_token": csrf_token
         }
     )
+
+
+@app.get("/moderation")
+async def moderation_page(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(
+        request=request, name="moderation.html", context={
+            "moderation": await get_moderation_settings(),
+            "moderation_stats": await moderation_stats(),
+            "tg_group": await group_settings(),
+            "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
+        }, headers={"Cache-Control":"no-store"}
+    )
+
+
+@app.post("/moderation/settings")
+async def moderation_save(
+    join_enabled: bool = Form(False),
+    leave_enabled: bool = Form(False),
+    pin_enabled: bool = Form(False),
+    other_enabled: bool = Form(False),
+    csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user),
+):
+    await save_moderation_settings(
+        join_enabled, leave_enabled, pin_enabled, other_enabled, user["user"]
+    )
+    return RedirectResponse("/moderation?saved=1",status_code=303)
 
 
 @app.get("/reliability")
