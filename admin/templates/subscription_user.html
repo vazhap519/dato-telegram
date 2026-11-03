@@ -1,5 +1,6 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Карточка подписчика</title><script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-gray-900 text-white"><main class="max-w-5xl mx-auto p-5 md:p-8 space-y-6">
+<body class="bg-gray-900 text-white">
+{% include "_sidebar.html" %}<main class="max-w-5xl mx-auto p-5 md:p-8 space-y-6">
 <header class="flex items-center justify-between gap-4"><div><h1 class="text-2xl font-bold">👤 {{ ([participant.first_name,participant.last_name]|select|join(' ')) or (participant.username or 'Участник') }}</h1><p class="text-gray-400">Telegram ID: {{ participant.telegram_id }}</p></div><a class="px-4 py-2 bg-gray-700 rounded" href="/subscriptions">← Подписки</a></header>
 <section class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3" id="subscriber-summary">
 <div class="bg-gray-800 rounded-xl p-4"><div class="text-gray-400 text-xs">Право доступа</div><div class="font-semibold mt-2 text-lg {{ 'text-green-300' if access_summary.active else 'text-amber-300' }}">{{ 'Постоянный' if access_summary.permanent else 'Активен' if access_summary.active else 'Нет активного права' }}</div></div>
