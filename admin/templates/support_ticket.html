@@ -110,6 +110,20 @@ onsubmit="return confirm('Удалить сообщение из Telegram-чат
       const data=await resp.json();
       const nearEnd=box.scrollHeight-box.scrollTop-box.clientHeight<150;
       data.messages.forEach(append);
+      for(const id of (data.deleted_ids||[])){
+        const node=box.querySelector('[data-message-id="'+id+'"]');
+        if(node && node.dataset.deleted!=='1'){
+          const bubble=node.firstElementChild;
+          if(bubble){
+            bubble.replaceChildren();
+            const label=document.createElement('span');
+            label.className='text-gray-300 italic text-sm';
+            label.textContent='🗑 Сообщение удалено из Telegram';
+            bubble.appendChild(label);
+          }
+          node.dataset.deleted='1';
+        }
+      }
       if(nearEnd)box.scrollTop=box.scrollHeight;
     }catch(e){/* next poll retries */}
   }
