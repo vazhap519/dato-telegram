@@ -15,12 +15,12 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
-from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags
+from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
 from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts, archive_provider, archived_providers, restore_provider
-from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
+from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, support_message_for_delete, mark_support_message_deleted, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
 from db.group_moderation import initialize_group_moderation, get_moderation_settings, save_moderation_settings, moderation_stats, save_content_settings, moderation_history, moderation_summary, clear_user_warnings, moderation_offenders, moderation_user_details, record_manual_action, moderation_manual_history, set_trusted_user
@@ -101,6 +101,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/grant",
         "/subscriptions/profile",
         "/subscriptions/message",
+        "/subscriptions/message/delete",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
         "/subscriptions/invites/history/clear",
@@ -790,6 +791,38 @@ async def support_thread(request: Request,ticket_id:int,
     })
 
 
+@app.post("/support/{ticket_id}/delete/{message_id}")
+async def support_delete_message(
+    ticket_id:int,message_id:int,confirm:str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    from aiogram import Bot
+    import logging
+    if confirm!="DELETE_BOTH":
+        raise HTTPException(400,detail="Подтвердите удаление у пользователя")
+    row=await support_message_for_delete(ticket_id,message_id)
+    if not row: raise HTTPException(404,detail="Сообщение не найдено")
+    if row["deleted_at"]:
+        return RedirectResponse(f"/support/{ticket_id}?delete=done",status_code=303)
+    if row["delivery_status"] not in ("sent",):
+        raise HTTPException(400,detail="Сообщение не было доставлено в Telegram")
+    try:
+        ensure_telegram_message_deletable(row["telegram_message_id"],row["created_at"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            await bot.delete_message(row["telegram_id"],row["telegram_message_id"])
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Support message deletion failed ticket=%s message=%s: %s",
+            ticket_id,message_id,type(exc).__name__
+        )
+        return RedirectResponse(f"/support/{ticket_id}?delete=failed",status_code=303)
+    await mark_support_message_deleted(ticket_id,message_id,user["user"])
+    return RedirectResponse(f"/support/{ticket_id}?delete=done",status_code=303)
+
+
 @app.post("/support/{ticket_id}/reply")
 async def support_admin_reply(ticket_id:int,body:str=Form(...),
                               csrf_check=Depends(verify_csrf),
@@ -801,14 +834,15 @@ async def support_admin_reply(ticket_id:int,body:str=Form(...),
     sent=False
     try:
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
-            await bot.send_message(uid,
+            delivered=await bot.send_message(uid,
                 body.strip(),
                 parse_mode=None)
+            tg_mid=delivered.message_id
             sent=True
     except Exception:
         import logging
         logging.exception("Support reply delivery failed for ticket %s",ticket_id)
-    await mark_delivery(mid,sent)
+    await mark_delivery(mid,sent,tg_mid if sent else None)
     return RedirectResponse(f"/support/{ticket_id}?sent={'ok' if sent else 'fail'}",status_code=303)
 
 
@@ -824,14 +858,15 @@ async def support_retry_failed_message(ticket_id:int,message_id:int,
         from aiogram import Bot
         from bot.support_messages import format_staff_reply,reply_keyboard
         async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
-            await bot.send_message(failed["telegram_id"],
+            delivered=await bot.send_message(failed["telegram_id"],
                 failed["body"],
                 parse_mode=None)
+            tg_mid=delivered.message_id
         sent=True
     except Exception:
         import logging
         logging.exception("Retry support delivery failed for ticket %s",ticket_id)
-    await mark_delivery(message_id,sent)
+    await mark_delivery(message_id,sent,tg_mid if sent else None)
     return RedirectResponse(f"/support/{ticket_id}?sent={'ok' if sent else 'fail'}",status_code=303)
 
 
@@ -1288,6 +1323,46 @@ async def subscription_user_page(
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
+
+
+def ensure_telegram_message_deletable(message_id,created_at):
+    """Bot API normally permits deletion for messages younger than 48 hours."""
+    from datetime import datetime,timezone,timedelta
+    if not message_id or not created_at:
+        raise ValueError("У этого сообщения не сохранён Telegram ID — удалить его у пользователя невозможно")
+    if datetime.now(timezone.utc)-created_at > timedelta(hours=47,minutes=55):
+        raise ValueError("Telegram разрешает удалять сообщения только в течение 48 часов")
+
+
+@app.post("/subscriptions/message/delete")
+async def delete_subscriber_direct_message(
+    telegram_id: int=Form(...),message_id: int=Form(...),
+    confirm: str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    from aiogram import Bot
+    import logging
+    if confirm!="DELETE_BOTH" or telegram_id<=0 or message_id<=0:
+        raise HTTPException(400,detail="Подтвердите удаление сообщения у пользователя")
+    row=await direct_message_for_delete(telegram_id,message_id)
+    if not row: raise HTTPException(404,detail="Сообщение не найдено")
+    if row["deleted_at"]:
+        return RedirectResponse(f"/subscriptions/users/{telegram_id}?delete=done#subscriber-direct",303)
+    if row["status"]!="sent":
+        raise HTTPException(400,detail="Сообщение не доставлено; удалить его из Telegram невозможно")
+    try:
+        ensure_telegram_message_deletable(row["telegram_message_id"],row["finished_at"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            await bot.delete_message(telegram_id,row["telegram_message_id"])
+    except Exception as exc:
+        logging.getLogger(__name__).warning("CRM Telegram deletion failed message=%s: %s",
+                                             message_id,type(exc).__name__)
+        return RedirectResponse(f"/subscriptions/users/{telegram_id}?delete=failed#subscriber-direct",303)
+    await mark_direct_message_deleted(telegram_id,message_id,user["user"])
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?delete=done#subscriber-direct",303)
 
 
 @app.post("/subscriptions/message")
