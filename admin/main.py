@@ -769,11 +769,15 @@ async def support_new_messages(ticket_id:int,after:int=0,user=Depends(get_curren
     from fastapi.responses import JSONResponse
     ticket,messages=await ticket_detail(ticket_id)
     if not ticket: raise HTTPException(404,detail="Диалог не найден")
-    return JSONResponse({"status":ticket["status"],"messages":[{
+    return JSONResponse({"status":ticket["status"],
+        "deleted_ids":[m["id"] for m in messages if m.get("deleted_at")],
+        "messages":[{
         "id":m["id"],"actor":m["actor"],"body":m["body"],
         "media_type":m.get("media_type","text"),
         "has_file":bool(m.get("file_id")),
         "delivery_status":m["delivery_status"],
+        "deleted_at":bool(m.get("deleted_at")),
+        "can_delete":bool(m.get("telegram_message_id")) and not bool(m.get("deleted_at")) and m["delivery_status"]=="sent",
         "time":tbilisi_time(m["created_at"])
     } for m in messages if m["id"]>max(0,after)]})
 
