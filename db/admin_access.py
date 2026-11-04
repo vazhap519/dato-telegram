@@ -12,10 +12,17 @@ async def initialize_staff():
           )
         """))
         await c.execute(text("""
-          ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'owner'
+          ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'
         """))
         await c.execute(text("""
           ALTER TABLE admins ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE
+        """))
+        # Existing oldest admin account is the initial owner. Other legacy
+        # accounts remain admins rather than gaining owner-only privileges.
+        await c.execute(text("""
+          UPDATE admins SET role='owner'
+          WHERE id=(SELECT MIN(id) FROM admins)
+            AND NOT EXISTS(SELECT 1 FROM admins WHERE role='owner')
         """))
         await c.execute(text("""
           ALTER TABLE admins ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ
