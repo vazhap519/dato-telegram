@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
 from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted, clear_visible_crm_history
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
@@ -67,6 +68,7 @@ async def setup_onboarding():
     await initialize_health_snapshots()
     await initialize_subscriber_profiles()
     await initialize_crm()
+    await initialize_extensions()
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
     await initialize_tribute_auto()
@@ -100,6 +102,9 @@ async def protect_admin_forms(request: Request, call_next):
         "/moderation/trusted",
         "/subscriptions/grant",
         "/subscriptions/profile",
+        "/crm/task/create",
+        "/crm/task/status",
+        "/crm/task/alerts",
         "/subscriptions/message",
         "/subscriptions/message/delete",
         "/subscriptions/history/clear",
@@ -364,6 +369,74 @@ async def event_journal_page(
         },headers={"Cache-Control":"no-store"}
     )
 
+
+@app.get("/crm/tasks")
+async def crm_tasks_page(request:Request,status:str="open",user=Depends(get_current_user)):
+    return templates.TemplateResponse(
+        request=request,name="crm_tasks.html",context={
+          "tasks":await crm_tasks(status=status),
+          "status":status,"settings":await task_notification_settings(),
+          "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
+        },headers={"Cache-Control":"no-store"}
+    )
+
+@app.post("/crm/task/create")
+async def crm_task_create(
+    telegram_id:int=Form(...),title:str=Form(...),details:str=Form(""),
+    due_at:str=Form(...),assignee:str=Form(""),remind:bool=Form(False),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    from datetime import datetime,timezone
+    from zoneinfo import ZoneInfo
+    if telegram_id<=0:raise HTTPException(400,detail="Некорректный Telegram ID")
+    try:
+        due=datetime.fromisoformat(due_at)
+        if due.tzinfo is not None:raise ValueError()
+        due=due.replace(tzinfo=ZoneInfo("Asia/Tbilisi")).astimezone(timezone.utc)
+        if due<datetime.now(timezone.utc):raise ValueError()
+        await create_task(telegram_id,title,details,due,assignee or user["user"],remind,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail="Некорректная дата или поля задачи: "+str(exc))
+    return RedirectResponse(f"/subscriptions/users/{telegram_id}?task=created#subscriber-tasks",303)
+
+@app.post("/crm/task/status")
+async def crm_task_change(
+    task_id:int=Form(...),telegram_id:int=Form(0),status:str=Form(...),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    try:
+        await update_task(task_id,telegram_id or None,status,user["user"])
+    except ValueError as exc:raise HTTPException(400,detail=str(exc))
+    dest=f"/subscriptions/users/{telegram_id}#subscriber-tasks" if telegram_id else "/crm/tasks"
+    return RedirectResponse(dest,303)
+
+@app.post("/crm/task/alerts")
+async def crm_alert_settings(
+    enabled:bool=Form(False),telegram_id:str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    try:
+        await update_task_notification_settings(enabled,int(telegram_id) if telegram_id.strip() else None,user["user"])
+    except ValueError as exc:raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/crm/tasks?saved=1",303)
+
+@app.get("/search")
+async def admin_search_page(request:Request,q:str="",user=Depends(get_current_user)):
+    return templates.TemplateResponse(request=request,name="admin_search.html",
+        context={"q":q[:80],"results":await global_search(q)},
+        headers={"Cache-Control":"no-store"})
+
+@app.get("/operations")
+async def operation_log_page(request:Request,user=Depends(get_current_user)):
+    return templates.TemplateResponse(request=request,name="admin_operations.html",
+        context={"operations":await operations()},
+        headers={"Cache-Control":"no-store"})
+
+@app.get("/issues")
+async def issues_page(request:Request,user=Depends(get_current_user)):
+    return templates.TemplateResponse(request=request,name="admin_issues.html",
+        context={"failures":await failure_queue()},
+        headers={"Cache-Control":"no-store"})
 
 @app.get("/settings/bot")
 async def bot_settings_page(request: Request,user=Depends(get_current_user)):
@@ -1331,6 +1404,7 @@ async def subscription_user_page(
             "verified_payments":await subscriber_verified_payments(telegram_id),
             "access_summary":await subscriber_access_summary(telegram_id),
             "crm_timeline":await crm_timeline(telegram_id),
+            "crm_tasks":await crm_tasks(uid=telegram_id,status="all",limit=100),
             "crm_messages":direct_messages,
             "crm_deletable_ids":{item["id"] for item in direct_messages
                 if not item["deleted_at"] and item["status"]=="sent" and
