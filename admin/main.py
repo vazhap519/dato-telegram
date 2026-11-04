@@ -2030,6 +2030,7 @@ async def save_template(
 ):
     try:
         await upsert_template(template_id, title, body)
+        await admin_action_audit(user["user"],"message_template_saved",str(template_id or "new"),title)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return RedirectResponse("/broadcast#broadcast-templates", status_code=303)
@@ -2042,6 +2043,7 @@ async def save_rule(
 ):
     try:
         await set_rule(trigger, enabled, body)
+        await admin_action_audit(user["user"],"reminder_rule_saved",trigger,str(enabled))
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return RedirectResponse("/broadcast#broadcast-automation", status_code=303)
@@ -2128,6 +2130,7 @@ async def update_settings(
         )
 
         await session.commit()
+    await admin_action_audit(user["user"],"bot_settings_saved","settings")
 
     return RedirectResponse(
         url="/settings/bot?saved=1",
@@ -2171,6 +2174,7 @@ async def update_flow(
         "subscription_text": subscription_text.strip(),
         "subscription_url": clean_url(subscription_url)
     })
+    await admin_action_audit(user["user"],"onboarding_settings_saved","offer_version",version)
     return RedirectResponse(url="/settings/bot?saved=1", status_code=303)
 
 
