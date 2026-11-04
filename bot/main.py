@@ -28,6 +28,8 @@ from bot.moderation_handlers import delete_service_message
 from bot.content_moderation import moderate_group_message
 from db.broadcast import initialize_broadcasts
 from db.automation import initialize_automation, enqueue_reminders
+from db.admin_extensions import initialize_extensions
+from bot.crm_task_worker import crm_task_worker
 from bot.broadcast_worker import broadcast_worker
 from bot.handlers import broadcast_optout_handler, broadcast_optin_handler, broadcast_stop_handler
 
@@ -82,6 +84,7 @@ async def main():
     await initialize_tribute_paid_removal()
     await initialize_broadcasts()
     await initialize_automation()
+    await initialize_extensions()
     async def reminder_scheduler():
         while True:
             try:
@@ -94,6 +97,7 @@ async def main():
     expiry_task = asyncio.create_task(expiry_worker(bot))
     group_test_task = asyncio.create_task(group_removal_test_worker(bot))
     tribute_task = asyncio.create_task(tribute_subscription_worker(bot))
+    crm_task = asyncio.create_task(crm_task_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
@@ -102,6 +106,7 @@ async def main():
         expiry_task.cancel()
         group_test_task.cancel()
         tribute_task.cancel()
+        crm_task.cancel()
         try:
             await task
         except asyncio.CancelledError:
@@ -116,6 +121,10 @@ async def main():
             pass
         try:
             await tribute_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await crm_task
         except asyncio.CancelledError:
             pass
 
