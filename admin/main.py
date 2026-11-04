@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.operations_dashboard import automation_overview
+from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
@@ -71,6 +72,7 @@ async def setup_onboarding():
     await initialize_subscriber_profiles()
     await initialize_crm()
     await initialize_extensions()
+    await initialize_staff()
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
     await initialize_tribute_auto()
@@ -204,11 +206,22 @@ templates.env.filters["tbilisi_time"] = tbilisi_time
 
 
 # 🔐 AUTH
-def get_current_user(access_token: str = Cookie(None)):
+async def get_current_user(request: Request,access_token: str = Cookie(None)):
     if not access_token:
-        raise HTTPException(status_code=401)
-
-    return decode_token(access_token)
+        raise HTTPException(status_code=401,detail="Требуется вход")
+    try:
+        payload=decode_token(access_token)
+        username=payload.get("user","")
+        if not username:raise ValueError("Missing identity")
+    except Exception:
+        raise HTTPException(status_code=401,detail="Недействительная сессия")
+    account=await read_staff(username)
+    if not account or not account["enabled"]:
+        raise HTTPException(status_code=401,detail="Учётная запись отключена")
+    if not staff_allowed(account["role"],request.url.path,request.method):
+        raise HTTPException(status_code=403,detail="Недостаточно полномочий")
+    request.state.admin_role=account["role"]
+    return {"user":account["username"],"role":account["role"]}
 
 
 # 🌐 ROOT
@@ -235,6 +248,12 @@ async def login(
     password: str = Form(...)
 ):
     try:
+        if await login_throttled(username):
+            return templates.TemplateResponse(
+                request=request,name="login.html",
+                context={"error":"Слишком много попыток. Повторите вход позже."},
+                status_code=429
+            )
         async with SessionLocal() as session:
 
             # ✅ CREATE TABLE
@@ -260,6 +279,7 @@ async def login(
                 user = user._mapping
 
             if not user:
+                await record_login(username,"failed",request.client.host if request.client else "")
                 return templates.TemplateResponse(
                     request=request,
                     name="login.html",
@@ -268,7 +288,8 @@ async def login(
                     }
                 )
 
-            if not verify_password(password, user["password"]):
+            if not verify_password(password, user["password"]) or not user.get("enabled",True):
+                await record_login(username,"failed",request.client.host if request.client else "")
                 return templates.TemplateResponse(
                     request=request,
                     name="login.html",
@@ -277,13 +298,17 @@ async def login(
                     }
                 )
 
+            await record_login(username,"success",request.client.host if request.client else "")
+            await mark_logged_in(username)
             # ✅ CREATE TOKEN
             token = create_token({
                 "user": username
             })
 
             response = RedirectResponse(
-                url="/dashboard",
+                url=("/support" if user.get("role")=="support"
+                     else "/analytics" if user.get("role")=="analyst"
+                     else "/dashboard"),
                 status_code=302
             )
 
@@ -2076,6 +2101,8 @@ async def change_credentials(
     new_username: str = Form(...),
     new_password: str = Form(...)
 ):
+    if user.get("role")!="owner":
+        raise HTTPException(403,detail="Только владелец может менять учётные данные")
     if not new_username or not new_password:
         raise HTTPException(
             status_code=400,
@@ -2158,12 +2185,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
         async with SessionLocal() as session:
             result = await session.execute(
-                text("SELECT username FROM admins WHERE username=:u"),
+                text("SELECT username,enabled,role FROM admins WHERE username=:u"),
                 {"u": username}
             )
-
-            if not result.fetchone():
-                raise ValueError("Unknown user")
+            account=result.mappings().first()
+            if not account or not account["enabled"] or account["role"] not in ("owner","admin"):
+                raise ValueError("Access revoked")
 
     except Exception:
         await websocket.close(code=1008)
