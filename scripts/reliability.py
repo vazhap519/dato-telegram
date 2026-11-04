@@ -186,6 +186,17 @@ def health():
                 verify(latest)
             except Exception:
                 issues.append("Last backup archive cannot be read")
+    # Offsite checks are active only when the external backup timer is enabled.
+    try:
+        enabled=run(["systemctl","is-enabled","dato-offsite-backup.timer"],timeout=6)
+        if enabled.stdout.strip()==b"enabled":
+            marker=STATE_DIR/"offsite-last-success"
+            if not marker.is_file():
+                issues.append("Encrypted offsite backup has never succeeded")
+            elif dt.datetime.now(dt.timezone.utc).timestamp()-int(marker.read_text().strip())>48*3600:
+                issues.append("Encrypted offsite backup is older than 48 hours")
+    except Exception:
+        pass
     url = os.getenv("DATO_HEALTH_URL", "https://bot.arutyun.me/login")
     try:
         request = urllib.request.Request(url, headers={"User-Agent":"dato-health/1.0"})
