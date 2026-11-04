@@ -44,9 +44,11 @@
       ] %}
       {% if role=='owner' %}{% set navlinks=navlinks+[('/staff','♙','Администраторы')] %}{% endif %}
     {% endif %}
+    {% if role!='support' %}
     <form action="/search" method="get" class="px-2 pb-3">
       <input type="search" name="q" minlength="2" placeholder="🔎 Быстрый поиск" class="w-full px-3 py-2 rounded-lg bg-slate-800 text-gray-100 text-sm border border-slate-700" style="background:#24334b;color:white">
     </form>
+    {% endif %}
     {% for url,icon,label in navlinks %}
       <a class="nav-link{% if request.url.path == url.split('#')[0] %} active{% endif %}" href="{{ url }}"><span style="font-size:18px;width:23px;text-align:center">{{ icon }}</span>{{ label }}</a>
     {% endfor %}
