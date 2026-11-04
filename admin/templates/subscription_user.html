@@ -51,7 +51,13 @@ onsubmit="return confirm('Отправить личное сообщение у�
 <input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
 <input type="hidden" name="request_key" value="{{ message_request_key }}">
 <input type="hidden" name="confirm" value="SEND_DIRECT">
-<textarea name="body" maxlength="2000" minlength="1" required rows="5" class="w-full bg-gray-700 rounded-lg p-3" placeholder="Текст личного сообщения без разметки"></textarea>
+<label class="block text-sm mb-2">Шаблон сообщения
+<select class="block w-full bg-gray-700 rounded-lg p-3 mt-1" id="personal-template-selector" onchange="if(this.value)document.getElementById('personal-message-body').value=this.value">
+<option value="">Написать самостоятельно</option>
+{% for t in crm_templates %}<option value="{{ t.body }}">{{ t.title }}</option>{% endfor %}
+</select></label>
+<textarea id="personal-message-body" name="body" maxlength="2000" minlength="1" required rows="5" class="w-full bg-gray-700 rounded-lg p-3" placeholder="Текст личного сообщения без разметки"></textarea>
+<p class="text-xs text-gray-400">Шаблон подставляет текст, но не отправляет его автоматически. Проверь переменные вроде {first_name} перед отправкой.</p>
 <button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3">Отправить сообщение</button>
 </form>
 <div class="border-t border-gray-700 pt-3">
