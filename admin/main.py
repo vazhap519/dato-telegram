@@ -862,6 +862,7 @@ async def reliability_page(request: Request, user=Depends(get_current_user)):
     return templates.TemplateResponse(
         request=request, name="reliability.html", context={
             "settings": await get_reliability_settings(),
+            "monitor": await last_health_snapshot(),
             "csrf_token": make_csrf_token(request.cookies.get("access_token","")),
         }, headers={"Cache-Control":"no-store"}
     )
