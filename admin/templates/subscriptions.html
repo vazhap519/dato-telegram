@@ -216,9 +216,20 @@
 <button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-2">Показать</button>
 </form>
 <p class="text-gray-400 text-xs">«Оплатившие» — только подтверждённые платежи из проверенных webhook-событий. Ручные права и нажатия на ссылку не считаются оплатой. Пока API Tribute не подключён, список покупателей может оставаться пустым. Источник означает систему оплаты, а не способ вступления в Telegram-группу.</p>
-<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Участник</th><th>ID</th><th>Состояние доступа</th><th>Окончание</th><th>Оплата через</th><th>Метки</th><th></th></tr></thead><tbody>
+{% if request.query_params.get('bulk') %}<p class="text-emerald-300 text-sm">Обновлены метки у {{ request.query_params.get('bulk') }} участников.</p>{% endif %}
+<form method="post" action="/crm/bulk/tag" onsubmit="return confirm('Изменить метки выбранных участников?')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="confirm" value="BULK_TAG">
+<div class="grid md:grid-cols-[1fr_auto_auto_auto] gap-2 items-end bg-gray-700/40 rounded-xl p-3 mb-3">
+<label class="text-sm">Метка для выбранных участников
+<input name="tag" maxlength="40" required placeholder="Например, Первопроходец" class="mt-1 block w-full bg-gray-700 rounded-lg p-2"></label>
+<select name="operation" class="bg-gray-700 rounded-lg p-2"><option value="add">Добавить метку</option><option value="remove">Убрать метку</option></select>
+<button class="bg-indigo-600 rounded-lg px-4 py-2">Применить</button>
+<span class="text-xs text-gray-400">До 50 отмеченных участников</span></div>
+<div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="text-gray-400"><th class="py-2">Выбор</th><th class="py-2">Участник</th><th>ID</th><th>Состояние доступа</th><th>Окончание</th><th>Оплата через</th><th>Метки</th><th></th></tr></thead><tbody>
 {% for u in users %}
 <tr class="border-t border-gray-700">
+<td class="py-3"><input type="checkbox" name="telegram_ids" value="{{ u.telegram_id }}" aria-label="Выбрать {{ u.telegram_id }}"></td>
 <td class="py-3">{{ ([u.first_name,u.last_name]|select|join(' ')) or (u.username or 'Имя не указано') }}</td>
 <td class="font-mono text-xs">{{ u.telegram_id }}</td>
 <td>{% if u.access_status=='lifetime' %}<span class="text-green-300">Постоянный</span>{% elif u.access_status=='active' %}<span class="text-green-300">Действует</span>{% elif u.access_status=='expiring' %}<span class="text-amber-300">Скоро истечёт</span>{% elif u.access_status=='scheduled' %}<span class="text-blue-300">Запланирован</span>{% elif u.access_status=='expired' %}<span class="text-red-300">Истёк</span>{% else %}<span class="text-gray-400">Нет доступа</span>{% endif %}</td>
@@ -227,8 +238,8 @@
 <td class="text-gray-300 text-xs max-w-48">{{ u.crm_tags or '—' }}</td>
 <td><a class="text-blue-300 underline whitespace-nowrap" href="/subscriptions/users/{{ u.telegram_id }}">Карточка →</a></td>
 </tr>
-{% else %}<tr><td colspan="7" class="p-5 text-gray-400">По выбранным условиям участников нет.</td></tr>{% endfor %}
-</tbody></table></div>
+{% else %}<tr><td colspan="8" class="p-5 text-gray-400">По выбранным условиям участников нет.</td></tr>{% endfor %}
+</tbody></table></div></form>
 <nav class="flex justify-between items-center text-sm"><div>{% if page>1 %}<a class="text-blue-300" href="{{ prev_url }}#subscribers">← Назад</a>{% endif %}</div><div>Страница {{ page }} / {{ pages }}</div><div>{% if page<pages %}<a class="text-blue-300" href="{{ next_url }}#subscribers">Далее →</a>{% endif %}</div></nav>
 </section></main><script>
 // Open the correct block when returning from a form or following a section link.
