@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
 from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted, clear_visible_crm_history
@@ -437,6 +438,39 @@ async def issues_page(request:Request,user=Depends(get_current_user)):
     return templates.TemplateResponse(request=request,name="admin_issues.html",
         context={"failures":await failure_queue()},
         headers={"Cache-Control":"no-store"})
+
+@app.get("/analytics")
+async def analytics_page(request:Request,user=Depends(get_current_user)):
+    return templates.TemplateResponse(request=request,name="admin_analytics.html",
+       context={"data":await analytics_report()},headers={"Cache-Control":"no-store"})
+
+@app.get("/exports/{kind}")
+async def export_admin_csv(kind:str,user=Depends(get_current_user)):
+    import csv,io
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+    if kind not in ("subscribers","payments"):raise HTTPException(404,detail="Неизвестный экспорт")
+    entries=await (export_subscribers() if kind=="subscribers" else export_verified_payments())
+    fields=(["telegram_id","username","first_name","last_name","created_at","tags","verified_buyer","access_now"]
+      if kind=="subscribers" else
+      ["telegram_id","provider","provider_payment_id","amount","currency","payment_status","verified_at"])
+    file=io.StringIO()
+    writer=csv.writer(file)
+    writer.writerow(fields)
+    for row in entries:
+        values=[]
+        for field in fields:
+            value=row.get(field)
+            cell=str(value) if value is not None else ""
+            # Prevent formula injection when CSV is opened in spreadsheet apps.
+            if cell.lstrip().startswith(("=","+","-","@")) and field not in ("telegram_id",):
+                cell="'"+cell
+            values.append(cell)
+        writer.writerow(values)
+    filename=kind+"-"+datetime.utcnow().strftime("%Y%m%d")+".csv"
+    return StreamingResponse(iter(["\ufeff"+file.getvalue()]),media_type="text/csv; charset=utf-8",
+       headers={"Content-Disposition":f'attachment; filename="{filename}"',
+                "Cache-Control":"no-store","X-Content-Type-Options":"nosniff"})
 
 @app.get("/settings/bot")
 async def bot_settings_page(request: Request,user=Depends(get_current_user)):
