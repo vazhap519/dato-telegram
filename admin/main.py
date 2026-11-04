@@ -17,7 +17,7 @@ from db.database import SessionLocal
 from db.operations_dashboard import automation_overview
 from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
-from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, audit as admin_action_audit
+from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
 from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted, clear_visible_crm_history
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
@@ -110,6 +110,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/crm/task/status",
         "/crm/task/alerts",
         "/crm/bulk/tag",
+        "/issues/review",
         "/staff/add",
         "/staff/update",
         "/subscriptions/message",
@@ -477,10 +478,24 @@ async def operation_log_page(request:Request,user=Depends(get_current_user)):
         context={"operations":await operations()},
         headers={"Cache-Control":"no-store"})
 
+@app.post("/issues/review")
+async def review_issue(
+    kind:str=Form(...),item_id:str=Form(...),telegram_id:int=Form(...),
+    reviewed:bool=Form(False),note:str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    try:
+        await mark_issue_review(kind,item_id,telegram_id,reviewed,note,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/issues",303)
+
+
 @app.get("/issues")
 async def issues_page(request:Request,user=Depends(get_current_user)):
     return templates.TemplateResponse(request=request,name="admin_issues.html",
-        context={"failures":await failure_queue()},
+        context={"failures":await failure_queue(),
+                 "csrf_token":make_csrf_token(request.cookies.get("access_token",""))},
         headers={"Cache-Control":"no-store"})
 
 @app.get("/automations")
