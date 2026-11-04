@@ -222,6 +222,8 @@ async def get_current_user(request: Request,access_token: str = Cookie(None)):
     account=await read_staff(username)
     if not account or not account["enabled"]:
         raise HTTPException(status_code=401,detail="Учётная запись отключена")
+    if payload.get("sv") != account["session_version"]:
+        raise HTTPException(status_code=401,detail="Сессия завершена. Войдите снова")
     if not staff_allowed(account["role"],request.url.path,request.method):
         raise HTTPException(status_code=403,detail="Недостаточно полномочий")
     request.state.admin_role=account["role"]
@@ -306,7 +308,8 @@ async def login(
             await mark_logged_in(username)
             # ✅ CREATE TOKEN
             token = create_token({
-                "user": username
+                "user": username,
+                "sv": user["session_version"]
             })
 
             response = RedirectResponse(
@@ -328,10 +331,14 @@ async def login(
 
             return response
 
-    except Exception as e:
-        return {
-            "error": str(e)
-        }
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Admin login failed unexpectedly")
+        return templates.TemplateResponse(
+            request=request,name="login.html",
+            context={"error":"Не удалось выполнить вход. Попробуйте ещё раз."},
+            status_code=500
+        )
 
 
 # CSRF token validation
@@ -2210,7 +2217,8 @@ async def change_credentials(
                 UPDATE admins
                 SET
                     username = :new_username,
-                    password = :new_password
+                    password = :new_password,
+                    session_version = session_version + 1
                 WHERE username = :old_username
             """),
             {
@@ -2256,11 +2264,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
         async with SessionLocal() as session:
             result = await session.execute(
-                text("SELECT username,enabled,role FROM admins WHERE username=:u"),
+                text("SELECT username,enabled,role,session_version FROM admins WHERE username=:u"),
                 {"u": username}
             )
             account=result.mappings().first()
-            if not account or not account["enabled"] or account["role"] not in ("owner","admin"):
+            if (not account or not account["enabled"] or
+                account["role"] not in ("owner","admin") or
+                payload.get("sv") != account["session_version"]):
                 raise ValueError("Access revoked")
 
     except Exception:
