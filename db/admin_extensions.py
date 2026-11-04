@@ -208,9 +208,24 @@ async def failure_queue():
           FROM subscriber_direct_messages d WHERE d.status='failed'
           UNION ALL
           SELECT 'broadcast',r.broadcast_id::text,r.telegram_id,
-            r.error_code,r.sent_at
-          FROM broadcast_recipients r WHERE r.status IN ('failed','uncertain')
-          ORDER BY occurred_at DESC NULLS LAST LIMIT 100
+            COALESCE(r.error_code,r.status),COALESCE(r.sent_at,b.created_at)
+          FROM broadcast_recipients r
+          JOIN broadcasts b ON b.id=r.broadcast_id
+          WHERE r.status IN ('failed','uncertain')
+          UNION ALL
+          SELECT 'expiry',n.id::text,n.telegram_id,
+            'Не удалось доставить уведомление об окончании подписки',
+            COALESCE(n.attempted_at,n.created_at)
+          FROM subscription_expiry_notifications n
+          WHERE n.status='failed'
+          UNION ALL
+          SELECT 'task',a.task_id::text,t.telegram_id,
+            'Напоминание CRM: ' || COALESCE(a.error_code,'Ошибка отправки'),
+            a.created_at
+          FROM crm_task_reminder_attempts a
+          JOIN crm_tasks t ON t.id=a.task_id
+          WHERE a.state='failed'
+          ORDER BY occurred_at DESC NULLS LAST LIMIT 150
         """))).mappings().all()
         reviewed=(await s.execute(text("""
           SELECT kind,item_id,telegram_id,reviewed_by,reviewed_at,note
@@ -268,7 +283,7 @@ async def bulk_update_tag(user_ids,tag,operation,actor):
 
 
 async def mark_issue_review(kind,item_id,telegram_id,reviewed,note,actor):
-    if kind not in ("message","broadcast") or not item_id.isdecimal() or telegram_id<=0:
+    if kind not in ("message","broadcast","expiry","task") or not item_id.isdecimal() or telegram_id<=0:
         raise ValueError("Недопустимая операция")
     note=(note or "").strip()
     if len(note)>500:raise ValueError("Примечание слишком длинное")
