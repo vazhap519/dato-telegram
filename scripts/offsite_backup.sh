@@ -39,4 +39,7 @@ rclone copyto "$destination" "$tmp" --retries 3
 if ! cmp -s "$latest" "$tmp"; then
   echo "Offsite round-trip verification failed" >&2; exit 1
 fi
+install -d -m 0700 /var/lib/dato-reliability
+date -u +%s > /var/lib/dato-reliability/offsite-last-success
+chmod 0600 /var/lib/dato-reliability/offsite-last-success
 echo "Encrypted offsite archive verified:" "$(basename "$latest")"
