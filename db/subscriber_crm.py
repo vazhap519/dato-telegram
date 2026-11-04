@@ -33,6 +33,13 @@ async def initialize_crm():
             ADD COLUMN IF NOT EXISTS deleted_by TEXT
         """))
         await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS subscriber_crm_history_visibility (
+                telegram_id BIGINT PRIMARY KEY REFERENCES users(telegram_id),
+                cleared_before TIMESTAMPTZ NOT NULL,
+                cleared_by TEXT NOT NULL
+            )
+        """))
+        await db.execute(text("""
             CREATE INDEX IF NOT EXISTS subscriber_direct_messages_user_idx
             ON subscriber_direct_messages(telegram_id,created_at DESC)
         """))
@@ -76,6 +83,7 @@ async def crm_timeline(uid,limit=60):
                        a.action description,a.actor, ''::text status,
                        ''::text detail
                 FROM subscription_audit_log a WHERE a.telegram_id=:uid
+                  AND a.action<>'crm_history_cleared'
                 UNION ALL
                 SELECT v.verified_at,'payment',
                        'Платёж · ' || v.provider, v.provider,
@@ -103,6 +111,9 @@ async def crm_timeline(uid,limit=60):
                 FROM broadcast_recipients br WHERE br.telegram_id=:uid
                   AND br.sent_at IS NOT NULL
             ) timeline
+            WHERE happened_at > COALESCE(
+                (SELECT cleared_before FROM subscriber_crm_history_visibility
+                 WHERE telegram_id=:uid),'-infinity'::timestamptz)
             ORDER BY happened_at DESC
             LIMIT :limit
         """),{"uid":uid,"limit":max(1,min(100,int(limit)))})).mappings().all()
@@ -114,7 +125,10 @@ async def direct_message_history(uid,limit=25):
             SELECT id,actor,message,status,error_reason,created_at,finished_at,
                    telegram_message_id,deleted_at,deleted_by
             FROM subscriber_direct_messages
-            WHERE telegram_id=:uid ORDER BY id DESC LIMIT :limit
+            WHERE telegram_id=:uid AND created_at > COALESCE(
+                (SELECT cleared_before FROM subscriber_crm_history_visibility
+                 WHERE telegram_id=:uid),'-infinity'::timestamptz)
+            ORDER BY id DESC LIMIT :limit
         """),{"uid":uid,"limit":limit})).mappings().all()
         return [dict(row) for row in rows]
 
@@ -157,3 +171,31 @@ async def mark_direct_message_deleted(uid,mid,actor):
                 """),{"uid":uid,"actor":actor,"mid":mid})
                 return True
             return False
+
+
+async def clear_visible_crm_history(uid,actor):
+    """Hide prior CRM history, retain original evidence and Telegram messages.
+
+    This action intentionally does not modify support tickets, verified
+    payments, subscription permissions, message delivery, or audit records.
+    """
+    async with SessionLocal() as db:
+        async with db.begin():
+            user=(await db.execute(text("""
+                SELECT 1 FROM users WHERE telegram_id=:uid
+            """),{"uid":uid})).first()
+            if not user:
+                raise ValueError("Пользователь не найден")
+            await db.execute(text("""
+                INSERT INTO subscriber_crm_history_visibility
+                    (telegram_id,cleared_before,cleared_by)
+                VALUES (:uid,NOW(),:actor)
+                ON CONFLICT (telegram_id) DO UPDATE SET
+                    cleared_before=EXCLUDED.cleared_before,
+                    cleared_by=EXCLUDED.cleared_by
+            """),{"uid":uid,"actor":actor})
+            await db.execute(text("""
+                INSERT INTO subscription_audit_log(telegram_id,action,actor,details)
+                VALUES (:uid,'crm_history_cleared',:actor,
+                        jsonb_build_object('scope','visible_crm_history'))
+            """),{"uid":uid,"actor":actor})
