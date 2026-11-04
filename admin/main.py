@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
-from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted
+from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted, clear_visible_crm_history
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
@@ -102,6 +102,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/subscriptions/profile",
         "/subscriptions/message",
         "/subscriptions/message/delete",
+        "/subscriptions/history/clear",
         "/subscriptions/revoke",
         "/subscriptions/audit/clear",
         "/subscriptions/invites/history/clear",
@@ -1422,6 +1423,23 @@ async def send_subscriber_direct_message(
         result="failed"
     return RedirectResponse(
         f"/subscriptions/users/{telegram_id}?message={result}#subscriber-direct",
+        status_code=303
+    )
+
+
+@app.post("/subscriptions/history/clear")
+async def clear_subscriber_crm_history(
+    telegram_id: int=Form(...),confirm: str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user),
+):
+    if confirm!="CLEAR_CRM_HISTORY" or not 0<telegram_id<=9999999999999:
+        raise HTTPException(400,detail="Подтвердите очистку истории")
+    try:
+        await clear_visible_crm_history(telegram_id,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse(
+        f"/subscriptions/users/{telegram_id}?history=cleared#subscriber-timeline",
         status_code=303
     )
 
