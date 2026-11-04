@@ -17,7 +17,7 @@ from db.database import SessionLocal
 from db.operations_dashboard import automation_overview
 from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
-from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, audit as admin_action_audit
+from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, webhook_attention, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
 from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted, clear_visible_crm_history
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
@@ -368,10 +368,11 @@ async def dashboard(request: Request,user=Depends(get_current_user)):
     stats=await registration_stats()
     overview,recent_events=await dashboard_data()
     health_snapshot=await last_health_snapshot()
+    operations_status=await automation_overview()
     return templates.TemplateResponse(
         request=request,name="index.html",
         context={"stats":stats,"overview":overview,"recent_events":recent_events,
-                 "health":health_snapshot},
+                 "health":health_snapshot,"operations_status":operations_status},
         headers={"Cache-Control":"no-store"}
     )
 
@@ -502,6 +503,7 @@ async def review_issue(
 async def issues_page(request:Request,user=Depends(get_current_user)):
     return templates.TemplateResponse(request=request,name="admin_issues.html",
         context={"failures":await failure_queue(),
+                 "webhooks":await webhook_attention(),
                  "csrf_token":make_csrf_token(request.cookies.get("access_token",""))},
         headers={"Cache-Control":"no-store"})
 
