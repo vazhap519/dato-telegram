@@ -1552,6 +1552,7 @@ async def subscription_user_page(
             "access_summary":await subscriber_access_summary(telegram_id),
             "crm_timeline":await crm_timeline(telegram_id),
             "crm_tasks":await crm_tasks(uid=telegram_id,status="all",limit=100),
+            "crm_templates":await list_message_templates(),
             "crm_messages":direct_messages,
             "crm_deletable_ids":{item["id"] for item in direct_messages
                 if not item["deleted_at"] and item["status"]=="sent" and
