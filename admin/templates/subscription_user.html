@@ -13,10 +13,29 @@
 <a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-grant">➕ Назначить</a>
 <a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-payments">💳 Платежи</a>
 <a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-notes">📝 Заметки</a>
+<a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-tasks">📅 Задачи</a>
 <a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-direct">✉️ Написать</a>
 <a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-timeline">📅 Взаимодействия</a>
 <a class="rounded-lg bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm" href="#subscriber-audit">📋 История</a>
 </div>
+<details id="subscriber-tasks" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden" {% if request.query_params.get('task') %}open{% endif %}>
+<summary class="cursor-pointer select-none list-none p-5 font-semibold text-xl">📅 Задачи и напоминания ({{ crm_tasks|length }})</summary>
+<div class="p-5 pt-0 space-y-4">
+{% if request.query_params.get('task')=='created' %}<p class="text-emerald-300">Задача сохранена.</p>{% endif %}
+<form action="/crm/task/create" method="post" class="space-y-3 bg-gray-700/50 p-4 rounded-xl">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<label class="block text-sm">Задача<input required name="title" maxlength="160" class="w-full bg-gray-700 rounded-lg p-3 mt-1" placeholder="Уточнить продление"></label>
+<label class="block text-sm">Описание<textarea name="details" maxlength="2000" rows="2" class="w-full bg-gray-700 rounded-lg p-3 mt-1"></textarea></label>
+<div class="grid sm:grid-cols-2 gap-3"><label class="block text-sm">Срок (Тбилиси)<input type="datetime-local" name="due_at" required class="w-full bg-gray-700 rounded-lg p-3 mt-1"></label>
+<label class="block text-sm">Ответственный<input name="assignee" maxlength="100" placeholder="По умолчанию — текущий администратор" class="w-full bg-gray-700 rounded-lg p-3 mt-1"></label></div>
+<label class="flex gap-2 items-center text-sm"><input type="checkbox" name="remind" value="true">Telegram-уведомление в день и время задачи (если включены общие уведомления)</label>
+<button class="bg-indigo-600 rounded-lg px-4 py-3">Создать задачу</button></form>
+{% for t in crm_tasks %}<div class="bg-gray-700/50 rounded-lg p-3 text-sm flex flex-wrap justify-between gap-3">
+<div><div class="font-semibold">{{ t.title }}</div><div class="text-gray-400">{{ t.due_at|tbilisi_time('%d.%m.%Y %H:%M') }} · {{ t.assignee }} · {{ t.status }}</div>{% if t.details %}<p class="mt-2">{{ t.details }}</p>{% endif %}</div>
+{% if t.status=='open' %}<form method="post" action="/crm/task/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="task_id" value="{{ t.id }}"><input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}"><input type="hidden" name="status" value="done"><button class="text-emerald-300 underline">Завершить</button></form>{% endif %}
+</div>{% else %}<p class="text-gray-400 text-sm">Задач нет.</p>{% endfor %}
+<a href="/crm/tasks" class="text-sky-300 underline text-sm">Все задачи →</a>
+</div></details>
 <details id="subscriber-direct" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden" {% if request.query_params.get('message') %}open{% endif %}>
 <summary class="cursor-pointer select-none list-none px-5 py-4 font-semibold text-xl">✉️ Персональное сообщение через бота</summary>
 <div class="p-5 pt-1 space-y-4">
