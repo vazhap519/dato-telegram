@@ -27,11 +27,16 @@
   <div class="space-y-5">
     <section class="bg-[#1d293b] border border-slate-700/50 rounded-2xl p-5 space-y-4">
       <div class="flex flex-wrap justify-between items-center gap-3"><h2 class="text-xl font-semibold">Центр внимания</h2><span class="text-xs text-gray-400">На основании записей базы</span></div>
-      {% if overview.support_waiting or overview.expiring_7d or overview.broadcasts_pending %}
+      {% if overview.support_waiting or overview.expiring_7d or overview.broadcasts_pending
+         or operations_status.overdue_tasks or operations_status.failed_recipients
+         or operations_status.tribute_attention or operations_status.failed_crm_alerts %}
       <div class="space-y-2">
         {% if overview.support_waiting %}<a href="/support" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">💬 Обращений без ответа: {{ overview.support_waiting }} — открыть поддержку</a>{% endif %}
         {% if overview.expiring_7d %}<a href="/subscriptions?status=expiring#subscribers" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">⏳ Подписки истекают в ближайшие 7 дней: {{ overview.expiring_7d }}</a>{% endif %}
         {% if overview.broadcasts_pending %}<a href="/broadcast" class="block rounded-xl p-3 bg-indigo-900/20 border border-indigo-800 text-indigo-200">✉️ Рассылки ожидают обработки: {{ overview.broadcasts_pending }}</a>{% endif %}
+        {% if operations_status.overdue_tasks %}<a href="/crm/tasks" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">📅 Просроченные задачи участников: {{ operations_status.overdue_tasks }}</a>{% endif %}
+        {% if operations_status.failed_recipients or operations_status.failed_crm_alerts %}<a href="/issues" class="block rounded-xl p-3 bg-red-900/20 border border-red-800 text-red-200">⚠️ Проблемные отправки: {{ operations_status.failed_recipients + operations_status.failed_crm_alerts }}</a>{% endif %}
+        {% if operations_status.tribute_attention %}<a href="/subscriptions/tribute-events" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">💳 События Tribute, требующие проверки: {{ operations_status.tribute_attention }}</a>{% endif %}
       </div>
       {% else %}<p class="text-sm text-gray-300 bg-slate-800 rounded-lg p-4">По отслеживаемым показателям нет задач, требующих внимания.</p>{% endif %}
       <p class="text-xs text-gray-500">Ошибки доставки и мониторинга проверяются в соответствующих разделах, а не считаются автоматически исправными.</p>
