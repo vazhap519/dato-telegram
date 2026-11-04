@@ -17,7 +17,7 @@ from db.database import SessionLocal
 from db.operations_dashboard import automation_overview
 from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
-from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, audit as admin_action_audit
+from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
 from db.subscriber_crm import initialize_crm, crm_timeline, direct_message_history, begin_direct_message, finish_direct_message, crm_tags, direct_message_for_delete, mark_direct_message_deleted, clear_visible_crm_history
 from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber_profile, save_subscriber_profile, subscriber_verified_payments, subscriber_access_summary
@@ -109,6 +109,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/crm/task/create",
         "/crm/task/status",
         "/crm/task/alerts",
+        "/crm/bulk/tag",
         "/staff/add",
         "/staff/update",
         "/subscriptions/message",
@@ -397,6 +398,21 @@ async def event_journal_page(
             "next_url":"/events?"+urlencode({**options,"page":page+1})
         },headers={"Cache-Control":"no-store"}
     )
+
+
+@app.post("/crm/bulk/tag")
+async def crm_bulk_tag(
+    telegram_ids:list[int]=Form(...),tag:str=Form(...),
+    operation:str=Form("add"),confirm:str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    if confirm!="BULK_TAG":
+        raise HTTPException(400,detail="Подтвердите массовое изменение")
+    try:
+        count=await bulk_update_tag(telegram_ids,tag,operation,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse(f"/subscriptions?bulk={count}#subscribers",303)
 
 
 @app.get("/crm/tasks")
