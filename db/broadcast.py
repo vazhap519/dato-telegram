@@ -5,7 +5,7 @@ No broadcasting runs inside the FastAPI web process.
 from sqlalchemy import text
 from db.database import engine, SessionLocal
 
-AUDIENCES = {"started", "accepted", "clicked"}
+AUDIENCES = {"started", "accepted", "clicked", "buyers", "active", "lifetime", "crm_tag"}
 
 async def initialize_broadcasts():
     async with engine.begin() as conn:
@@ -25,6 +25,16 @@ async def initialize_broadcasts():
                 completed_at TIMESTAMPTZ,
                 CHECK (audience IN ('started','accepted','clicked'))
             )
+        """))
+        await conn.execute(text("""
+            ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS audience_tag TEXT NOT NULL DEFAULT ''
+        """))
+        await conn.execute(text("""
+            ALTER TABLE broadcasts DROP CONSTRAINT IF EXISTS broadcasts_audience_check
+        """))
+        await conn.execute(text("""
+            ALTER TABLE broadcasts ADD CONSTRAINT broadcasts_audience_check
+              CHECK (audience IN ('started','accepted','clicked','buyers','active','lifetime','crm_tag'))
         """))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS broadcast_recipients (
@@ -54,42 +64,78 @@ async def opt_in(telegram_id):
         await session.execute(text("DELETE FROM broadcast_opt_out WHERE telegram_id=:id"), {"id": telegram_id})
         await session.commit()
 
-async def count_recipients(audience):
+def eligibility_sql():
+    return """
+      NOT EXISTS (SELECT 1 FROM broadcast_opt_out o WHERE o.telegram_id=u.telegram_id)
+      AND (
+        :audience='started'
+        OR (:audience='accepted' AND EXISTS (
+            SELECT 1 FROM offer_acceptances a WHERE a.telegram_id=u.telegram_id))
+        OR (:audience='clicked' AND EXISTS (
+            SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id))
+        OR (:audience='buyers' AND EXISTS (
+            SELECT 1 FROM verified_payment_receipts v
+            WHERE v.telegram_id=u.telegram_id AND v.payment_status='paid'))
+        OR (:audience='active' AND (
+            EXISTS (SELECT 1 FROM access_grants g
+              WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+                AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+                AND (g.ends_at IS NULL OR g.ends_at>NOW()))
+            OR EXISTS (SELECT 1 FROM subscriptions sub
+              WHERE sub.telegram_id=u.telegram_id AND sub.status='active'
+                AND sub.paid_until>NOW())))
+        OR (:audience='lifetime' AND EXISTS (
+            SELECT 1 FROM access_grants g
+            WHERE g.telegram_id=u.telegram_id AND g.resource='community'
+              AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.ends_at IS NULL))
+        OR (:audience='crm_tag' AND EXISTS (
+            SELECT 1 FROM subscriber_admin_profiles p
+            WHERE p.telegram_id=u.telegram_id AND LOWER(:tag)=ANY (
+                SELECT LOWER(BTRIM(x)) FROM regexp_split_to_table(p.tags,',') x)))
+      )
+    """
+
+def validate_audience(audience,tag):
     if audience not in AUDIENCES:
-        raise ValueError("Unknown audience")
+        raise ValueError("Неизвестная аудитория")
+    tag=(tag or "").strip()
+    if audience=="crm_tag" and (not tag or len(tag)>40):
+        raise ValueError("Выберите метку получателей")
+    return tag if audience=="crm_tag" else ""
+
+async def count_recipients(audience,tag=''):
+    tag=validate_audience(audience,tag)
     async with SessionLocal() as session:
         return (await session.execute(text("""
-            SELECT COUNT(*) FROM users u
-            WHERE NOT EXISTS (SELECT 1 FROM broadcast_opt_out o WHERE o.telegram_id=u.telegram_id)
-              AND (:audience='started'
-                OR (:audience='accepted' AND EXISTS (SELECT 1 FROM offer_acceptances a WHERE a.telegram_id=u.telegram_id))
-                OR (:audience='clicked' AND EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id)))
-        """), {"audience": audience})).scalar_one()
+            SELECT COUNT(*) FROM users u WHERE
+        """+eligibility_sql()),{"audience":audience,"tag":tag})).scalar_one()
 
-async def create_broadcast(body, audience, scheduled_at=None, button_text='', button_url=''):
-    if audience not in AUDIENCES or not (1 <= len(body.strip()) <= 4000):
-        raise ValueError("Invalid broadcast")
+async def create_broadcast(body,audience,scheduled_at=None,button_text='',button_url='',tag=''):
+    tag=validate_audience(audience,tag)
+    if not 1<=len(body.strip())<=4000:
+        raise ValueError("Неверный текст рассылки")
     async with SessionLocal() as session:
         async with session.begin():
-            campaign_id = (await session.execute(text("""
-                INSERT INTO broadcasts (body, audience, scheduled_at, button_text, button_url) VALUES (:body, :audience, :scheduled_at, :button_text, :button_url)
+            campaign_id=(await session.execute(text("""
+                INSERT INTO broadcasts(body,audience,audience_tag,scheduled_at,button_text,button_url)
+                VALUES (:body,:audience,:tag,:scheduled,:button_text,:button_url)
                 RETURNING id
-            """), {"body": body.strip(), "audience": audience, "scheduled_at": scheduled_at, "button_text": button_text, "button_url": button_url})).scalar_one()
+            """),{"body":body.strip(),"audience":audience,"tag":tag,
+                  "scheduled":scheduled_at,"button_text":button_text,
+                  "button_url":button_url})).scalar_one()
             await session.execute(text("""
-                INSERT INTO broadcast_recipients (broadcast_id, telegram_id)
-                SELECT :bid, u.telegram_id FROM users u
-                WHERE NOT EXISTS (SELECT 1 FROM broadcast_opt_out o WHERE o.telegram_id=u.telegram_id)
-                  AND (:audience='started'
-                   OR (:audience='accepted' AND EXISTS (SELECT 1 FROM offer_acceptances a WHERE a.telegram_id=u.telegram_id))
-                   OR (:audience='clicked' AND EXISTS (SELECT 1 FROM subscription_clicks c WHERE c.telegram_id=u.telegram_id)))
-            """), {"bid": campaign_id, "audience": audience})
+                INSERT INTO broadcast_recipients(broadcast_id,telegram_id)
+                SELECT :bid,u.telegram_id FROM users u WHERE
+            """+eligibility_sql()+"""
+                ON CONFLICT DO NOTHING
+            """),{"bid":campaign_id,"audience":audience,"tag":tag})
             await session.execute(text("""
-                UPDATE broadcasts SET status='completed', completed_at=NOW()
+                UPDATE broadcasts SET status='completed',completed_at=NOW()
                 WHERE id=:id AND NOT EXISTS (
-                    SELECT 1 FROM broadcast_recipients WHERE broadcast_id=:id
-                )
-            """), {"id": campaign_id})
-        return campaign_id
+                    SELECT 1 FROM broadcast_recipients WHERE broadcast_id=:id)
+            """),{"id":campaign_id})
+            return campaign_id
+
 
 async def list_broadcasts():
     async with SessionLocal() as session:
