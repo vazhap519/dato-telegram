@@ -14,4 +14,6 @@
 <label class="text-sm"><input type="checkbox" name="enabled" value="true" {% if account.enabled %}checked{% endif %}>Доступ разрешён</label>
 <button class="bg-indigo-600 rounded-lg px-4 py-3">Сохранить</button></form>{% else %}<p class="text-xs text-sky-300">Владелец защищён от изменения через эту страницу.</p>{% endif %}
 </div>{% endfor %}</section>
+<details class="bg-gray-800 rounded-xl p-5"><summary class="cursor-pointer font-semibold">🔐 Последние попытки входа</summary>
+<div class="mt-3 max-h-96 overflow-y-auto"><table class="w-full text-sm text-left"><thead><tr><th>Время</th><th>Логин</th><th>Результат</th><th>IP</th></tr></thead><tbody>{% for e in login_events %}<tr class="border-t border-gray-700"><td class="py-2">{{ e.created_at|tbilisi_time('%d.%m.%Y %H:%M') }}</td><td>{{ e.username }}</td><td>{{ 'Успешно' if e.outcome=='success' else 'Ошибка' }}</td><td class="text-gray-400 font-mono text-xs">{{ e.ip }}</td></tr>{% else %}<tr><td colspan="4" class="p-4">Записей нет.</td></tr>{% endfor %}</tbody></table></div></details>
 <a href="/operations" class="text-sky-300 underline">История административных изменений →</a></main></body></html>
