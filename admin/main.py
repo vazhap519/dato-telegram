@@ -500,10 +500,17 @@ async def review_issue(
 
 
 @app.get("/issues")
-async def issues_page(request:Request,user=Depends(get_current_user)):
+async def issues_page(request:Request,view:str="open",user=Depends(get_current_user)):
+    if view not in ("open","reviewed","all"):
+        view="open"
+    all_failures=await failure_queue()
+    visible=[x for x in all_failures if
+             view=="all" or (bool(x["review"]) == (view=="reviewed"))]
     return templates.TemplateResponse(request=request,name="admin_issues.html",
-        context={"failures":await failure_queue(),
-                 "webhooks":await webhook_attention(),
+        context={"failures":visible,"all_count":len(all_failures),
+                 "open_count":sum(1 for x in all_failures if not x["review"]),
+                 "reviewed_count":sum(1 for x in all_failures if x["review"]),
+                 "view":view,"webhooks":await webhook_attention(),
                  "csrf_token":make_csrf_token(request.cookies.get("access_token",""))},
         headers={"Cache-Control":"no-store"})
 
