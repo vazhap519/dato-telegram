@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.operations_dashboard import automation_overview
-from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in
+from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
@@ -510,6 +510,7 @@ async def staff_page(request:Request,user=Depends(get_current_user)):
     if user["role"]!="owner":raise HTTPException(403,detail="Только владелец")
     return templates.TemplateResponse(request=request,name="admin_staff.html",
        context={"accounts":await staff_list(),
+                "login_events":await recent_login_events(),
                 "csrf_token":make_csrf_token(request.cookies.get("access_token",""))},
        headers={"Cache-Control":"no-store"})
 
