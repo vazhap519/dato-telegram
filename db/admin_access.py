@@ -118,3 +118,12 @@ async def mark_logged_in(username):
             await s.execute(text("""
               UPDATE admins SET last_login_at=NOW() WHERE username=:u
             """),{"u":username})
+
+
+async def recent_login_events(limit=80):
+    async with SessionLocal() as s:
+        rows=(await s.execute(text("""
+          SELECT username,outcome,ip,created_at
+          FROM admin_auth_events ORDER BY id DESC LIMIT :limit
+        """),{"limit":min(200,max(1,int(limit)))})).mappings().all()
+        return [dict(row) for row in rows]
