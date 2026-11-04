@@ -36,7 +36,10 @@ onsubmit="return confirm('Отправить личное сообщение у�
 <button class="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-4 py-3">Отправить сообщение</button>
 </form>
 <div class="border-t border-gray-700 pt-3">
-<h3 class="font-semibold mb-2">Последние персональные сообщения</h3>
+<div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+<h3 class="font-semibold">Последние персональные сообщения</h3>
+<a href="#subscriber-timeline" onclick="document.getElementById('subscriber-timeline').open=true" class="text-xs text-red-300 underline">Очистить историю ↓</a>
+</div>
 <div class="space-y-2 max-h-72 overflow-auto">
 {% for item in crm_messages %}
 <div class="bg-gray-700/60 rounded-lg p-3 text-sm"><div class="flex flex-wrap justify-between gap-2 text-xs text-gray-400"><span>{{ item.actor }} · {{ item.created_at|tbilisi_time }}</span>
@@ -58,7 +61,17 @@ class="mt-2">
 </div></div></div></details>
 <details id="subscriber-timeline" class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
 <summary class="cursor-pointer select-none list-none px-5 py-4 font-semibold text-xl">📅 История взаимодействий ({{ crm_timeline|length }})</summary>
-<div class="p-5 pt-1 space-y-2">
+<div class="p-5 pt-1 space-y-3">
+{% if request.query_params.get('history')=='cleared' %}<p class="rounded-lg bg-emerald-900/30 p-3 text-sm text-emerald-300">Видимая история очищена. Сообщения в Telegram, платежи и служебные журналы не изменены.</p>{% endif %}
+<div class="flex justify-end">
+<form method="post" action="/subscriptions/history/clear"
+ onsubmit="return confirm('Очистить видимую историю этого участника: личные сообщения и события? Сообщения в Telegram останутся, служебные журналы сохранятся. Продолжить?')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="telegram_id" value="{{ participant.telegram_id }}">
+<input type="hidden" name="confirm" value="CLEAR_CRM_HISTORY">
+<button type="submit" class="text-sm text-red-300 hover:text-red-200 border border-red-800 px-3 py-2 rounded-lg">🗑 Очистить историю</button>
+</form>
+</div>
 <p class="text-xs text-gray-400">Объединённая история: доступ, проверенные платежи, поддержка, персональные сообщения и доставленные рассылки. Показываются последние 60 событий.</p>
 <div class="max-h-[520px] overflow-y-auto divide-y divide-gray-700">
 {% for item in crm_timeline %}
