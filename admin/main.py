@@ -2202,11 +2202,10 @@ async def change_credentials(
             detail="Username and password required"
         )
 
-    if len(new_password) < 4:
-        raise HTTPException(
-            status_code=400,
-            detail="Password too short"
-        )
+    if not (3 <= len(new_username) <= 60) or not new_username.replace("_","").isalnum():
+        raise HTTPException(400,detail="Логин: от 3 до 60 букв, цифр или подчёркиваний")
+    if not 12 <= len(new_password) <= 200:
+        raise HTTPException(400,detail="Пароль должен содержать от 12 до 200 символов")
 
     hashed_password = hash_password(new_password)
 
@@ -2243,6 +2242,10 @@ async def change_credentials(
             }
         )
 
+        await session.execute(text("""
+            INSERT INTO admin_operation_audit(actor,action,target,details)
+            VALUES (:actor,'owner_credentials_changed',:target,'Смена логина и пароля')
+        """),{"actor":user["user"],"target":new_username})
         await session.commit()
 
     response = RedirectResponse(
