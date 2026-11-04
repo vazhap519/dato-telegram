@@ -156,8 +156,17 @@ async def log_task_notification(task_id,success,error=None):
 async def operations(limit=80):
     async with SessionLocal() as s:
         rows=(await s.execute(text("""
-          SELECT actor,action,target,details,created_at
-          FROM admin_operation_audit ORDER BY id DESC LIMIT :limit
+          SELECT actor,action,target,details,created_at FROM (
+            SELECT actor,action,target,details,created_at
+              FROM admin_operation_audit
+            UNION ALL
+            SELECT actor,action,COALESCE(telegram_id::text,'Система'),
+              LEFT(details::text,500),created_at
+              FROM subscription_audit_log
+            UNION ALL
+            SELECT actor,'payment_provider_'||action,code,''::text,created_at
+              FROM payment_provider_audit
+          ) all_operations ORDER BY created_at DESC LIMIT :limit
         """),{"limit":max(1,min(limit,200))})).mappings().all()
         return [dict(x) for x in rows]
 
@@ -283,3 +292,14 @@ async def mark_issue_review(kind,item_id,telegram_id,reviewed,note,actor):
               VALUES(:actor,:action,:target,:note)
             """),{"actor":actor,"action":"issue_reviewed" if reviewed else "issue_reopened",
                   "target":kind+":"+item_id+":"+str(telegram_id),"note":note})
+
+
+async def webhook_attention(limit=40):
+    async with SessionLocal() as s:
+        rows=(await s.execute(text("""
+           SELECT id,provider,event_key,status,received_at
+           FROM payment_webhook_events
+           WHERE status IN ('needs_attention','pending_review')
+           ORDER BY received_at DESC LIMIT :limit
+        """),{"limit":min(100,max(1,limit))})).mappings().all()
+        return [dict(x) for x in rows]
