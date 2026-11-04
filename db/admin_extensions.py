@@ -195,3 +195,49 @@ async def failure_queue():
           ORDER BY occurred_at DESC NULLS LAST LIMIT 100
         """))).mappings().all()
         return [dict(x) for x in rows]
+
+
+async def bulk_update_tag(user_ids,tag,operation,actor):
+    """Apply one tag to at most 50 explicitly selected subscribers."""
+    if operation not in ("add","remove"):raise ValueError("Недопустимое действие")
+    tag=(tag or "").strip()
+    if not 1<=len(tag)<=40 or "," in tag or "\n" in tag:
+        raise ValueError("Метка должна содержать 1–40 символов без запятых")
+    ids=sorted(set(int(x) for x in user_ids))
+    if not ids or len(ids)>50 or any(uid<=0 for uid in ids):
+        raise ValueError("Выберите от 1 до 50 участников")
+    async with SessionLocal() as s:
+        async with s.begin():
+            users=(await s.execute(text("""
+              SELECT telegram_id FROM users WHERE telegram_id = ANY(:ids)
+            """),{"ids":ids})).scalars().all()
+            if len(users)!=len(ids):raise ValueError("Один из участников не найден")
+            for uid in ids:
+                await s.execute(text("""
+                  INSERT INTO subscriber_admin_profiles(telegram_id,tags,updated_by)
+                  VALUES (:uid,'',:actor)
+                  ON CONFLICT(telegram_id) DO NOTHING
+                """),{"uid":uid,"actor":actor})
+            records=(await s.execute(text("""
+              SELECT telegram_id,tags FROM subscriber_admin_profiles
+              WHERE telegram_id = ANY(:ids) FOR UPDATE
+            """),{"ids":ids})).mappings().all()
+            for record in records:
+                tags=[x.strip() for x in (record["tags"] or "").split(",") if x.strip()]
+                if operation=="add" and tag.casefold() not in {x.casefold() for x in tags}:
+                    tags.append(tag)
+                if operation=="remove":
+                    tags=[x for x in tags if x.casefold()!=tag.casefold()]
+                if len(tags)>15:
+                    raise ValueError("У одного из участников уже 15 меток")
+                await s.execute(text("""
+                    UPDATE subscriber_admin_profiles
+                    SET tags=:tags,updated_by=:actor,updated_at=NOW()
+                    WHERE telegram_id=:uid
+                """),{"uid":record["telegram_id"],"tags":", ".join(tags),"actor":actor})
+            await s.execute(text("""
+              INSERT INTO admin_operation_audit(actor,action,target,details)
+              VALUES (:actor,:action,:target,:detail)
+            """),{"actor":actor,"action":"bulk_tag_"+operation,
+                  "target":str(len(ids))+" subscribers","detail":tag})
+            return len(ids)
