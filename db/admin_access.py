@@ -21,6 +21,9 @@ async def initialize_staff():
           ALTER TABLE admins ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ
         """))
         await c.execute(text("""
+          ALTER TABLE admins ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0
+        """))
+        await c.execute(text("""
           CREATE TABLE IF NOT EXISTS admin_auth_events(
             id BIGSERIAL PRIMARY KEY,username TEXT NOT NULL,
             outcome TEXT NOT NULL,ip TEXT NOT NULL DEFAULT '',
@@ -46,7 +49,7 @@ def allowed(role,path,method):
 async def read_staff(username):
     async with SessionLocal() as s:
         row=(await s.execute(text("""
-          SELECT id,username,role,enabled,last_login_at
+          SELECT id,username,role,enabled,last_login_at,session_version
           FROM admins WHERE username=:name
         """),{"name":username})).mappings().first()
         return dict(row) if row else None
@@ -87,7 +90,8 @@ async def staff_change(target,role,enabled,actor):
     async with SessionLocal() as s:
         async with s.begin():
             updated=(await s.execute(text("""
-              UPDATE admins SET role=:role,enabled=:enabled
+              UPDATE admins SET role=:role,enabled=:enabled,
+                session_version=session_version+1
               WHERE username=:target AND role<>'owner' RETURNING id
             """),{"target":target,"role":role,"enabled":enabled})).first()
             if not updated:raise ValueError("Сотрудник не найден или владелец защищён")
