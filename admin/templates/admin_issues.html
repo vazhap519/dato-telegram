@@ -7,4 +7,10 @@
 <input type="hidden" name="reviewed" value="{{ 'false' if x.review else 'true' }}">
 <label class="text-xs flex-1 min-w-44">Комментарий<input name="note" maxlength="500" value="{{ x.review.note if x.review else '' }}" class="block w-full mt-1 bg-gray-700 rounded-lg p-2"></label>
 <button class="bg-gray-600 px-3 py-2 rounded-lg">{{ 'Вернуть в очередь' if x.review else 'Отметить просмотренным' }}</button>
-</form></div>{% else %}<p class="text-emerald-300">Проблемных отправок нет.</p>{% endfor %}</section></main></body></html>
+</form></div>{% else %}<p class="text-emerald-300">Проблемных отправок нет.</p>{% endfor %}</section>
+<section class="bg-gray-800 rounded-xl p-4 space-y-3"><h2 class="font-semibold text-xl">События Tribute, требующие проверки</h2>
+<p class="text-xs text-amber-200">Событие webhook не равно подтверждённой оплате. Проверка подписи и параметров оплаты выполняется существующей системой.</p>
+{% for e in webhooks %}<div class="bg-gray-700/40 rounded-lg p-3 flex flex-wrap gap-3 justify-between text-sm"><div>{{ e.provider }} · №{{ e.id }} · {{ e.status }}<div class="text-xs text-gray-400">{{ e.received_at|tbilisi_time('%d.%m.%Y %H:%M') }}</div></div>
+<a class="text-sky-300 underline" href="/subscriptions/tribute-events">Открыть журнал Tribute</a></div>
+{% else %}<p class="text-gray-400">Событий для проверки нет.</p>{% endfor %}
+</section></main></body></html>
