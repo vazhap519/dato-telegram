@@ -33,8 +33,23 @@ async def report():
           (SELECT COUNT(DISTINCT telegram_id) FROM verified_payment_receipts
             WHERE payment_status='paid') buyers
         """))).mappings().one()
+        retention=(await s.execute(text("""
+          WITH per_buyer AS (
+            SELECT telegram_id,MIN(verified_at) first_paid,
+                   MAX(verified_at) last_paid,COUNT(*) payment_count
+            FROM verified_payment_receipts WHERE payment_status='paid'
+            GROUP BY telegram_id
+          )
+          SELECT COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '30 days') eligible_30d,
+            COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '30 days'
+              AND last_paid>=first_paid+INTERVAL '30 days') repeat_30d,
+            COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '90 days') eligible_90d,
+            COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '90 days'
+              AND last_paid>=first_paid+INTERVAL '90 days') repeat_90d
+          FROM per_buyer
+        """))).mappings().one()
         return {"totals":dict(totals),"by_currency":[dict(x) for x in by_currency],
-                "funnel":dict(funnels)}
+                "funnel":dict(funnels),"retention":dict(retention)}
 
 async def export_subscribers():
     async with SessionLocal() as s:
