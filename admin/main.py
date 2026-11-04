@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
 from db.database import SessionLocal
+from db.operations_dashboard import automation_overview
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
@@ -438,6 +439,13 @@ async def issues_page(request:Request,user=Depends(get_current_user)):
     return templates.TemplateResponse(request=request,name="admin_issues.html",
         context={"failures":await failure_queue()},
         headers={"Cache-Control":"no-store"})
+
+@app.get("/automations")
+async def automations_page(request:Request,user=Depends(get_current_user)):
+    return templates.TemplateResponse(request=request,name="admin_automations.html",
+       context={"automation":await automation_overview(),
+                "monitor":await last_health_snapshot()},
+       headers={"Cache-Control":"no-store"})
 
 @app.get("/analytics")
 async def analytics_page(request:Request,user=Depends(get_current_user)):
