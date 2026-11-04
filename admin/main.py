@@ -1858,7 +1858,7 @@ async def subscriptions_send_invite(
 
 @app.get("/broadcast")
 async def broadcast_page(request: Request, user=Depends(get_current_user)):
-    counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked")}
+    counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked", "buyers", "active", "lifetime")}
     campaigns = await list_broadcasts()
     return templates.TemplateResponse(
         request=request, name="broadcast.html",
@@ -1866,6 +1866,7 @@ async def broadcast_page(request: Request, user=Depends(get_current_user)):
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "counts": counts, "campaigns": campaigns, "preview": None,
             "templates": await list_message_templates(), "rules": await rules(), "triggers": TRIGGERS,
+            "crm_tags":await crm_tags(),
         }, headers={"Cache-Control": "no-store"}
     )
 
@@ -1875,6 +1876,7 @@ async def preview_broadcast(
     request: Request,
     body: str = Form(""),
     audience: str = Form("accepted"),
+    tag: str = Form(""),
     button_text: str = Form(""),
     button_url: str = Form(""),
     csrf_check=Depends(verify_csrf),
@@ -1888,15 +1890,21 @@ async def preview_broadcast(
         raise HTTPException(400, detail="Для кнопки укажите название и ссылку")
     if button_url and (urlparse(button_url).scheme not in ("https", "http") or not urlparse(button_url).netloc):
         raise HTTPException(400, detail="Неверная ссылка кнопки")
-    counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked")}
+    try:
+        recipients=await count_recipients(audience,tag)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    counts = {name: await count_recipients(name) for name in ("started", "accepted", "clicked", "buyers", "active", "lifetime")}
     return templates.TemplateResponse(
         request=request, name="broadcast.html",
         context={
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
             "counts": counts, "campaigns": await list_broadcasts(),
             "templates": await list_message_templates(), "rules": await rules(), "triggers": TRIGGERS,
+            "crm_tags":await crm_tags(),
             "preview": {"body": body.strip(), "audience": audience,
-                        "recipients": counts[audience], "button_text": button_text, "button_url": button_url},
+                        "recipients": recipients,"tag": tag.strip() if audience=="crm_tag" else "",
+                         "button_text": button_text, "button_url": button_url},
         }, headers={"Cache-Control": "no-store"}
     )
 
@@ -1930,6 +1938,7 @@ async def send_broadcast(
     request: Request,
     body: str = Form(""),
     audience: str = Form(""),
+    tag: str = Form(""),
     confirm: str = Form(""),
     button_text: str = Form(""),
     button_url: str = Form(""),
@@ -1958,7 +1967,11 @@ async def send_broadcast(
                 raise ValueError()
         except ValueError:
             raise HTTPException(400, detail="Укажите время Тбилиси минимум через 2 минуты")
-    await create_broadcast(body, audience, scheduled_at=scheduled_at, button_text=button_text, button_url=button_url)
+    try:
+        await create_broadcast(body, audience, scheduled_at=scheduled_at,
+                               button_text=button_text,button_url=button_url,tag=tag)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
     return RedirectResponse("/broadcast", status_code=303)
 
 
