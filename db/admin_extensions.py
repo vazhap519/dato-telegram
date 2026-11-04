@@ -28,6 +28,15 @@ async def initialize_extensions():
             )
         """))
         await c.execute(text("""
+            CREATE TABLE IF NOT EXISTS admin_issue_reviews(
+              kind TEXT NOT NULL,item_id TEXT NOT NULL,
+              telegram_id BIGINT NOT NULL,
+              reviewed_by TEXT NOT NULL,reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              note TEXT NOT NULL DEFAULT '',
+              PRIMARY KEY(kind,item_id,telegram_id)
+            )
+        """))
+        await c.execute(text("""
             CREATE TABLE IF NOT EXISTS crm_task_reminder_attempts(
               task_id BIGINT PRIMARY KEY REFERENCES crm_tasks(id),
               state TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -194,7 +203,13 @@ async def failure_queue():
           FROM broadcast_recipients r WHERE r.status IN ('failed','uncertain')
           ORDER BY occurred_at DESC NULLS LAST LIMIT 100
         """))).mappings().all()
-        return [dict(x) for x in rows]
+        reviewed=(await s.execute(text("""
+          SELECT kind,item_id,telegram_id,reviewed_by,reviewed_at,note
+          FROM admin_issue_reviews
+        """))).mappings().all()
+        mapping={(x["kind"],x["item_id"],x["telegram_id"]):dict(x) for x in reviewed}
+        return [{**dict(x),"review":mapping.get((x["kind"],x["item_id"],x["telegram_id"]))}
+                for x in rows]
 
 
 async def bulk_update_tag(user_ids,tag,operation,actor):
@@ -241,3 +256,30 @@ async def bulk_update_tag(user_ids,tag,operation,actor):
             """),{"actor":actor,"action":"bulk_tag_"+operation,
                   "target":str(len(ids))+" subscribers","detail":tag})
             return len(ids)
+
+
+async def mark_issue_review(kind,item_id,telegram_id,reviewed,note,actor):
+    if kind not in ("message","broadcast") or not item_id.isdecimal() or telegram_id<=0:
+        raise ValueError("Недопустимая операция")
+    note=(note or "").strip()
+    if len(note)>500:raise ValueError("Примечание слишком длинное")
+    async with SessionLocal() as s:
+        async with s.begin():
+            if reviewed:
+                await s.execute(text("""
+                  INSERT INTO admin_issue_reviews(kind,item_id,telegram_id,reviewed_by,note)
+                  VALUES(:kind,:id,:uid,:actor,:note)
+                  ON CONFLICT(kind,item_id,telegram_id)
+                  DO UPDATE SET reviewed_by=EXCLUDED.reviewed_by,
+                    reviewed_at=NOW(),note=EXCLUDED.note
+                """),{"kind":kind,"id":item_id,"uid":telegram_id,"actor":actor,"note":note})
+            else:
+                await s.execute(text("""
+                  DELETE FROM admin_issue_reviews
+                  WHERE kind=:kind AND item_id=:id AND telegram_id=:uid
+                """),{"kind":kind,"id":item_id,"uid":telegram_id})
+            await s.execute(text("""
+              INSERT INTO admin_operation_audit(actor,action,target,details)
+              VALUES(:actor,:action,:target,:note)
+            """),{"actor":actor,"action":"issue_reviewed" if reviewed else "issue_reopened",
+                  "target":kind+":"+item_id+":"+str(telegram_id),"note":note})
