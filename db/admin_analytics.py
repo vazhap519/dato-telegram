@@ -45,7 +45,10 @@ async def report():
               AND last_paid>=first_paid+INTERVAL '30 days') repeat_30d,
             COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '90 days') eligible_90d,
             COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '90 days'
-              AND last_paid>=first_paid+INTERVAL '90 days') repeat_90d
+              AND last_paid>=first_paid+INTERVAL '90 days') repeat_90d,
+            COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '180 days') eligible_180d,
+            COUNT(*) FILTER(WHERE first_paid<=NOW()-INTERVAL '180 days'
+              AND last_paid>=first_paid+INTERVAL '180 days') repeat_180d
           FROM per_buyer
         """))).mappings().one()
         return {"totals":dict(totals),"by_currency":[dict(x) for x in by_currency],
