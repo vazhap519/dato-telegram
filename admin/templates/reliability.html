@@ -16,6 +16,28 @@
 <p class="text-gray-300 text-sm mt-2">Примерно каждые 15 минут: PostgreSQL, свежесть копии, доступность админ-панели.</p>
 <p class="text-amber-200 text-xs mt-2">Имена служб бота и панели добавляются отдельно в серверный конфигурационный файл.</p></div>
 </section>
+<section class="bg-gray-800 rounded-xl p-5 space-y-3">
+<h2 class="text-xl font-semibold">📡 Последняя проверка</h2>
+{% if monitor.state=='fresh' %}
+<p class="text-sm text-gray-300">Проверка {{ monitor.checked_at|tbilisi_time('%d.%m.%Y %H:%M') }}.</p>
+{% if monitor.details.get('issues') %}
+<div class="border border-amber-800 bg-amber-900/20 rounded-lg p-3"><strong class="text-amber-300">Обнаружены проблемы</strong>
+<ul class="list-disc pl-5 text-sm mt-2">{% for issue in monitor.details.issues %}<li>{{ issue }}</li>{% endfor %}</ul></div>
+{% else %}<p class="text-emerald-300 text-sm">Мониторинг не сообщил о проблемах в последней проверке.</p>{% endif %}
+{% elif monitor.state=='stale' %}<p class="text-amber-300 text-sm">Последние данные устарели — проверь системный таймер.</p>
+{% else %}<p class="text-gray-400 text-sm">Мониторинг ещё не передавал результаты.</p>{% endif %}
+</section>
+<details class="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+<summary class="p-5 cursor-pointer font-semibold text-lg">☁️ Зашифрованные резервные копии вне сервера</summary>
+<div class="px-5 pb-5 space-y-3 text-sm text-gray-300">
+<p>На этом сервере уже предусмотрен отдельный установщик для внешнего хранилища. Он работает только после настройки <strong>rclone crypt</strong> — незашифрованное хранилище не принимается. Первая загрузка проверяется обратным скачиванием и сравнением архива.</p>
+<p class="text-amber-200">Внешнее копирование не включено автоматически. Нужны выбранное хранилище и настроенный зашифрованный rclone remote на Vultr; не передавай ключи и пароли в чат.</p>
+<p>После настройки запусти установщик на сервере:</p>
+<code class="block bg-gray-950 p-3 rounded-lg overflow-x-auto">sudo bash /opt/dato-telegram/scripts/install_offsite_backup.sh</code>
+<p>Установщик создаст конфигурацию <code>/etc/dato-offsite-backup.conf</code>. Укажи в ней свой rclone crypt remote и запусти установщик повторно. Если первая проверка не пройдёт, расписание не включится.</p>
+<p>Внешние копии не удаляются автоматически. Политика хранения на стороне хранилища настраивается отдельно.</p>
+</div>
+</details>
 <section class="bg-gray-800 rounded-xl p-5 space-y-4">
 <h2 class="text-xl font-semibold">🔔 Уведомления администратору</h2>
 {% if request.query_params.get('saved') %}<p class="text-green-300 bg-green-900/20 rounded-lg p-3">Настройки сохранены. Следующие проверки будут использовать выбранный Telegram ID.</p>{% endif %}
