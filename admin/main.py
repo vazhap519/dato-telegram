@@ -109,6 +109,8 @@ async def protect_admin_forms(request: Request, call_next):
         "/crm/task/create",
         "/crm/task/status",
         "/crm/task/alerts",
+        "/staff/add",
+        "/staff/update",
         "/subscriptions/message",
         "/subscriptions/message/delete",
         "/subscriptions/history/clear",
@@ -471,6 +473,43 @@ async def automations_page(request:Request,user=Depends(get_current_user)):
        context={"automation":await automation_overview(),
                 "monitor":await last_health_snapshot()},
        headers={"Cache-Control":"no-store"})
+
+@app.get("/staff")
+async def staff_page(request:Request,user=Depends(get_current_user)):
+    if user["role"]!="owner":raise HTTPException(403,detail="Только владелец")
+    return templates.TemplateResponse(request=request,name="admin_staff.html",
+       context={"accounts":await staff_list(),
+                "csrf_token":make_csrf_token(request.cookies.get("access_token",""))},
+       headers={"Cache-Control":"no-store"})
+
+@app.post("/staff/add")
+async def add_staff_account(
+    username:str=Form(...),password:str=Form(...),role:str=Form(...),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    if user["role"]!="owner":raise HTTPException(403,detail="Только владелец")
+    if len(password)<12 or len(password)>200:
+        raise HTTPException(400,detail="Пароль должен содержать минимум 12 символов")
+    try:
+        await staff_create(username,hash_password(password),role,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/staff?created=1",303)
+
+@app.post("/staff/update")
+async def change_staff_account(
+    target:str=Form(...),role:str=Form(...),enabled:bool=Form(False),
+    confirm:str=Form(""),csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    if user["role"]!="owner":raise HTTPException(403,detail="Только владелец")
+    if confirm!="CHANGE_STAFF":
+        raise HTTPException(400,detail="Подтвердите изменение")
+    try:
+        await staff_change(target,role,enabled,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/staff?updated=1",303)
 
 @app.get("/analytics")
 async def analytics_page(request:Request,user=Depends(get_current_user)):
