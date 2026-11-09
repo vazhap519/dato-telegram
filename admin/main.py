@@ -75,7 +75,8 @@ async def admin_auth_exception_handler(request: Request, exc: HTTPException):
         and not request.url.path.startswith("/webhooks/")
     ):
         response = RedirectResponse(url="/login", status_code=303)
-        response.delete_cookie("access_token", path="/")
+        if request.cookies.get("access_token"):
+            response.delete_cookie("access_token", path="/")
         return response
     return await http_exception_handler(request, exc)
 
@@ -342,7 +343,7 @@ async def login(
                 value=token,
                 httponly=True,
                 secure=True,
-                samesite="strict",
+                samesite="lax",
                 max_age=43200,
                 path="/"
             )
