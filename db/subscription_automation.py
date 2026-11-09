@@ -138,6 +138,15 @@ async def eligible_managed_removals(chat_id,grace_hours,limit=20):
                 WHERE s.telegram_id=m.telegram_id AND s.status='active'
                   AND (s.paid_until IS NULL OR s.paid_until>NOW())
             )
+            -- Hold removal while a signed payment/renewal awaits reconciliation.
+            AND NOT EXISTS (
+                SELECT 1 FROM payment_webhook_events e
+                WHERE e.provider='tribute' AND e.signature_valid=TRUE
+                  AND e.status IN ('pending_review','needs_attention')
+                  AND e.payload->>'name' IN ('new_subscription','renewed_subscription')
+                  AND e.payload->'details'->>'telegram_user_id'
+                      = CAST(m.telegram_id AS TEXT)
+            )
             AND COALESCE((
                 SELECT MAX(expiry) FROM (
                     SELECT g.ends_at AS expiry
