@@ -108,7 +108,7 @@ async def set_tribute_paid_removal_enabled(enabled: bool, actor: str):
             """),{"actor":actor,"enabled":enabled,"offer":PRODUCTION_OFFER_ID})
 
 
-async def eligible_expired_tribute_members(chat_id: int, limit: int=20) -> list[dict]:
+async def eligible_expired_tribute_members(chat_id: int, limit: int=20, *, preview: bool=False) -> list[dict]:
     """Only known expired production buyers, with zero grace and NO other access.
 
     Never rely on a computed '30 days' anniversary; paid_until in the signed
@@ -120,16 +120,19 @@ async def eligible_expired_tribute_members(chat_id: int, limit: int=20) -> list[
     """
     if type(chat_id) is not int or chat_id>=0:
         return []
+    # Only the read-only admin preview can bypass the enabled switch.
+    # Every eligibility safeguard remains identical to the live worker.
+    enabled_gate = "" if preview else "AND r.enabled=TRUE"
     from db.database import SessionLocal
     async with SessionLocal() as s:
-        rows=(await s.execute(text("""
+        rows=(await s.execute(text(f"""
             SELECT DISTINCT m.telegram_id,m.chat_id
             FROM subscription_managed_members m
             JOIN tribute_auto_buyers b
               ON b.telegram_id=m.telegram_id AND b.offer_id=:offer
             JOIN subscriptions s
               ON s.id=b.subscription_row_id AND s.telegram_id=m.telegram_id
-            JOIN tribute_paid_removal_settings r ON r.id=1 AND r.enabled=TRUE
+            JOIN tribute_paid_removal_settings r ON r.id=1 {enabled_gate}
             JOIN tribute_auto_settings a ON a.id=1 AND a.enabled=TRUE
             JOIN subscription_automation_settings general
               ON general.id=1 AND general.removal_enabled=FALSE
