@@ -17,6 +17,10 @@ if not ok:
 try:
     from jinja2 import Environment, FileSystemLoader
     env=Environment(loader=FileSystemLoader(str(root/"admin"/"templates")))
+    # The running FastAPI app registers this filter on its Jinja environment.
+    # Register a compilation-only stub here to keep preflight offline.
+    # Do not import admin.main: doing so could initialize application services.
+    env.filters["tbilisi_time"] = lambda value, pattern="%d.%m.%Y %H:%M": ""
     for name in (
         "_sidebar.html","index.html","subscription_user.html",
         "subscriptions.html","broadcast.html","support_ticket.html",
