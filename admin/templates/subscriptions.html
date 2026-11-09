@@ -83,7 +83,8 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <input type="hidden" name="confirm" value="SAVE_AUTOMATION">
 <label class="flex items-center gap-3"><input type="checkbox" name="notifications_enabled" value="true" {{ 'checked' if subscription_automation.notifications_enabled else '' }}> <span>Отправлять напоминания об окончании доступа</span></label>
-<label class="flex items-center gap-3"><input type="checkbox" name="removal_enabled" value="true" {{ 'checked' if subscription_automation.removal_enabled else '' }}> <span>Автоматически исключать участников с истёкшим доступом</span></label>
+<label class="flex items-center gap-3"><input type="checkbox" name="removal_enabled" value="true" {{ 'checked' if subscription_automation.removal_enabled else '' }} {% if legacy_removal_locked %}disabled{% endif %}> <span>Старое автоматическое исключение участников</span></label>
+{% if legacy_removal_locked %}<p class="text-sm text-amber-200 bg-amber-950/40 border border-amber-700 rounded-lg p-3">Недоступно, пока работает автоматизация оплат Tribute. Для исключения после неоплаты перейдите в <a href="/subscriptions/tribute-auto" class="text-blue-300 underline">настройки Tribute</a>. Текущие напоминания можно изменять отдельно.</p>{% endif %}
 <p class="text-xs text-amber-300">Внимание: функция исключения выключена по умолчанию. При включении действуют только участники, записанные ботом при вступлении через его собственную ссылку. Постоянные права и действующие продления имеют приоритет.</p>
 <div>
 <label class="block text-sm mb-2" for="automation-grace">Льготный период только для старой общей автоматизации (не применяется к новой подписке Tribute)</label>
