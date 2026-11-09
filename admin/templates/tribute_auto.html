@@ -76,6 +76,25 @@
       Учтено оплаченных участников под нашим управлением в текущей группе:
       <strong>{{ paid_removal.tracked_paid_members }}</strong>
     </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-600 p-4 space-y-3">
+      <div class="flex flex-wrap justify-between gap-2 items-center">
+        <h3 class="font-semibold">Предварительный просмотр исключений</h3>
+        <span class="text-amber-200 font-semibold">{% if removal_preview|length >= 1000 %}1000+{% else %}{{ removal_preview|length }}{% endif %} кандидат(ов)</span>
+      </div>
+      <p class="text-gray-400 text-xs">Только чтение: никого не исключает и не включает автоматизацию. Применяются те же проверки срока, иных прав и ожидающих обработки оплат, что и в рабочем механизме. Реальное присутствие в Telegram и права бота повторно проверяются непосредственно перед исключением.</p>
+      {% if removal_preview %}
+      <div class="max-h-64 overflow-y-auto rounded-lg border border-gray-700 divide-y divide-gray-700">
+        {% for member in removal_preview[:100] %}
+        <div class="px-3 py-2 text-sm flex items-center justify-between gap-3">
+          <span>Telegram ID: {{ member.telegram_id }}</span>
+          <a class="text-blue-300 underline" href="/subscriptions/users/{{ member.telegram_id }}">Карточка участника</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% if removal_preview|length > 100 %}<p class="text-xs text-amber-200">Показаны первые 100 из {% if removal_preview|length >= 1000 %}как минимум 1000{% else %}{{ removal_preview|length }}{% endif %}. Перед включением проверьте все исключения отдельно.</p>{% endif %}
+      {% else %}<p class="text-emerald-300 text-sm">Сейчас кандидатов не найдено.</p>{% endif %}
+      <p class="text-xs text-gray-400">Список отражает состояние базы на момент открытия страницы и может измениться после оплаты или продления. Если автоматическая обработка Tribute выключена, список может быть пустым даже при истёкших подписках.</p>
+    </div>
     <form method="post" action="/subscriptions/tribute-auto/removal" class="flex flex-wrap items-center gap-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="flex items-center gap-2 text-sm">
