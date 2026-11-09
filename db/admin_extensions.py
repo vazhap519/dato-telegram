@@ -88,7 +88,7 @@ async def tasks(uid=None,status="open",limit=100):
         rows=(await s.execute(text("""
           SELECT t.*,u.first_name,u.username FROM crm_tasks t
           JOIN users u ON u.telegram_id=t.telegram_id
-          WHERE (:uid IS NULL OR t.telegram_id=:uid)
+          WHERE (CAST(:uid AS BIGINT) IS NULL OR t.telegram_id=CAST(:uid AS BIGINT))
             AND (:status='all' OR t.status=:status)
           ORDER BY CASE WHEN t.status='open' THEN 0 ELSE 1 END,
                    t.due_at ASC,t.id DESC LIMIT :limit
@@ -103,7 +103,7 @@ async def update_task(task_id,uid,status,actor):
               UPDATE crm_tasks SET status=:status,updated_at=NOW(),
                 completed_at=CASE WHEN :status='done' THEN NOW() ELSE NULL END,
                 notified_at=CASE WHEN :status='open' THEN NULL ELSE notified_at END
-              WHERE id=:id AND (:uid IS NULL OR telegram_id=:uid)
+              WHERE id=:id AND (CAST(:uid AS BIGINT) IS NULL OR telegram_id=CAST(:uid AS BIGINT))
               RETURNING id,telegram_id
             """),{"id":task_id,"uid":uid,"status":status})).first()
             if not record:raise ValueError("Задача не найдена")
