@@ -34,7 +34,7 @@ from db.tribute_payment_test import initialize_tribute_payment_tests, create_tri
 from db.tribute_test_activation import initialize_tribute_test_activation, activate_saved_test_purchase, TributeActivationError
 from db.tribute_auto import initialize_tribute_auto, list_auto_settings, register_auto_offer, set_auto_offer_enabled, set_auto_processing_enabled, is_auto_processing_enabled, AutoPaymentError
 from db.tribute_shared_checkout import initialize_shared_checkout, shared_checkout_status, set_shared_checkout_enabled, CheckoutNotReady
-from db.tribute_paid_removal import initialize_tribute_paid_removal, tribute_paid_removal_status, set_tribute_paid_removal_enabled, TributeRemovalError
+from db.tribute_paid_removal import initialize_tribute_paid_removal, tribute_paid_removal_status, set_tribute_paid_removal_enabled, eligible_expired_tribute_members, TributeRemovalError
 from db.subscriptions import initialize_subscriptions, overview as subscriptions_overview, people as subscription_people, person as subscription_person, grant_access, revoke_grant, update_plan, create_plan, archive_plan, change_grant_expiry, extend_community_access, clear_visible_audit, clear_revoked_grant_history
 from db.broadcast import initialize_broadcasts, count_recipients, create_broadcast, list_broadcasts, AUDIENCES
 from db.automation import initialize_automation, templates as list_message_templates, upsert_template, rules, set_rule, TRIGGERS
@@ -1221,12 +1221,15 @@ async def tribute_auto_page(request: Request, user=Depends(get_current_user)):
     state = await list_auto_settings()
     shared = await shared_checkout_status()
     paid_removal = await tribute_paid_removal_status()
+    current_group = await group_settings()
+    preview_candidates = await eligible_expired_tribute_members(current_group.get("chat_id"), limit=1000, preview=True) if current_group.get("chat_id") else []
     return templates.TemplateResponse(
         request=request, name="tribute_auto.html",
         context={
             **state,
             "shared": shared,
             "paid_removal": paid_removal,
+            "removal_preview": preview_candidates,
             "csrf_token": make_csrf_token(request.cookies.get("access_token", "")),
         },
         headers={"Cache-Control":"no-store", "Referrer-Policy":"same-origin"},
@@ -1417,7 +1420,7 @@ async def subscriptions_page(
             "provider_counts":provider_counts,
             "payment_provider_filter":payment_provider,"buyers_only":buyers_only,"access_filter":status,
             "crm_tag":tag,"crm_segment":segment,"crm_tags":await crm_tags(),
-            "subscription_automation":automation,"managed_total":managed_total,
+            "subscription_automation":automation,"legacy_removal_locked":await is_auto_processing_enabled(),"managed_total":managed_total,
             "expiry_people":expiry_people,"expiry_summary":expiry_summary,
             "total": total, "search": search, "page": page,
             "pages": max(1, (total+29)//30),
