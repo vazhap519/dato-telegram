@@ -10,6 +10,7 @@ from fastapi import (
 )
 
 from fastapi.responses import RedirectResponse
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 
@@ -60,6 +61,23 @@ def make_csrf_token(session_token: str) -> str:
 
 
 app = FastAPI()
+
+@app.exception_handler(HTTPException)
+async def admin_auth_exception_handler(request: Request, exc: HTTPException):
+    # Browser navigation should go to the login form, not display JSON.
+    # Keep 401 JSON for API clients and non-GET requests.
+    accepts_html = "text/html" in request.headers.get("accept", "").lower()
+    if (
+        exc.status_code == 401
+        and request.method == "GET"
+        and accepts_html
+        and request.url.path != "/login"
+        and not request.url.path.startswith("/webhooks/")
+    ):
+        response = RedirectResponse(url="/login", status_code=303)
+        response.delete_cookie("access_token", path="/")
+        return response
+    return await http_exception_handler(request, exc)
 
 @app.on_event('startup')
 async def setup_onboarding():
