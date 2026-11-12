@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.operations_dashboard import automation_overview, reminder_delivery_attention
-from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events
+from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events, support_permissions_change
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, webhook_attention, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
@@ -137,6 +137,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/issues/review",
         "/staff/add",
         "/staff/update",
+        "/staff/support",
         "/subscriptions/message",
         "/subscriptions/message/delete",
         "/subscriptions/history/clear",
@@ -583,6 +584,34 @@ async def change_staff_account(
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
     return RedirectResponse("/staff?updated=1",303)
+
+@app.post("/staff/support")
+async def change_staff_support_permissions(
+    target:str=Form(...),telegram_id:str=Form(""),
+    support_access:bool=Form(False),support_can_reply:bool=Form(False),
+    support_can_change_status:bool=Form(False),support_can_close:bool=Form(False),
+    support_can_delete:bool=Form(False),support_notify_telegram:bool=Form(False),
+    confirm:str=Form(""),csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    if user["role"]!="owner":
+        raise HTTPException(403,detail="Только владелец")
+    if confirm!="CHANGE_SUPPORT":
+        raise HTTPException(400,detail="Подтвердите права техподдержки")
+    try:
+        await support_permissions_change(
+            target,user["user"],access=support_access,
+            can_reply=support_can_reply,
+            can_change_status=support_can_change_status,
+            can_close=support_can_close,
+            can_delete=support_can_delete,
+            telegram_id=telegram_id.strip(),
+            notify=support_notify_telegram
+        )
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/staff?support_updated=1",status_code=303)
+
 
 @app.get("/analytics")
 async def analytics_page(request:Request,user=Depends(get_current_user)):
