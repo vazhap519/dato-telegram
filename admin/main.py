@@ -266,6 +266,8 @@ async def get_current_user(request: Request,access_token: str = Cookie(None)):
                 raise HTTPException(403,detail="Недостаточно прав для действия")
     request.state.admin_role=account["role"]
     return {"user":account["username"],"role":account["role"],
+            "support_can_reply":account["role"]=="owner" or account["support_can_reply"],
+            "support_can_delete":account["role"]=="owner" or account["support_can_delete"],
             "support_can_change_status":account["role"]=="owner" or account["support_can_change_status"],
             "support_can_close":account["role"]=="owner" or account["support_can_close"]}
 
@@ -1156,7 +1158,8 @@ async def support_thread(request: Request,ticket_id:int,
             m.get("telegram_sent_at") if m["actor"]!="user" else m["created_at"])}
     return templates.TemplateResponse(request=request,name="support_ticket.html",context={
         "ticket":ticket,"messages":messages,"chats":chats,
-        "support_deletable_ids":support_deletable_ids,
+        "support_deletable_ids":support_deletable_ids if user["support_can_delete"] else set(),
+        "support_permissions":user,
         "categories":SUPPORT_CATEGORIES,"statuses":SUPPORT_STATUSES,
         "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
     })
