@@ -1,0 +1,144 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Поддержка · Круг Души</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark;background:#101827;color:#eef3ff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--tg-theme-bg-color,#101827);color:var(--tg-theme-text-color,#eef3ff)}main{max-width:820px;margin:auto;padding:16px 14px 100px}
+h1{font-size:21px;margin:6px 0 2px}.muted{color:var(--tg-theme-hint-color,#93a2ba);font-size:13px}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:17px}
+button{font:inherit;color:inherit;border:0;background:#293850;border-radius:12px;padding:11px 13px;cursor:pointer}
+button.primary{background:var(--tg-theme-button-color,#4169c8);color:var(--tg-theme-button-text-color,#fff)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.tabs{display:flex;gap:7px;overflow:auto;padding-bottom:10px;margin-bottom:7px}
+.tabs button{white-space:nowrap;font-size:13px;padding:9px 12px}.tabs .active{background:#375d9c}
+.ticket{display:block;width:100%;text-align:left;margin-bottom:9px;background:var(--tg-theme-secondary-bg-color,#1c2a40);border:1px solid #334258;padding:14px;border-radius:14px}
+.ticket .top{display:flex;justify-content:space-between;gap:8px}.ticket small{display:block;margin-top:6px;color:var(--tg-theme-hint-color,#a0b0cb)}
+.panel{display:none}.panel.active{display:block}.thread-head{display:flex;align-items:center;gap:10px;padding-bottom:15px;border-bottom:1px solid #334258}
+.messages{min-height:100px;max-height:62vh;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:16px 0}
+.bubble{align-self:flex-start;background:#293850;border-radius:16px 16px 16px 4px;padding:12px;max-width:91%;white-space:pre-wrap;overflow-wrap:anywhere}
+.bubble.admin{align-self:flex-end;background:#264978;border-radius:16px 16px 4px 16px}
+.bubble small{display:block;opacity:.7;margin-bottom:6px;font-size:11px}.bubble img{display:block;max-width:100%;border-radius:10px}.bubble audio{max-width:100%;width:250px}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}
+form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{background:#192638;color:inherit;border:1px solid #45556f;border-radius:12px;min-height:70px;padding:12px;font:inherit;resize:vertical;flex:1;min-width:0}
+#error{color:#ffb3ab;font-size:14px;margin:10px 0}#notice{font-size:13px;color:#a9d8b9;margin:10px 0}
+.hidden{display:none!important}.empty{text-align:center;color:#9eacc2;padding:24px}
+</style></head><body>
+<main><header><div><h1>🛟 Техподдержка</h1><div class="muted" id="who">Проверка доступа…</div></div><button id="refresh">↻ Обновить</button></header>
+<div id="error" role="alert"></div><div id="notice" role="status"></div>
+<section id="inbox" class="panel active">
+<div class="tabs" id="tabs">
+<button data-status="" class="active">Все</button><button data-status="open">Новые</button>
+<button data-status="pending">Отложенные</button><button data-status="answered">Отвеченные</button>
+<button data-status="closed">Закрытые</button>
+</div><div id="list" class="empty">Загрузка…</div></section>
+<section id="detail" class="panel">
+<div class="thread-head"><button id="back">← Назад</button><div><strong id="ticket-title"></strong><div id="ticket-meta" class="muted"></div></div></div>
+<div id="messages" class="messages"></div>
+<div class="actions"><button data-set="open">↩ Открыть</button><button data-set="pending">⏳ Отложить</button><button data-set="closed">✅ Закрыть</button></div>
+<form id="reply-form"><textarea id="answer" maxlength="3000" placeholder="Ответ участнику…"></textarea><button class="primary" id="send" type="submit">Отправить</button></form>
+<div class="muted">Ответ поступит пользователю от имени бота и сохранится в общей истории. Фото, голосовые и документы можно просматривать; отправка вложений пока доступна через обычный чат бота.</div>
+</section>
+</main>
+<script>
+(()=>{
+"use strict";
+const tg=window.Telegram?.WebApp;
+const init=tg?.initData||"";
+const $=id=>document.getElementById(id);
+const state={status:"",ticket:null,loading:false};
+function error(message){$("error").textContent=message||""}
+function notice(message){$("notice").textContent=message||""}
+async function api(path,options={}){
+ if(!init)throw Error("Откройте страницу через кнопку в Telegram-боте.");
+ const response=await fetch("/tg-support/api"+path,{
+   method:options.method||"GET",credentials:"omit",cache:"no-store",
+   headers:{"X-Telegram-Init-Data":init,...(options.body?{"Content-Type":"application/json"}:{})},
+   body:options.body?JSON.stringify(options.body):undefined});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(typeof data.detail==="string"?data.detail:"Ошибка запроса ("+response.status+")");
+ return data;
+}
+function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!=null)x.textContent=text;return x}
+function show(view){$("inbox").classList.toggle("active",view==="inbox");$("detail").classList.toggle("active",view==="detail")}
+function date(value){return new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}
+async function loadList(){
+ error("");notice("");
+ const result=await api("/tickets?status="+encodeURIComponent(state.status));
+ const box=$("list");box.replaceChildren();box.className="";
+ if(!result.tickets.length){box.className="empty";box.textContent="Обращений нет";return}
+ for(const t of result.tickets){
+  const b=el("button","ticket"),top=el("div","top"),name=el("strong","",t.name),status=el("span","muted",t.status);
+  top.append(name,status);b.append(top,el("small","",`#${t.id} · ${t.category} · ${date(t.updated)}`));
+  b.onclick=()=>openTicket(t.id);box.append(b);
+ }
+}
+async function openTicket(id){
+ state.ticket=id;show("detail");await refreshTicket();
+}
+async function refreshTicket(){
+ if(!state.ticket)return;
+ error("");const data=await api("/tickets/"+state.ticket);
+ $("ticket-title").textContent="#"+data.ticket.id+" · "+data.ticket.name;
+ $("ticket-meta").textContent="ID "+data.ticket.telegram_id+" · "+data.ticket.status;
+ const box=$("messages");box.replaceChildren();
+ for(const m of data.messages){
+  const b=el("div","bubble"+(m.actor==="user"?"":" admin"));
+  b.append(el("small","",`${m.actor==="user"?"Участник":"Поддержка"} · ${date(m.created)}`));
+  if(m.deleted)b.append(el("div","","🗑 Сообщение удалено"));
+  else{
+   if(m.text)b.append(el("div","",m.text));
+   if(m.has_media){
+     const media=document.createElement("button");media.textContent=m.media_type==="photo"?"📷 Открыть фото":m.media_type==="voice"?"🎤 Прослушать": "📎 Открыть файл";
+     media.onclick=()=>openMedia(m,media,b);
+     b.append(media);
+   }
+  }
+  if(m.delivery_status==="failed")b.append(el("small","","⚠ Не доставлено"));
+  box.append(b);
+ }
+ box.scrollTop=box.scrollHeight;
+ $("reply-form").classList.toggle("hidden",data.ticket.status==="closed");
+}
+async function openMedia(m,button,bubble){
+ button.disabled=true;
+ try{
+  const resp=await fetch("/tg-support/api/media/"+m.id,{headers:{"X-Telegram-Init-Data":init},cache:"no-store",credentials:"omit"});
+  if(!resp.ok)throw Error("Вложение недоступно");
+  const blob=await resp.blob(),url=URL.createObjectURL(blob);
+  if(m.media_type==="photo"){const img=document.createElement("img");img.src=url;img.onload=()=>URL.revokeObjectURL(url);bubble.append(img)}
+  else if(m.media_type==="voice"){const audio=document.createElement("audio");audio.controls=true;audio.src=url;bubble.append(audio);audio.onended=()=>URL.revokeObjectURL(url)}
+  else{const a=el("a","","Открыть документ");a.href=url;a.target="_blank";a.rel="noopener noreferrer";a.download="attachment";bubble.append(a)}
+  button.classList.add("hidden");
+ }catch(e){error(e.message);button.disabled=false}
+}
+$("refresh").onclick=async()=>{try{await(state.ticket?refreshTicket():loadList())}catch(e){error(e.message)}};
+$("back").onclick=async()=>{state.ticket=null;show("inbox");try{await loadList()}catch(e){error(e.message)}};
+$("tabs").onclick=async e=>{const b=e.target.closest("button[data-status]");if(!b)return;state.status=b.dataset.status;
+ for(const x of $("tabs").querySelectorAll("button"))x.classList.toggle("active",x===b);
+ try{await loadList()}catch(err){error(err.message)}};
+for(const b of document.querySelectorAll("[data-set]"))b.onclick=async()=>{
+ if(!state.ticket||state.loading)return;
+ if(b.dataset.set==="closed"&&!confirm("Закрыть обращение?"))return;
+ state.loading=true;error("");
+ try{await api("/tickets/"+state.ticket+"/status",{method:"POST",body:{status:b.dataset.set}});
+ notice("Статус сохранён");await refreshTicket()}
+ catch(e){error(e.message)}finally{state.loading=false}
+};
+$("reply-form").onsubmit=async e=>{
+ e.preventDefault();if(state.loading)return;const text=$("answer").value.trim();if(!text)return;
+ state.loading=true;$("send").disabled=true;error("");
+ try{
+  const result=await api("/tickets/"+state.ticket+"/reply",{method:"POST",body:{text}});
+  $("answer").value="";notice(result.sent?"Ответ доставлен":"Ответ сохранён, но Telegram не доставил его. Проверьте историю.");
+  await refreshTicket();
+ }catch(e){error(e.message)}finally{state.loading=false;$("send").disabled=false}
+};
+(async()=>{
+ try{
+  if(!tg||!init)throw Error("Эта панель доступна только внутри Telegram.");
+  tg.ready();tg.expand();
+  const me=await api("/me");$("who").textContent="Администратор: "+me.username;
+  await loadList();
+ }catch(e){error(e.message);$("list").textContent="Не удалось открыть панель"}
+})();
+})();
+</script></body></html>
