@@ -158,6 +158,8 @@ def prepare(sha):
     if risky:
         raise RuntimeError("Database changes require manual compatibility review: "+", ".join(risky[:10]))
     release=snapshot(sha)
+    if not (release/"scripts/bot_runner.py").is_file():
+        raise RuntimeError("Release lacks dedicated bot runner; refusing deployment")
     py=release/".bot-venv/bin/python"
     marker=release/".bot-venv/.prepared"
     expected=hashlib.sha256((release/"requirements.txt").read_bytes()).hexdigest()
@@ -167,7 +169,7 @@ def prepare(sha):
         print("Installing bot release dependencies separately; live bot unaffected...",flush=True)
         call(str(py),"-m","pip","install","-r",str(release/"requirements.txt"),timeout=500)
         marker.write_text(expected)
-    if subprocess.run([str(py),"-m","compileall","-q",str(release/"bot"),str(release/"db")]).returncode:
+    if subprocess.run([str(py),"-m","compileall","-q",str(release/"bot"),str(release/"db"),str(release/"scripts")]).returncode:
         raise RuntimeError("Release Python preflight failed")
     # Static import of bot.main would instantiate Bot and may contact services;
     # no import or polling is attempted in preflight.
@@ -179,7 +181,7 @@ def systemd_override(release,python):
     return ("[Service]\n"
             "WorkingDirectory="+str(release)+"\n"
             "ExecStart=\n"
-            "ExecStart="+str(python)+" -m bot.main\n"
+            "ExecStart="+str(python)+" -m scripts.bot_runner\n"
             "Environment=PYTHONPATH="+str(release)+"\n")
 
 
