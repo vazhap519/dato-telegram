@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT=Path("/opt/dato-telegram")
 RELEASES=Path("/opt/dato-admin-releases")
@@ -50,15 +51,25 @@ def main():
     print("Available RAM:",available,"MiB. Free disk:",free//(1024**2),"MiB",flush=True)
     if available<MIN_RAM_MIB or free<MIN_DISK_BYTES:
         raise RuntimeError("Resource gate not met for isolated dependency installation")
-    # Reuse the established, audited release snapshot and environment builder.
-    # Nothing in these two methods changes live services or starts polling.
-    sys.path.insert(0,str(ROOT/"scripts"))
-    import deploy_admin_bluegreen as bg
-    import update_bot_safe as bot
-    release=bg.snapshot(sha)
-    if release!=RELEASES/sha:
-        raise RuntimeError("Unexpected release directory")
-    python=bg.ensure_venv(release)
+    # Import the exact candidate snapshot builder from an isolated temporary
+    # directory. The live /opt project may not contain the installed updater.
+    # This code path uses only snapshot() and ensure_venv(): no stage/cutover.
+    with tempfile.TemporaryDirectory(prefix="dato-support-build-") as tmp:
+        source=subprocess.check_output(
+            ["git","-C",str(ROOT),"show",f"{sha}:scripts/deploy_admin_bluegreen.py"],
+            timeout=30,
+        )
+        module=Path(tmp)/"deploy_admin_bluegreen.py"
+        module.write_bytes(source)
+        sys.path.insert(0,tmp)
+        try:
+            import deploy_admin_bluegreen as bg
+            release=bg.snapshot(sha)
+            if release!=RELEASES/sha:
+                raise RuntimeError("Unexpected release directory")
+            python=bg.ensure_venv(release)
+        finally:
+            sys.path.remove(tmp)
     if not python.is_file():
         raise RuntimeError("Admin virtual environment was not built")
     print("ADMIN PREPARED:",python,flush=True)
