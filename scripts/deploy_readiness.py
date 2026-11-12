@@ -26,8 +26,8 @@ def run(*args):
 
 
 def safe(value):
-    value = re.sub(r"(?i)(https?://)[^/\\s@]+@",r"\\1***@",value)
-    value = re.sub(r"(?i)(-p|--password|--token|--secret)\\s+[^\\s]+",r"\\1 [REDACTED]",value)
+    value = re.sub(r"(?i)(https?://)[^/\s@]+@",r"\1***@",value)
+    value = re.sub(r"(?i)(-p|--password|--token|--secret)\s+[^\s]+",r"\1 [REDACTED]",value)
     return value[:350]
 
 
@@ -43,7 +43,7 @@ def main():
         for key in ("ExecStart","WorkingDirectory","User","EnvironmentFiles","FragmentPath"):
             value=run("systemctl","show",unit,"-p",key,"--value")
             if key=="ExecStart":
-                value=re.sub(r"(?i)(BOT_TOKEN|SECRET_KEY|DATABASE_URL)=[^ ;}]+",r"\\1=[REDACTED]",value)
+                value=re.sub(r"(?i)(BOT_TOKEN|SECRET_KEY|DATABASE_URL)=[^ ;}]+",r"\1=[REDACTED]",value)
             print(" ",key+":",safe(value) if value else "-")
     print("=== UPDATER ===")
     if not UPDATE.is_file():
@@ -56,7 +56,7 @@ def main():
             stripped=line.strip()
             if SENSITIVE.search(stripped):
                 continue
-            if re.search(r"\\b(git|rsync|systemctl|nginx|uvicorn|pip|venv|cp|mv|ln|backup|sleep|curl|flock|cd)\\b",stripped,re.I):
+            if re.search(r"\b(git|rsync|systemctl|nginx|uvicorn|pip|venv|cp|mv|ln|backup|sleep|curl|flock|cd)\b",stripped,re.I):
                 print(f" {number}: {safe(stripped)}")
     print("=== NGINX ROUTING ===")
     if NGINX.is_file():
