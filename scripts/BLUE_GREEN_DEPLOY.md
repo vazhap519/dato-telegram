@@ -89,3 +89,55 @@ python3 -m py_compile /root/dato-bluegreen-probe.py
 Отчёт о прохождении проверки нужен перед этапом 2: долгоживущие slot units,
 атомарное переключение Nginx и обратимый deploy script.
 Нельзя объявлять zero downtime установленным после одного probe.
+
+## Этап 2 — постоянный standby, затем ручное переключение
+
+После успешного пробного запуска (проверен commit
+`da4a95e1853947cae798d5193bdb48e7c90693ea`, `8082`, ~9 секунд)
+подготовлен `scripts/admin_bluegreen.py`. В отличие от пробного теста,
+он создаёт постоянный systemd-сервис резервной админки. Текущая версия
+всё ещё отвечает на `8081`; Telegram polling бот не затрагивается.
+
+**Сначала только ставим standby и проверяем его:**
+
+```bash
+cd /opt/dato-telegram
+git fetch origin main
+git show origin/main:scripts/admin_bluegreen.py > /root/dato-admin-bluegreen.py
+/opt/dato-telegram/.venv/bin/python -m py_compile /root/dato-admin-bluegreen.py
+sudo /opt/dato-telegram/.venv/bin/python /root/dato-admin-bluegreen.py status
+sudo /opt/dato-telegram/.venv/bin/python /root/dato-admin-bluegreen.py stage da4a95e1853947cae798d5193bdb48e7c90693ea
+sudo /opt/dato-telegram/.venv/bin/python /root/dato-admin-bluegreen.py status
+```
+
+Ожидается: `8081 healthy True`, `8082 healthy True`, `Nginx: 8081`.
+**После этого остановиться и проверить журналы, прежде чем переключать.**
+
+Дальнейший **отдельный**, вручную подтверждённый шаг:
+
+```bash
+sudo /opt/dato-telegram/.venv/bin/python /root/dato-admin-bluegreen.py switch
+```
+
+Команда переключает четыре `proxy_pass` только в конфиге
+`/etc/nginx/sites-enabled/dato-telegram`, после backup и проверки;
+действующий `8081` не остановится. Если `nginx -t`, reload либо
+проверка публичной Mini App не проходит, конфигурация автоматически
+возвращается. Ручной откат:
+
+```bash
+sudo /opt/dato-telegram/.venv/bin/python /root/dato-admin-bluegreen.py rollback
+```
+
+Ограничения этапа 2: это **первое** управляемое переключение, ещё не
+полностью автоматический релизный цикл. Нынешний
+`/usr/local/bin/update-dato-telegram` продолжает обновлять
+`/opt/dato-telegram` на месте и перезапускать обе старые службы.
+Его нельзя использовать как окончательное blue/green-обновление:
+после переключения на standby также нужен новый установщик, который
+будет создавать следующий релиз в свободном слоте. Не отключать старую
+службу, пока новая не проверена под реальными запросами.
+
+Ни один из приведённых шагов не запускает второй Telegram polling.
+При обновлениях, меняющих схему БД, требуется отдельная проверка
+совместимости обеих версий.
