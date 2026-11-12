@@ -21,6 +21,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{background:#192638;color:inherit;border:1px solid #45556f;border-radius:12px;min-height:70px;padding:12px;font:inherit;resize:vertical;flex:1;min-width:0}
 #error{color:#ffb3ab;font-size:14px;margin:10px 0}#notice{font-size:13px;color:#a9d8b9;margin:10px 0}
 .hidden{display:none!important}.empty{text-align:center;color:#9eacc2;padding:24px}
+#new-messages{position:sticky;bottom:8px;text-align:center;z-index:3}
 </style></head><body>
 <main><header><div><h1>🛟 Техподдержка</h1><div class="muted" id="who">Проверка доступа…</div></div><button id="refresh">↻ Обновить</button></header>
 <div id="error" role="alert"></div><div id="notice" role="status"></div>
@@ -33,6 +34,7 @@ form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{backgroun
 <section id="detail" class="panel">
 <div class="thread-head"><button id="back">← Назад</button><div><strong id="ticket-title"></strong><div id="ticket-meta" class="muted"></div></div></div>
 <div id="messages" class="messages"></div>
+<div id="new-messages" class="hidden" role="status"><button type="button" id="jump-bottom" class="primary">↓ Новые сообщения</button></div>
 <div class="actions"><button data-set="open">↩ Открыть</button><button data-set="pending">⏳ Отложить</button><button data-set="closed">✅ Закрыть</button></div>
 <form id="reply-form"><textarea id="answer" maxlength="3000" placeholder="Ответ участнику…"></textarea><button class="primary" id="send" type="submit">Отправить</button></form>
 <div class="muted">Ответ поступит пользователю от имени бота и сохранится в общей истории. Фото, голосовые и документы можно просматривать; отправка вложений пока доступна через обычный чат бота.</div>
@@ -44,7 +46,7 @@ form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{backgroun
 const tg=window.Telegram?.WebApp;
 const init=tg?.initData||"";
 const $=id=>document.getElementById(id);
-const state={status:"",ticket:null,loading:false};
+const state={status:"",ticket:null,loading:false,syncing:false,threadKey:null,listKey:null,unread:0};
 function error(message){$("error").textContent=message||""}
 function notice(message){$("notice").textContent=message||""}
 async function api(path,options={}){
@@ -67,9 +69,14 @@ async function api(path,options={}){
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!=null)x.textContent=text;return x}
 function show(view){$("inbox").classList.toggle("active",view==="inbox");$("detail").classList.toggle("active",view==="detail")}
 function date(value){return new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}
-async function loadList(){
- error("");notice("");
- const result=await api("/tickets?status="+encodeURIComponent(state.status));
+async function loadList({quiet=false}={}){
+ if(!quiet){error("");notice("")}
+ const filter=state.status;
+ const result=await api("/tickets?status="+encodeURIComponent(filter));
+ if(state.ticket!==null || filter!==state.status)return;
+ const signature=JSON.stringify(result.tickets.map(t=>[t.id,t.status,t.updated]));
+ if(quiet && signature===state.listKey)return;
+ state.listKey=signature;
  const box=$("list");box.replaceChildren();box.className="";
  if(!result.tickets.length){box.className="empty";box.textContent="Обращений нет";return}
  for(const t of result.tickets){
@@ -79,16 +86,37 @@ async function loadList(){
  }
 }
 async function openTicket(id){
- state.ticket=id;show("detail");await refreshTicket();
+ state.ticket=id;state.threadKey=null;state.unread=0;setNewMessageIndicator();
+ show("detail");await refreshTicket();
 }
-async function refreshTicket(){
- if(!state.ticket)return;
- error("");const data=await api("/tickets/"+state.ticket);
+function setNewMessageIndicator(){
+ $("new-messages").classList.toggle("hidden",state.unread===0);
+ $("jump-bottom").textContent="↓ "+state.unread+" новых сообщений";
+}
+function nearBottom(box){
+ return box.scrollHeight-box.scrollTop-box.clientHeight<110;
+}
+async function refreshTicket({quiet=false}={}){
+ const ticketId=state.ticket;
+ if(!ticketId || (quiet && state.loading))return;
+ if(!quiet)error("");
+ const data=await api("/tickets/"+ticketId);
+ if(state.ticket!==ticketId)return;
+ const signature=JSON.stringify([data.ticket.status,data.messages.map(m=>[m.id,m.deleted,m.delivery_status,m.text,m.has_media])]);
+ if(quiet && signature===state.threadKey)return;
+ const box=$("messages");
+ const firstLoad=state.threadKey===null;
+ const atEnd=firstLoad||nearBottom(box);
+ const previousScroll=box.scrollTop;
+ const previousHeight=box.scrollHeight;
+ const previousIds=new Set([...box.querySelectorAll("[data-message-id]")].map(e=>Number(e.dataset.messageId)));
+ const newUserMessages=data.messages.filter(m=>m.actor==="user"&&!previousIds.has(m.id)).length;
+ state.threadKey=signature;
  $("ticket-title").textContent="#"+data.ticket.id+" · "+data.ticket.name;
  $("ticket-meta").textContent="ID "+data.ticket.telegram_id+" · "+data.ticket.status;
  const box=$("messages");box.replaceChildren();
  for(const m of data.messages){
-  const b=el("div","bubble"+(m.actor==="user"?"":" admin"));
+  const b=el("div","bubble"+(m.actor==="user"?"":" admin"));b.dataset.messageId=m.id;
   b.append(el("small","",`${m.actor==="user"?"Участник":"Поддержка"} · ${date(m.created)}`));
   if(m.deleted)b.append(el("div","","🗑 Сообщение удалено"));
   else{
@@ -102,7 +130,13 @@ async function refreshTicket(){
   if(m.delivery_status==="failed")b.append(el("small","","⚠ Не доставлено"));
   box.append(b);
  }
- box.scrollTop=box.scrollHeight;
+ if(atEnd){
+   box.scrollTop=box.scrollHeight;state.unread=0;
+ }else{
+   box.scrollTop=previousScroll+Math.max(0,box.scrollHeight-previousHeight);
+   if(quiet)state.unread+=newUserMessages;
+ }
+ setNewMessageIndicator();
  $("reply-form").classList.toggle("hidden",data.ticket.status==="closed");
 }
 async function openMedia(m,button,bubble){
@@ -118,8 +152,10 @@ async function openMedia(m,button,bubble){
  }catch(e){error(e.message);button.disabled=false}
 }
 $("refresh").onclick=async()=>{try{await(state.ticket?refreshTicket():loadList())}catch(e){error(e.message)}};
-$("back").onclick=async()=>{state.ticket=null;show("inbox");try{await loadList()}catch(e){error(e.message)}};
-$("tabs").onclick=async e=>{const b=e.target.closest("button[data-status]");if(!b)return;state.status=b.dataset.status;
+$("jump-bottom").onclick=()=>{const box=$("messages");box.scrollTop=box.scrollHeight;state.unread=0;setNewMessageIndicator()};
+$("messages").addEventListener("scroll",()=>{if(state.unread&&nearBottom($("messages"))){state.unread=0;setNewMessageIndicator()}},{passive:true});
+$("back").onclick=async()=>{state.ticket=null;state.threadKey=null;state.listKey=null;state.unread=0;setNewMessageIndicator();show("inbox");try{await loadList()}catch(e){error(e.message)}};
+$("tabs").onclick=async e=>{const b=e.target.closest("button[data-status]");if(!b)return;state.status=b.dataset.status;state.listKey=null;
  for(const x of $("tabs").querySelectorAll("button"))x.classList.toggle("active",x===b);
  try{await loadList()}catch(err){error(err.message)}};
 for(const b of document.querySelectorAll("[data-set]"))b.onclick=async()=>{
@@ -147,5 +183,19 @@ $("reply-form").onsubmit=async e=>{
   await loadList();
  }catch(e){error(e.message);$("list").textContent="Не удалось открыть панель"}
 })();
+async function backgroundSync(){
+ if(document.hidden || state.syncing || state.loading)return;
+ state.syncing=true;
+ try{
+  if(state.ticket)await refreshTicket({quiet:true});
+  else await loadList({quiet:true});
+ }catch(e){
+  // Do not interrupt typing; allow the next poll to recover.
+  console.warn("Support sync failed:",e.message);
+ }finally{state.syncing=false}
+}
+setInterval(backgroundSync,4000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)backgroundSync()});
+window.addEventListener("focus",backgroundSync);
 })();
 </script></body></html>
