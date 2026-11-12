@@ -195,3 +195,43 @@ git show origin/main:scripts/deploy_admin_bluegreen.py > /root/dato-deploy-admin
 переопределить старую команду `update-dato-telegram` через
 специальный установщик и отдельное обновление бота. **Пока
 старый установщик не переустанавливать и не запускать.**
+
+## Этап 4 — автозапуск обоих слотов после перезагрузки
+
+Фактическое состояние после первого cutover:
+- Nginx = 8081, blue healthy (managed), standby 8082 healthy;
+- `dato-telegram-admin.service` enabled/inactive (опасный конфликт за 8081 на reboot);
+- `dato-telegram-admin-blue.service` disabled/active;
+- `dato-telegram-admin-standby.service` disabled/active;
+- бот enabled/active.
+
+Подготовлен `scripts/enable_admin_bluegreen_boot.py`: проверяет четыре
+маршрута Nginx, оба порта, два соответствующих unit-файла и состояние
+старого сервиса. После preflight **без запуска/остановки сервисов**
+выполняет `systemctl disable dato-telegram-admin.service`,
+`systemctl enable dato-telegram-admin-blue.service`,
+`systemctl enable dato-telegram-admin-standby.service`.
+При ошибке пытается восстановить прежние флаги автозапуска.
+Бот и Nginx не изменяет. Сервер не перезагружает.
+
+```bash
+cd /opt/dato-telegram
+git fetch origin main
+git show origin/main:scripts/enable_admin_bluegreen_boot.py > /root/dato-enable-bluegreen-boot.py
+/opt/dato-telegram/.venv/bin/python -m py_compile /root/dato-enable-bluegreen-boot.py
+sudo /opt/dato-telegram/.venv/bin/python /root/dato-enable-bluegreen-boot.py
+```
+
+Проверка состояния:
+```bash
+systemctl is-enabled dato-telegram-admin.service
+systemctl is-enabled dato-telegram-admin-blue.service
+systemctl is-enabled dato-telegram-admin-standby.service
+systemctl is-enabled dato-telegram-bot.service
+```
+
+Ожидаемые значения: `disabled`, `enabled`, `enabled`, `enabled`.
+Не проводить тестовую перезагрузку без резервной копии, мониторинга и
+проверки расписания: одновременно стартующие админки на VPS <1GiB RAM
+создают пиковую нагрузку. При необходимости добавить последовательный
+запуск и дополнительные проверки готовности.
