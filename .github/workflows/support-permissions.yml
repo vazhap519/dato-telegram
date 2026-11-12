@@ -8,7 +8,7 @@ on:
       - 'db/**'
       - 'tests/test_support_permissions.py'
       - 'scripts/check_support_branch_readonly.sh'
-      - 'scripts/check_support_db_readonly.py scripts/prepare_support_candidate.py'
+      - 'scripts/check_support_db_readonly.py'
       - 'scripts/migrate_support_staff_permissions.py'
       - 'scripts/prepare_support_candidate.py'
       - '.github/workflows/support-permissions.yml'
@@ -28,6 +28,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile all application Python files
-        run: python -m compileall -q admin bot db scripts/migrate_support_staff_permissions.py scripts/check_support_db_readonly.py
+        run: python -m compileall -q admin bot db scripts/migrate_support_staff_permissions.py scripts/check_support_db_readonly.py scripts/prepare_support_candidate.py scripts/update_system_safe.py scripts/deploy_admin_bluegreen.py scripts/update_bot_safe.py
       - name: Support permission regression checks
         run: python -m unittest discover -s tests -p test_support_permissions.py -v
