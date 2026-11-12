@@ -1049,10 +1049,42 @@ async def support_telegram_settings(request:Request,user=Depends(get_current_use
 async def support_telegram_link(code:str=Form(...),csrf_check=Depends(verify_csrf),
                                 user=Depends(get_current_user)):
     try:
-        await link_staff(user["user"],code.strip())
+        telegram_id=await link_staff(user["user"],code.strip())
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
+    try:
+        from aiogram import Bot
+        from bot.support_admin import install_staff_menu, app_keyboard
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            await install_staff_menu(bot,telegram_id)
+            await bot.send_message(telegram_id,
+                "🛠 Админ-панель техподдержки подключена. Откройте её кнопкой ниже "
+                "или через «Меню» в чате.",reply_markup=app_keyboard())
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Could not install Telegram Mini App menu")
     return RedirectResponse("/support/telegram?linked=1",303)
+
+
+@app.post("/support/telegram/menu")
+async def support_telegram_menu(csrf_check=Depends(verify_csrf),
+                                 user=Depends(get_current_user)):
+    link=await staff_link(user["user"])
+    if not link or not link.get("telegram_id"):
+        raise HTTPException(400,detail="Сначала привяжите Telegram")
+    try:
+        from aiogram import Bot
+        from bot.support_admin import install_staff_menu, app_keyboard
+        async with Bot(token=os.environ["BOT_TOKEN"]) as bot:
+            await install_staff_menu(bot,link["telegram_id"])
+            await bot.send_message(link["telegram_id"],
+                "🛠 Ваша админ-панель доступна через постоянную кнопку «Меню» "
+                "внизу чата.",reply_markup=app_keyboard())
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Telegram Mini App menu activation failed")
+        raise HTTPException(502,detail="Не удалось добавить кнопку в Telegram") from exc
+    return RedirectResponse("/support/telegram?menu=ok",303)
 
 
 @app.post("/support/telegram/settings")
