@@ -7,6 +7,15 @@
 <section class="bg-gray-800 border border-gray-700 p-5 rounded-xl space-y-4">
 {% if link and link.telegram_id %}
 <h2 class="font-semibold text-lg">Подключено</h2>
+{% if request.query_params.get('menu')=='ok' %}<p class="bg-emerald-900/40 rounded-lg p-3 text-emerald-200 text-sm">Кнопка админ-панели добавлена в Telegram.</p>{% endif %}
+<div class="bg-gray-900 rounded-xl p-4 space-y-2">
+  <p class="font-semibold">🛠 Отдельная админ-панель в Telegram</p>
+  <p class="text-sm text-gray-300">Откроется отдельная мобильная страница с обращениями, перепиской и ответами. Команды вводить больше не нужно.</p>
+  <form method="post" action="/support/telegram/menu">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="bg-indigo-600 rounded-lg px-4 py-3 font-semibold">Добавить админ-панель в меню бота</button>
+  </form>
+</div>
 <p>Telegram ID: <code>{{ link.telegram_id }}</code></p>
 <p class="text-sm text-gray-400">Откройте чат с ботом и отправьте <code>/supportadmin</code>, чтобы управлять обращениями.</p>
 <form method="post" action="/support/telegram/settings" class="space-y-4">
