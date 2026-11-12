@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart, Command
 from dotenv import load_dotenv
 
 from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler, choose_plan_handler, back_to_subscription_handler, my_subscription_command, my_subscription_callback, request_group_invite_handler
+from db.admin_access import initialize_staff
 from db.support import initialize_support
 from db.support_telegram import initialize_support_telegram
 from bot.support_admin import (support_admin_start, support_admin_callback,
@@ -80,6 +81,7 @@ dp.message.register(support_text)
 async def main():
     await initialize_flow()
     await initialize_support()
+    await initialize_staff()
     await initialize_support_telegram()
     await initialize_subscriptions()
     await initialize_payment_providers()
