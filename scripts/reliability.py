@@ -8,6 +8,10 @@ import argparse
 import datetime as dt
 import fcntl
 import json
+import socket
+import ssl
+import time
+from zoneinfo import ZoneInfo
 import os
 from pathlib import Path
 import shutil
@@ -167,6 +171,46 @@ def monitored_services():
     return installed
 
 
+def check_admin_https():
+    """Return stable, safe diagnostic text, without URLs or exception bodies.
+
+    A valid HTTP 401 remains acceptable for compatibility with older
+    protected login endpoints. Other HTTP errors are failures.
+    """
+    url = os.getenv("DATO_HEALTH_URL", "https://bot.arutyun.me/login")
+    started = time.monotonic()
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "dato-health/1.1"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            code = response.status
+        if 200 <= code < 400:
+            return None
+        return "Admin HTTPS: HTTP %d" % code
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            return None
+        return "Admin HTTPS: HTTP %d" % exc.code
+    except Exception as exc:
+        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        if isinstance(reason, (socket.timeout, TimeoutError)):
+            category = "timeout"
+        elif isinstance(reason, socket.gaierror):
+            category = "DNS resolution failed"
+        elif isinstance(reason, (ssl.SSLError, ssl.CertificateError)):
+            category = "TLS/certificate failure"
+        elif isinstance(reason, ConnectionRefusedError):
+            category = "connection refused"
+        elif isinstance(reason, ConnectionResetError):
+            category = "connection reset"
+        else:
+            category = type(reason).__name__[:50]
+        elapsed = time.monotonic() - started
+        print("HTTPS DIAGNOSTIC: %s, elapsed=%.1fs" % (category, elapsed), flush=True)
+        return "Admin HTTPS: " + category
+
+
 def health():
     issues = []
     try:
@@ -197,17 +241,17 @@ def health():
                 issues.append("Encrypted offsite backup is older than 48 hours")
     except Exception:
         pass
-    url = os.getenv("DATO_HEALTH_URL", "https://bot.arutyun.me/login")
-    try:
-        request = urllib.request.Request(url, headers={"User-Agent":"dato-health/1.0"})
-        with urllib.request.urlopen(request, timeout=12) as response:
-            if not (200 <= response.status < 400):
-                issues.append("Admin HTTP status: " + str(response.status))
-    except urllib.error.HTTPError as exc:
-        if exc.code != 401:
-            issues.append("Admin HTTPS error: " + str(exc.code))
-    except Exception:
-        issues.append("Admin HTTPS endpoint is unavailable")
+    https_issue = check_admin_https()
+    if https_issue:
+        # Recheck only HTTPS; a transient network hiccup should not page owner.
+        print("HTTPS CHECK FAILED:", https_issue, "- retrying after 3 seconds", flush=True)
+        time.sleep(3)
+        https_retry_issue = check_admin_https()
+        if https_retry_issue:
+            issues.append(https_retry_issue)
+            print("HTTPS RETRY FAILED:", https_retry_issue, flush=True)
+        else:
+            print("HTTPS RECOVERED ON RETRY: transient failure", flush=True)
     for service in monitored_services():
         service = service.strip()
         if service:
@@ -307,6 +351,16 @@ def store_monitor_snapshot(issues,checked_at,backup):
         print("Unable to save health snapshot (the database may be unavailable)",file=sys.stderr)
 
 
+def alert_time():
+    return dt.datetime.now(ZoneInfo("Asia/Tbilisi")).strftime("%d.%m.%Y %H:%M (Тбилиси)")
+
+
+def issue_label(issue):
+    if issue.startswith("Admin HTTPS:"):
+        return "HTTPS админ-панели: " + issue.partition(": ")[2]
+    return issue
+
+
 def monitor():
     ensure_private(STATE_DIR)
     issues = health()
@@ -321,13 +375,25 @@ def monitor():
     if issues:
         print("HEALTH FAILURE:", "; ".join(issues), file=sys.stderr)
         if previous.get("fingerprint") != fingerprint or now - previous.get("at", 0) > 21600:
-            if notify("🚨 Круг Души — проверка сервера:\n" + "\n".join("• " + v for v in issues)):
+            message = ("🚨 Круг Души — проблема при проверке сервера\n"
+                       + "Время: " + alert_time() + "\n"
+                       + "\n".join("• " + issue_label(v) for v in issues))
+            if notify(message):
                 state_file.write_text(json.dumps({"fingerprint":fingerprint,"at":now}))
                 os.chmod(state_file, 0o600)
         return 1
     print("HEALTH OK: PostgreSQL, backup and HTTP endpoint checked")
     if previous.get("fingerprint"):
-        notify("✅ Круг Души — PostgreSQL, резервные копии и сайт снова доступны.")
+        recovered = []
+        try:
+            recovered = json.loads(previous["fingerprint"])
+        except (ValueError, KeyError, TypeError):
+            pass
+        message = ("✅ Круг Души — проверка восстановилась\n"
+                   + "Время: " + alert_time() + "\n"
+                   + ("Восстановлено: " + "; ".join(issue_label(v) for v in recovered)
+                      if recovered else "Повторная проверка прошла успешно."))
+        notify(message)
         state_file.write_text("{}")
         os.chmod(state_file, 0o600)
     return 0
