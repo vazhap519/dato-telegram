@@ -133,7 +133,7 @@ async function refreshTicket({quiet=false}={}){
  if(atEnd){
    box.scrollTop=box.scrollHeight;state.unread=0;
  }else{
-   box.scrollTop=previousScroll+Math.max(0,box.scrollHeight-previousHeight);
+   box.scrollTop=previousScroll;
    if(quiet)state.unread+=newUserMessages;
  }
  setNewMessageIndicator();
