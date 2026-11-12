@@ -393,9 +393,9 @@ def monitor():
                    + "Время: " + alert_time() + "\n"
                    + ("Восстановлено: " + "; ".join(issue_label(v) for v in recovered)
                       if recovered else "Повторная проверка прошла успешно."))
-        notify(message)
-        state_file.write_text("{}")
-        os.chmod(state_file, 0o600)
+        if notify(message):
+            state_file.write_text("{}")
+            os.chmod(state_file, 0o600)
     return 0
 
 
