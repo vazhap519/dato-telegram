@@ -62,6 +62,8 @@ def make_csrf_token(session_token: str) -> str:
 
 
 app = FastAPI()
+from .support_miniapp import router as support_miniapp_router
+app.include_router(support_miniapp_router)
 
 @app.exception_handler(HTTPException)
 async def admin_auth_exception_handler(request: Request, exc: HTTPException):
