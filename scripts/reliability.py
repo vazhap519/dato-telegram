@@ -155,16 +155,67 @@ def restore_test(archive=None):
             print("Temporary restore database removed:", dbname)
 
 
+def admin_bluegreen_active():
+    """Detect deliberate retirement of the legacy admin service.
+
+    Only trust the managed-slot layout when both units are installed,
+    the legacy service is disabled on boot, and Nginx routes to one of
+    the managed ports. Do not require the slots to be active here:
+    actual failures must still be reported by the monitor.
+    """
+    import re
+    try:
+        legacy = subprocess.run(
+            ["systemctl", "is-enabled", "dato-telegram-admin.service"],
+            capture_output=True, timeout=5)
+        if legacy.stdout.strip() != b"disabled":
+            return False
+        for name in ("dato-telegram-admin-blue.service",
+                     "dato-telegram-admin-standby.service"):
+            result = run(["systemctl", "show", name,
+                          "--property=LoadState", "--value"], timeout=5)
+            if result.stdout.strip() != b"loaded":
+                return False
+        nginx = Path("/etc/nginx/sites-enabled/dato-telegram")
+        text = nginx.read_text(encoding="utf-8")
+        ports = re.findall(
+            r"proxy_pass\\s+http://127\\.0\\.0\\.1:(8081|8082)\\s*;", text)
+        return len(ports) == 4 and len(set(ports)) == 1
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return False
+
+
 def monitored_services():
-    configured=[x.strip() for x in os.getenv("DATO_MONITOR_SERVICES","").split(",") if x.strip()]
+    configured = [x.strip() for x in os.getenv("DATO_MONITOR_SERVICES", "").split(",")
+                  if x.strip()]
+    bluegreen = admin_bluegreen_active()
+    new_units = ("dato-telegram-admin-blue.service",
+                 "dato-telegram-admin-standby.service")
     if configured:
-        return configured
-    # Only auto-detect known units which are actually installed.
-    installed=[]
-    for name in ("dato-telegram-bot.service","dato-telegram-admin.service"):
+        if not bluegreen:
+            return configured
+        # Replace the obsolete admin name even in explicitly configured lists.
+        # Other explicitly monitored services remain unchanged.
+        expanded = []
+        for name in configured:
+            if name == "dato-telegram-admin.service":
+                expanded.extend(new_units)
+            else:
+                expanded.append(name)
+        return list(dict.fromkeys(expanded))
+
+    names = ["dato-telegram-bot.service"]
+    if bluegreen:
+        names.extend(new_units)
+    else:
+        names.append("dato-telegram-admin.service")
+
+    installed = []
+    for name in names:
         try:
-            result=run(["systemctl","show",name,"--property=LoadState","--value"],timeout=5)
-            if result.stdout.strip()==b"loaded":
+            result = run(["systemctl", "show", name,
+                          "--property=LoadState", "--value"], timeout=5)
+            if result.stdout.strip() == b"loaded":
                 installed.append(name)
         except Exception:
             continue
