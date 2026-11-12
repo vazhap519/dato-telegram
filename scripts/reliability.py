@@ -133,10 +133,20 @@ def restore_test(archive=None):
     dbname = "dato_restore_test_" + secrets.token_hex(5)
     if not dbname.startswith("dato_restore_test_"):
         raise RuntimeError("Unsafe test database name")
-    # The DB role must have CREATEDB to perform this optional test.
+    # The production application role deliberately has no CREATEDB right.
+    # As root, create and remove the isolated DB with the local postgres OS
+    # account. Restore AS the normal application role, and never elevate it.
+    import re
+    if os.geteuid() != 0:
+        raise RuntimeError("Restore test must run as root for temporary DB setup")
+    owner = env["PGUSER"]
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", owner):
+        raise RuntimeError("Unexpected PostgreSQL role name")
     created = False
     try:
-        run(["createdb", "--template=template0", dbname], env=env, timeout=40)
+        run(["runuser", "-u", "postgres", "--",
+             "createdb", "--maintenance-db=postgres", "--template=template0",
+             "--owner", owner, dbname], timeout=40)
         created = True
         restored_env = env.copy()
         restored_env["PGDATABASE"] = dbname
@@ -151,7 +161,9 @@ def restore_test(archive=None):
         print("Restore test PASSED into temporary DB:", dbname, "tables:", tables)
     finally:
         if created:
-            run(["dropdb", "--if-exists", dbname], env=env, timeout=40)
+            run(["runuser", "-u", "postgres", "--",
+                 "dropdb", "--maintenance-db=postgres", "--if-exists", dbname],
+                timeout=40)
             print("Temporary restore database removed:", dbname)
 
 
