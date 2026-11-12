@@ -58,6 +58,7 @@ async def support_admin_start(message: types.Message):
         code=await generate_pair_code(message.from_user.id)
         await message.answer(
             "🔐 Подключение Telegram-поддержки\n\n"
+            f"Ваш Telegram ID: {message.from_user.id}\n\n"
             "Войдите в веб-админку со своей учётной записью, откройте "
             "«Поддержка → Telegram» и введите код:\n\n"
             f"{code}\n\nКод действует 10 минут. Не передавайте его другим."
