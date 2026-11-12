@@ -33,6 +33,64 @@ SCHEMA_PARTS=("db/","migrations/","alembic/","database/")
 EXTRA_RISK=(".sql",)
 SHA_RE=re.compile(r"^[0-9a-f]{40}$")
 
+# One-time reviewed exception: only these EXACT two source blobs can be used.
+# All unrelated DB, migration, SQL, or dependency differences remain blocked.
+# The exception additionally requires explicit CLI opt-in and verified DB schema.
+REVIEWED_SUPPORT_BLOBS={
+    "db/admin_access.py": "3f0bab355a57e558e7748829c848349522bf7e3e",
+    "db/support_telegram.py": "a8bc3ae105166248a70f7cb30b19d043a500af9b",
+}
+SUPPORT_COLUMNS=("support_access","support_can_reply",
+                 "support_can_change_status","support_can_close",
+                 "support_can_delete")
+
+
+def verified_support_schema():
+    """Check already-applied migration, never run migrations from the deployer."""
+    import psycopg2
+        from urllib.parse import urlsplit, unquote, parse_qs
+    envfile=bot.ENV
+    values={}
+    for line in envfile.read_text().splitlines():
+        line=line.strip()
+        if line.startswith("export "):line=line[7:]
+        if line.startswith("#") or "=" not in line:continue
+        key,val=line.split("=",1)
+        if key.strip()=="DATABASE_URL":
+            values[key.strip()]=val.strip().strip("'\\\"")
+    url=os.environ.get("DATABASE_URL") or values.get("DATABASE_URL")
+    if not url:raise RuntimeError("DATABASE_URL unavailable for compatibility verification")
+    parsed=urlsplit(url)
+    if not parsed.scheme.startswith("postgresql") or not parsed.hostname:
+        raise RuntimeError("Invalid DATABASE_URL scheme")
+    kwargs={"host":parsed.hostname,"port":parsed.port or 5432,
+            "user":unquote(parsed.username or ""),"password":unquote(parsed.password or ""),
+            "dbname":unquote(parsed.path.lstrip("/")),"connect_timeout":8}
+    params=parse_qs(parsed.query)
+    if "sslmode" in params:kwargs["sslmode"]=params["sslmode"][0]
+    if "sslrootcert" in params:kwargs["sslrootcert"]=params["sslrootcert"][0]
+    with psycopg2.connect(**kwargs) as conn:
+        conn.set_session(readonly=True)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT column_name,data_type,is_nullable
+                FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='admins'
+                AND column_name=ANY(%s)""",(list(SUPPORT_COLUMNS),))
+            found={name:(dtype,nullable) for name,dtype,nullable in cur.fetchall()}
+    if any(found.get(k)!=("boolean","NO") for k in SUPPORT_COLUMNS):
+        raise RuntimeError("Support staff schema migration has not been verified")
+
+
+def verify_reviewed_support_difference(target, blocked):
+    if set(blocked)!=set(REVIEWED_SUPPORT_BLOBS):
+        raise RuntimeError("Unreviewed DB/dependency changes: "+", ".join(blocked[:15]))
+    for filename,expected in REVIEWED_SUPPORT_BLOBS.items():
+        blob=cmd("git","-C",str(bg.ROOT),"rev-parse",f"{target}:{filename}")
+        if blob!=expected:
+            raise RuntimeError("Reviewed support source changed unexpectedly: "+filename)
+    verified_support_schema()
+
+
 
 def cmd(*args,timeout=100):
     p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
@@ -69,7 +127,7 @@ def changed(old,new):
     return cmd("git","-C",str(bg.ROOT),"diff","--name-only",old,new).splitlines()
 
 
-def validate(fetch=False, require_resources=True):
+def validate(fetch=False, require_resources=True, reviewed_support=False):
     if fetch:
         cmd("git","-C",str(bg.ROOT),"fetch","origin","main",timeout=150)
     if bg.command("git","-C",str(bg.ROOT),"status","--porcelain"):
@@ -98,8 +156,11 @@ def validate(fetch=False, require_resources=True):
                    or f in ("pyproject.toml","poetry.lock","uv.lock",
                              "Pipfile.lock"))
     if blocked:
-        raise RuntimeError("Manual DB/dependency compatibility review required: "+
-                           ", ".join(blocked[:15]))
+        if not reviewed_support:
+            raise RuntimeError("Manual DB/dependency compatibility review required: "+
+                               ", ".join(blocked[:15])+
+                               ". Explicit reviewed-support-staff flag required for reviewed change.")
+        verify_reviewed_support_difference(target, blocked)
     available_ram=bg.memory_mib()
     available_disk=shutil.disk_usage(bg.ROOT).free
     if require_resources and available_ram<220:
@@ -110,7 +171,8 @@ def validate(fetch=False, require_resources=True):
     return dict(active=active,other=other,admin_sha=admin_sha,
                 bot_sha=bot_sha,target=target,
                 admin_changes=len(admin_files),bot_changes=len(bot_files),
-                available_ram=available_ram,available_disk=available_disk)
+                available_ram=available_ram,available_disk=available_disk,
+                reviewed_support=bool(blocked))
 
 
 def print_plan(plan):
@@ -122,7 +184,9 @@ def print_plan(plan):
     print("Target origin/main:",plan["target"][:12])
     print("Changes relative to admin:",plan["admin_changes"],
           "relative to bot:",plan["bot_changes"])
-    print("Database/dependency compatibility gate: PASS (no tracked changes)")
+    print("Database/dependency compatibility gate:",
+          "PASS (reviewed support migration already applied; exact blobs verified)"
+          if plan.get("reviewed_support") else "PASS (no tracked changes)")
     print("Available RAM:",plan["available_ram"],"MiB")
     print("Disk free:",plan["available_disk"]//(1024**2),"MiB")
     print("Deployment resource gate:",
@@ -237,16 +301,18 @@ def history():
 def main():
     parser=argparse.ArgumentParser(description="Conservative coordinated Telegram + admin update")
     parser.add_argument("action",choices=("check","prepare","deploy","history"))
+    parser.add_argument("--reviewed-support-staff",action="store_true",
+                        help="Permit only pinned reviewed support DB blobs after schema verification")
     args=parser.parse_args()
     if os.geteuid()!=0:raise RuntimeError("Run as root")
     if args.action=="history":
         history();return
     if args.action=="check":
-        print_plan(validate(require_resources=False));return
+        print_plan(validate(require_resources=False,reviewed_support=args.reviewed_support_staff));return
     LOCK.parent.mkdir(parents=True,exist_ok=True)
     with LOCK.open("a+") as file:
         fcntl.flock(file,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        plan=validate(fetch=True)
+        plan=validate(fetch=True,reviewed_support=args.reviewed_support_staff)
         print_plan(plan)
         if args.action=="prepare":
             prepare_all(plan)
