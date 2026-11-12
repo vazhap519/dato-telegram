@@ -63,7 +63,7 @@ def poller_pids():
         parts=line.strip().split(None,1)
         if len(parts)!=2 or not parts[0].isdigit():continue
         argv=parts[1]
-        if re.search(r"(?:^|\\s)-m\\s+(?:bot\\.main|scripts\\.bot_runner)(?:\\s|$)",argv):
+        if re.search(r"(?:^|\s)-m\s+(?:bot\.main|scripts\.bot_runner)(?:\s|$)",argv):
             found.append(int(parts[0]))
     return found
 
@@ -121,6 +121,8 @@ def check():
     print("=== BOT UPDATE CHECK (NO CHANGES) ===")
     print("Bot service:",bot_state(),"MainPID:",current_pid())
     print("Bot commit:",current_ref()[:12])
+    print("Detected poller PIDs:",poller_pids())
+    print("Supervised PID recognized:",current_pid() in poller_pids())
     print("Target origin/main:",origin()[:12])
     print("Override:", "installed" if DROPIN.exists() else "legacy")
     print("Working tree:", "clean" if not call("git","-C",str(ROOT),"status","--porcelain") else "modified")
