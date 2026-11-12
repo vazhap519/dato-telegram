@@ -179,7 +179,7 @@ def admin_bluegreen_active():
         nginx = Path("/etc/nginx/sites-enabled/dato-telegram")
         text = nginx.read_text(encoding="utf-8")
         ports = re.findall(
-            r"proxy_pass\\s+http://127\\.0\\.0\\.1:(8081|8082)\\s*;", text)
+            r"proxy_pass\s+http://127\.0\.0\.1:(8081|8082)\s*;", text)
         return len(ports) == 4 and len(set(ports)) == 1
     except (OSError, subprocess.SubprocessError, UnicodeError):
         return False
