@@ -75,7 +75,9 @@ async def miniapp_page():
 
 @router.get("/api/me")
 async def current_staff(staff=Depends(require_staff)):
-    return {"username":staff["username"],"role":staff["role"]}
+    return {"username":staff["username"],"role":staff["role"],
+            "can_reply":staff["can_reply"],"can_change_status":staff["can_change_status"],
+            "can_close":staff["can_close"],"can_delete":staff["can_delete"]}
 
 @router.get("/api/tickets")
 async def ticket_list(status:str="",staff=Depends(require_staff)):
@@ -127,6 +129,8 @@ async def media(message_id:int,staff=Depends(require_staff)):
 
 @router.post("/api/tickets/{ticket_id}/reply")
 async def reply(ticket_id:int,payload:ReplyPayload,staff=Depends(require_staff)):
+    if not staff["can_reply"]:
+        raise HTTPException(403,"Нет разрешения отвечать на обращения")
     try:
         uid,mid=await admin_reply(ticket_id,staff["username"],payload.text)
     except ValueError as exc:
@@ -147,6 +151,10 @@ async def reply(ticket_id:int,payload:ReplyPayload,staff=Depends(require_staff))
 async def change_status(ticket_id:int,payload:StatusPayload,staff=Depends(require_staff)):
     if payload.status not in ("open","pending","closed"):
         raise HTTPException(400,"Неверный статус")
+    if payload.status=="closed" and not staff["can_close"]:
+        raise HTTPException(403,"Нет разрешения закрывать обращения")
+    if payload.status!="closed" and not staff["can_change_status"]:
+        raise HTTPException(403,"Нет разрешения изменять статус")
     try:
         uid=await set_ticket_status(ticket_id,payload.status)
     except ValueError as exc:
