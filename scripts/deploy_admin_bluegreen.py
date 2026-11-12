@@ -169,7 +169,7 @@ WantedBy=multi-user.target
 """
 
 
-def stage(sha):
+def stage(sha, allow_bot_changes=False):
     active=routing(nginx_path().read_text())
     idle=8081 if active==8082 else 8082
     if sha!=target_commit():raise RuntimeError("Target must exactly match fetched origin/main")
@@ -184,10 +184,11 @@ def stage(sha):
     if ancestry.returncode:raise RuntimeError("Git histories diverged")
     # Restrict unattended stages when a migration or polling bot code changed.
     changed=command("git","-C",str(ROOT),"diff","--name-only",current,sha).splitlines()
-    risky=[p for p in changed if p.startswith(("db/","bot/")) or p=="requirements.txt"]
+    risky=[p for p in changed if p.startswith("db/") or p=="requirements.txt"
+           or (not allow_bot_changes and p.startswith("bot/"))]
     if risky:
         print("Review required for app/database/bot compatibility:",", ".join(risky[:12]))
-        raise RuntimeError("Admin-only stage refuses changes to db/, bot/, requirements.txt")
+        raise RuntimeError("Stage refuses incompatible db/bot/requirements changes")
     release=snapshot(sha)
     python=ensure_venv(release)
     print("Release ready on disk:",release)
