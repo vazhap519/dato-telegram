@@ -10,6 +10,7 @@ temporary database using the project's reliability tool.
 """
 import os
 import sys
+import subprocess
 from pathlib import Path
 
 if os.geteuid() != 0:
@@ -77,7 +78,27 @@ def main():
     print("Creating fresh production backup using reliability.py...", flush=True)
     archive = reliability.backup()
     print("Testing FULL restore into isolated temporary PostgreSQL database...", flush=True)
-    reliability.restore_test(str(archive))
+    # The installed reliability.py may be older than the reviewed GitHub code.
+    # Use the audited source at the same fetched candidate commit, not an
+    # unversioned installed helper that may try CREATEDB as the app role.
+    ref = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "--verify",
+         "refs/remotes/origin/feature/support-staff-permissions-20261113"],
+        check=True, capture_output=True, text=True, timeout=15,
+    ).stdout.strip()
+    source = subprocess.run(
+        ["git", "-C", str(ROOT), "show", f"{ref}:scripts/reliability.py"],
+        check=True, capture_output=True, text=True, timeout=20,
+    ).stdout
+    if "runuser" not in source or "def restore_test(" not in source:
+        raise RuntimeError("Reviewed isolated restore helper unavailable")
+    print("Restore helper commit:", ref[:12], flush=True)
+    # Feeding reviewed Python code on stdin allows explicit arguments after '-'.
+    # The restore script drops its own isolated temporary database in finally.
+    subprocess.run(
+        [sys.executable, "-", "restore-test", str(archive)],
+        input=source, text=True, check=True, timeout=420,
+    )
     print("Backup and test restore PASSED. Starting short transactional migration...", flush=True)
     with psycopg2.connect(**params) as conn:
         with conn.cursor() as cur:
