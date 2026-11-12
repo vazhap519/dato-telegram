@@ -14,7 +14,7 @@ git rev-parse "refs/remotes/origin/${target}"
 echo "== Export code into isolated temp directory =="
 git archive "refs/remotes/origin/${target}" | tar -x -C "$work"
 echo "== Python syntax =="
-python3 -m compileall -q "$work/admin" "$work/bot" "$work/db"
+python3 -m compileall -q "$work/admin" "$work/bot" "$work/db" "$work/scripts/update_system_safe.py" "$work/scripts/migrate_support_staff_permissions.py" "$work/scripts/check_support_db_readonly.py"
 echo "== Support permissions regression tests =="
 python3 -m unittest discover -s "$work/tests" -p 'test_support_permissions.py' -v
 echo "== Jinja template syntax (from existing admin venv) =="
