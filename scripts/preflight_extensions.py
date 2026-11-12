@@ -27,7 +27,7 @@ try:
         "crm_tasks.html","admin_search.html","admin_issues.html",
         "admin_operations.html","admin_analytics.html",
         "admin_staff.html","admin_automations.html",
-        "tribute_auto.html"
+        "tribute_auto.html","support_telegram.html"
     ):
         env.get_template(name)
         print("TEMPLATE OK:",name)
