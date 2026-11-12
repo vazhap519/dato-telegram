@@ -111,3 +111,37 @@ systemctl is-active dato-telegram-bot.service
   слепо повторный deploy.
 - **Автоматическая очистка старых релизов, рискованные миграции и
   полностью безостановочное переключение polling-бота не реализованы.**
+
+## Диагностика после первого общего релиза
+
+Первое согласованное обновление до `62ab229` прошло успешно:
+админка на 8081 healthy, предыдущая на 8082 healthy,
+бот использует единственный PID, история завершилась событием `success`.
+После обновления `MemAvailable` снизился приблизительно до 201 MiB.
+
+Исправление в `scripts/update_system_safe.py`: `check` не блокируется
+при низком объёме памяти и всегда выводит отчёт о состоянии и сообщение
+`Deployment resource gate: BLOCKED`, если ресурсы ниже порога.
+`prepare`/`deploy` **сохраняют жёсткий порог 220 MiB RAM**
+и 1 GiB диска. Это не повод обходить ограничение.
+
+Чтобы обновить только установленный код проверочной команды, не
+перезапуская службы:
+
+```bash
+cd /opt/dato-telegram
+git fetch origin main
+git show origin/main:scripts/install_system_updater.py > /root/install-dato-system-updater.py
+/opt/dato-telegram/.venv/bin/python /root/install-dato-system-updater.py --install
+update-dato-system check
+```
+
+Для диагностики памяти без изменения состояния:
+
+```bash
+free -h
+systemctl show dato-telegram-bot.service dato-telegram-admin-blue.service dato-telegram-admin-standby.service -p MemoryCurrent --no-pager
+```
+
+Не перезапускать сервисы и не удалять релизы ради освобождения
+оперативной памяти без отдельного анализа.
