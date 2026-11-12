@@ -69,7 +69,7 @@ def changed(old,new):
     return cmd("git","-C",str(bg.ROOT),"diff","--name-only",old,new).splitlines()
 
 
-def validate(fetch=False):
+def validate(fetch=False, require_resources=True):
     if fetch:
         cmd("git","-C",str(bg.ROOT),"fetch","origin","main",timeout=150)
     if bg.command("git","-C",str(bg.ROOT),"status","--porcelain"):
@@ -100,14 +100,17 @@ def validate(fetch=False):
     if blocked:
         raise RuntimeError("Manual DB/dependency compatibility review required: "+
                            ", ".join(blocked[:15]))
-    if bg.memory_mib()<220:
-        raise RuntimeError("Less than 220 MiB RAM available")
-    if shutil.disk_usage(bg.ROOT).free<1024**3:
-        raise RuntimeError("Less than 1 GiB disk available")
+    available_ram=bg.memory_mib()
+    available_disk=shutil.disk_usage(bg.ROOT).free
+    if require_resources and available_ram<220:
+        raise RuntimeError(f"Less than 220 MiB RAM available ({available_ram} MiB); deployment blocked")
+    if require_resources and available_disk<1024**3:
+        raise RuntimeError("Less than 1 GiB disk available; deployment blocked")
     if not bot.ENV.is_file():raise RuntimeError("Missing shared secrets file")
     return dict(active=active,other=other,admin_sha=admin_sha,
                 bot_sha=bot_sha,target=target,
-                admin_changes=len(admin_files),bot_changes=len(bot_files))
+                admin_changes=len(admin_files),bot_changes=len(bot_files),
+                available_ram=available_ram,available_disk=available_disk)
 
 
 def print_plan(plan):
@@ -120,8 +123,11 @@ def print_plan(plan):
     print("Changes relative to admin:",plan["admin_changes"],
           "relative to bot:",plan["bot_changes"])
     print("Database/dependency compatibility gate: PASS (no tracked changes)")
-    print("Available RAM:",bg.memory_mib(),"MiB")
-    print("Disk free:",shutil.disk_usage(bg.ROOT).free//(1024**2),"MiB")
+    print("Available RAM:",plan["available_ram"],"MiB")
+    print("Disk free:",plan["available_disk"]//(1024**2),"MiB")
+    print("Deployment resource gate:",
+          "PASS" if plan["available_ram"]>=220 and plan["available_disk"]>=1024**3
+          else "BLOCKED (diagnostics available; do not deploy)")
     print("Neither check nor prepare restarts any services.")
     if plan["admin_sha"]==plan["target"] and plan["bot_sha"]==plan["target"]:
         print("NOOP: both components already use latest commit.")
@@ -236,7 +242,7 @@ def main():
     if args.action=="history":
         history();return
     if args.action=="check":
-        print_plan(validate());return
+        print_plan(validate(require_resources=False));return
     LOCK.parent.mkdir(parents=True,exist_ok=True)
     with LOCK.open("a+") as file:
         fcntl.flock(file,fcntl.LOCK_EX|fcntl.LOCK_NB)
