@@ -206,9 +206,14 @@ async def support_counts():
         """))).all()
         return {k:v for k,v in rows}
 
-async def admin_reply(ticket_id,actor,body):
-    body=body.strip()
-    if not body or len(body)>3000: raise ValueError("Ответ должен содержать от 1 до 3000 символов")
+async def admin_reply(ticket_id,actor,body,media_type="text",file_id=None):
+    body=(body or "").strip()
+    if media_type not in ("text","photo","voice","document"):
+        raise ValueError("Неподдерживаемый формат ответа")
+    if len(body)>3000 or (media_type=="text" and not body):
+        raise ValueError("Ответ должен содержать от 1 до 3000 символов")
+    if media_type!="text" and not file_id:
+        raise ValueError("Не найден вложенный файл")
     async with SessionLocal() as s:
         async with s.begin():
             ticket=(await s.execute(text("""
@@ -217,10 +222,11 @@ async def admin_reply(ticket_id,actor,body):
             """),{"id":ticket_id})).mappings().first()
             if not ticket: raise ValueError("Обращение закрыто или не найдено")
             mid=(await s.execute(text("""
-                INSERT INTO support_messages(ticket_id,actor,body,delivery_status)
-                VALUES (:ticket,:actor,:body,'pending')
+                INSERT INTO support_messages(ticket_id,actor,body,delivery_status,media_type,file_id)
+                VALUES (:ticket,:actor,:body,'pending',:media_type,:file_id)
                 RETURNING id
-            """),{"ticket":ticket_id,"actor":"admin:"+actor,"body":body})).scalar_one()
+            """),{"ticket":ticket_id,"actor":"admin:"+actor,"body":body,
+                  "media_type":media_type,"file_id":file_id})).scalar_one()
             await s.execute(text("""
                 UPDATE support_tickets SET status='answered',last_actor='admin',updated_at=NOW()
                 WHERE id=:id
@@ -390,7 +396,7 @@ async def support_media_record(message_id):
     async with SessionLocal() as s:
         row=(await s.execute(text("""
             SELECT file_id,media_type FROM support_messages
-            WHERE id=:id AND file_id IS NOT NULL AND actor='user'
+            WHERE id=:id AND file_id IS NOT NULL
         """),{"id":message_id})).mappings().first()
         return dict(row) if row else None
 
