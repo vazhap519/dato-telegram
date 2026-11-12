@@ -45,6 +45,8 @@ def keyboard(ticket_id=None,closed=False):
         ])
     else:
         buttons.append([InlineKeyboardButton(text="↩️ Открыть",callback_data=f"staff:status:{ticket_id}:open")])
+    buttons.append([InlineKeyboardButton(text="🛠 Админ-панель",
+                                         web_app=WebAppInfo(url=SUPPORT_APP_URL))])
     buttons.append([InlineKeyboardButton(text="📥 Все обращения",callback_data="staff:list")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
