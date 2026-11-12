@@ -114,7 +114,7 @@ async function refreshTicket({quiet=false}={}){
  state.threadKey=signature;
  $("ticket-title").textContent="#"+data.ticket.id+" · "+data.ticket.name;
  $("ticket-meta").textContent="ID "+data.ticket.telegram_id+" · "+data.ticket.status;
- const box=$("messages");box.replaceChildren();
+ box.replaceChildren();
  for(const m of data.messages){
   const b=el("div","bubble"+(m.actor==="user"?"":" admin"));b.dataset.messageId=m.id;
   b.append(el("small","",`${m.actor==="user"?"Участник":"Поддержка"} · ${date(m.created)}`));
