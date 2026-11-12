@@ -251,8 +251,23 @@ async def get_current_user(request: Request,access_token: str = Cookie(None)):
         raise HTTPException(status_code=401,detail="Сессия завершена. Войдите снова")
     if not staff_allowed(account["role"],request.url.path,request.method):
         raise HTTPException(status_code=403,detail="Недостаточно полномочий")
+    if request.url.path=="/support" or request.url.path.startswith("/support/"):
+        if account["role"]!="owner":
+            if not account["support_access"]:
+                raise HTTPException(403,detail="Доступ к техподдержке отключён")
+            action=request.url.path.rsplit("/",1)[-1] if request.method=="POST" else ""
+            permission={"reply":"support_can_reply","retry":"support_can_reply",
+                        "delete":"support_can_delete"}.get(action)
+            # Delete and retry URLs end with numeric message ID.
+            if request.method=="POST":
+                if "/delete/" in request.url.path:permission="support_can_delete"
+                if "/retry/" in request.url.path:permission="support_can_reply"
+            if permission and not account[permission]:
+                raise HTTPException(403,detail="Недостаточно прав для действия")
     request.state.admin_role=account["role"]
-    return {"user":account["username"],"role":account["role"]}
+    return {"user":account["username"],"role":account["role"],
+            "support_can_change_status":account["role"]=="owner" or account["support_can_change_status"],
+            "support_can_close":account["role"]=="owner" or account["support_can_close"]}
 
 
 # 🌐 ROOT
@@ -1230,6 +1245,10 @@ async def support_retry_failed_message(ticket_id:int,message_id:int,
 async def support_change_status(ticket_id:int,status:str=Form(...),
                                 csrf_check=Depends(verify_csrf),
                                 user=Depends(get_current_user)):
+    if status=="closed" and not user["support_can_close"]:
+        raise HTTPException(403,detail="Нет разрешения закрывать обращения")
+    if status!="closed" and not user["support_can_change_status"]:
+        raise HTTPException(403,detail="Нет разрешения изменять статус")
     try: uid=await set_ticket_status(ticket_id,status)
     except ValueError as exc: raise HTTPException(400,detail=str(exc))
     if status == "closed":
