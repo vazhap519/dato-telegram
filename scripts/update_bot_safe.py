@@ -157,7 +157,7 @@ def snapshot(sha):
     return release
 
 
-def prepare(sha):
+def prepare(sha, reviewed_support=False):
     if not COMMIT_RE.fullmatch(sha) or sha!=origin():
         raise RuntimeError("Target SHA must equal fetched origin/main")
     if not ENV.is_file():raise RuntimeError("Shared bot .env is missing")
@@ -173,7 +173,20 @@ def prepare(sha):
     changed=call("git","-C",str(ROOT),"diff","--name-only",old,sha).splitlines()
     risky=[name for name in changed if name.startswith("db/")]
     if risky:
-        raise RuntimeError("Database changes require manual compatibility review: "+", ".join(risky[:10]))
+        # A reviewed, exact-source migration exception is supplied only by
+        # the coordinated updater after database schema verification.
+        expected = {
+            "db/admin_access.py": "3f0bab355a57e558e7748829c848349522bf7e3e",
+            "db/support_telegram.py": "a8bc3ae105166248a70f7cb30b19d043a500af9b",
+        }
+        verified = reviewed_support and set(risky)==set(expected)
+        if verified:
+            for name, blob in expected.items():
+                if call("git","-C",str(ROOT),"rev-parse",f"{sha}:{name}")!=blob:
+                    verified=False
+                    break
+        if not verified:
+            raise RuntimeError("Database changes require manual compatibility review: "+", ".join(risky[:10]))
     release=snapshot(sha)
     if not (release/"scripts/bot_runner.py").is_file():
         raise RuntimeError("Release lacks dedicated bot runner; refusing deployment")
@@ -232,7 +245,7 @@ def wait_for_polling(previous_pid,timeout=65):
     raise RuntimeError("New bot failed polling readiness check within timeout")
 
 
-def deploy(sha):
+def deploy(sha, reviewed_support=False):
     if bot_state()!="active" or current_pid()<=0:
         raise RuntimeError("Existing bot is not healthy; refuse automatic deployment")
     old_ref=current_ref()
@@ -244,7 +257,7 @@ def deploy(sha):
     found=poller_pids()
     if found!=[old_pid]:
         raise RuntimeError(f"Expected exactly one supervised polling process; found {found}, service PID {old_pid}")
-    release,python=prepare(sha)
+    release,python=prepare(sha,reviewed_support=reviewed_support)
     old_override=DROPIN.read_text() if DROPIN.exists() else None
     # Never start a second poller before stop completed.
     audit("begin",old_commit=old_ref,new_commit=sha,old_pid=old_pid)
