@@ -25,6 +25,7 @@ from db.subscriber_profile import initialize_subscriber_profiles, get_subscriber
 from db.reliability_settings import initialize_reliability_settings, get_reliability_settings, save_reliability_settings
 from db.tribute_webhooks import MAX_BODY_BYTES, InvalidTributeEvent, parse_signed_delivery, verify_signature, store_event, recent_events
 from db.payment_providers import initialize_payment_providers, providers as list_payment_providers, save_provider, register_provider, payment_provider_counts, archive_provider, archived_providers, restore_provider
+from db.support_telegram import initialize_support_telegram, link_staff, staff_link, configure_staff
 from db.support import initialize_support, list_tickets, ticket_detail, support_counts, admin_reply, mark_delivery, failed_support_message, support_media_record, set_ticket_status, support_message_for_delete, mark_support_message_deleted, CATEGORIES as SUPPORT_CATEGORIES, STATUSES as SUPPORT_STATUSES
 from db.expiry_monitor import initialize_expiry_monitor, expiry_overview, expiry_counts
 from db.subscription_automation import initialize_subscription_automation, automation_settings, save_automation_settings, managed_count, member_removal_diagnostics
@@ -92,6 +93,7 @@ async def setup_onboarding():
     await initialize_crm()
     await initialize_extensions()
     await initialize_staff()
+    await initialize_support_telegram()
     await initialize_tribute_payment_tests()
     await initialize_tribute_test_activation()
     await initialize_tribute_auto()
@@ -1031,6 +1033,36 @@ async def support_new_messages(ticket_id:int,after:int=0,user=Depends(get_curren
                 m.get("telegram_sent_at") if m["actor"]!="user" else m["created_at"]),
         "time":tbilisi_time(m["created_at"])
     } for m in messages if m["id"]>max(0,after)]})
+
+
+@app.get("/support/telegram")
+async def support_telegram_settings(request:Request,user=Depends(get_current_user)):
+    return templates.TemplateResponse(request=request,name="support_telegram.html",context={
+        "link":await staff_link(user["user"]),
+        "csrf_token":make_csrf_token(request.cookies.get("access_token",""))
+    },headers={"Cache-Control":"no-store"})
+
+
+@app.post("/support/telegram/link")
+async def support_telegram_link(code:str=Form(...),csrf_check=Depends(verify_csrf),
+                                user=Depends(get_current_user)):
+    try:
+        await link_staff(user["user"],code.strip())
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/support/telegram?linked=1",303)
+
+
+@app.post("/support/telegram/settings")
+async def support_telegram_settings_update(
+    notifications_enabled:bool=Form(False),unlink:bool=Form(False),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    try:
+        await configure_staff(user["user"],notifications_enabled,unlink)
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/support/telegram?updated=1",303)
 
 
 @app.get("/support/{ticket_id}")
