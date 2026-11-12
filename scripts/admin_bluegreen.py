@@ -64,9 +64,14 @@ def nginx_target():
 def routing(content):
     ports=re.findall(r"proxy_pass\\s+http://127\\.0\\.0\\.1:(8081|8082)\\s*;",content)
     if len(ports)!=4 or len(set(ports))!=1:
-        raise RuntimeError("Unexpected Nginx routing; refusing automatic change")
-    if content.count("server_name bot.arutyun.me;")!=2:
-        raise RuntimeError("Unexpected Nginx server layout")
+        raise RuntimeError(
+            f"Unexpected Nginx routing: matched {len(ports)} upstreams, "
+            f"ports={ports}; expected four identical ports. No changes made")
+    server_names=content.count("server_name bot.arutyun.me;")
+    if server_names!=2:
+        raise RuntimeError(
+            f"Unexpected Nginx server layout: {server_names} server_name entries; "
+            "expected two. No changes made")
     return int(ports[0])
 
 
