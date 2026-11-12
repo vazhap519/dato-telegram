@@ -32,6 +32,23 @@ PY
 else
   echo "WARNING: admin .venv not found; Jinja check skipped"
 fi
+echo "== Candidate-specific deployment gate (read-only) =="
+CANDIDATE_SOURCE="$work/scripts" CANDIDATE_SHA="$(git rev-parse "refs/remotes/origin/${target}")" \
+  /opt/dato-telegram/.venv/bin/python - <<'PY'
+import os, sys
+sys.path.insert(0, os.environ["CANDIDATE_SOURCE"])
+import update_system_safe as updater
+import deploy_admin_bluegreen as bg
+import update_bot_safe as bot
+candidate = os.environ["CANDIDATE_SHA"]
+bg.target_commit = lambda: candidate
+bot.origin = lambda: candidate
+plan = updater.validate(fetch=False, require_resources=False, reviewed_support=True)
+if plan["target"] != candidate or not plan["reviewed_support"]:
+    raise RuntimeError("Candidate support review gate did not verify")
+updater.print_plan(plan)
+print("CANDIDATE REVIEW GATE PASSED (no release operations performed)")
+PY
 echo "== Existing deployment safety gates (read-only) =="
 if command -v update-dato-system >/dev/null 2>&1; then
   update-dato-system check
