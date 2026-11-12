@@ -1,0 +1,31 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Telegram-поддержка</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-gray-900 text-white min-h-screen">{% include "_sidebar.html" %}
+<main class="max-w-3xl mx-auto p-4 md:p-8 space-y-5">
+<header><a href="/support" class="text-sky-300 underline text-sm">← К обращениям</a><h1 class="text-2xl font-bold mt-3">🛟 Поддержка в Telegram</h1><p class="text-gray-400 mt-2 text-sm">Личная привязка Telegram к вашей учётной записи. Обращения и ответы синхронизируются с веб-панелью.</p></header>
+{% if request.query_params.get('linked') %}<p class="bg-emerald-900/40 p-3 rounded-lg text-emerald-200">Telegram успешно подключён.</p>{% endif %}
+{% if request.query_params.get('updated') %}<p class="bg-emerald-900/40 p-3 rounded-lg text-emerald-200">Настройки сохранены.</p>{% endif %}
+<section class="bg-gray-800 border border-gray-700 p-5 rounded-xl space-y-4">
+{% if link and link.telegram_id %}
+<h2 class="font-semibold text-lg">Подключено</h2>
+<p>Telegram ID: <code>{{ link.telegram_id }}</code></p>
+<p class="text-sm text-gray-400">Откройте чат с ботом и отправьте <code>/supportadmin</code>, чтобы управлять обращениями.</p>
+<form method="post" action="/support/telegram/settings" class="space-y-4">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label class="flex gap-3 items-center"><input type="checkbox" name="notifications_enabled" value="true" {% if link.notifications_enabled %}checked{% endif %}><span>Уведомлять о новых обращениях и сообщениях в Telegram</span></label>
+<p class="text-xs text-gray-400">У каждого сотрудника отдельная настройка. При включении старые обращения не отправляются повторно.</p>
+<button class="bg-indigo-600 rounded-lg px-4 py-3 font-semibold">Сохранить настройки</button>
+</form>
+<form method="post" action="/support/telegram/settings" onsubmit="return confirm('Отвязать Telegram от этой учётной записи?')" class="pt-3 border-t border-gray-700">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="unlink" value="true"><button class="text-red-300 underline text-sm">Отключить Telegram</button>
+</form>
+{% else %}
+<h2 class="font-semibold text-lg">Подключение</h2>
+<ol class="list-decimal pl-5 space-y-2 text-sm text-gray-300"><li>В личном чате с нашим Telegram-ботом отправьте <code>/supportadmin</code>.</li><li>Бот пришлёт одноразовый восьмизначный код на 10 минут.</li><li>Введите код ниже, оставаясь в своей учётной записи веб-админки.</li></ol>
+<form method="post" action="/support/telegram/link" class="space-y-3">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label for="code" class="block text-sm">Одноразовый код</label>
+<input id="code" name="code" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" required autocomplete="off" class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-3 w-full" placeholder="8 цифр">
+<button class="bg-indigo-600 rounded-lg px-4 py-3 font-semibold">Подключить Telegram</button>
+</form>
+{% endif %}
+</section></main></body></html>
