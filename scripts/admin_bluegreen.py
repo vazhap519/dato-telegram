@@ -101,9 +101,11 @@ def stage(commit):
         raise RuntimeError("Current admin on 8081 is not healthy")
     if not (BASE/".venv/bin/python").is_file() or not (BASE/".env").is_file():
         raise RuntimeError("Missing runtime or .env")
-    current=run("git","-C",str(BASE),"rev-parse","origin/main")
-    if commit!=current or not re.fullmatch("[0-9a-f]{40}",commit):
-        raise RuntimeError("Run git fetch origin main; supplied commit must match origin/main")
+    if not re.fullmatch("[0-9a-f]{40}",commit):
+        raise RuntimeError("Expected a full 40-character commit SHA")
+    found=run("git","-C",str(BASE),"rev-parse","--verify",commit+"^{commit}")
+    if found!=commit:
+        raise RuntimeError("Unknown release commit")
     release=RELEASES/commit
     if not (release/"admin/main.py").is_file():
         raise RuntimeError("Release snapshot not found. First run bluegreen_probe.py --confirm")
