@@ -3,7 +3,7 @@ import asyncio
 import logging
 
 from aiogram import types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp
 
 from db.support import (list_tickets, ticket_detail, admin_reply,
                         mark_delivery, set_ticket_status, STATUSES)
@@ -11,6 +11,24 @@ from db.support_telegram import (generate_pair_code, telegram_staff, set_reply_t
                                  pending_notifications, mark_notification)
 
 log = logging.getLogger(__name__)
+
+SUPPORT_APP_URL = "https://bot.arutyun.me/tg-support"
+
+def app_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🛠 Открыть админ-панель",
+                             web_app=WebAppInfo(url=SUPPORT_APP_URL))
+    ]])
+
+
+async def install_staff_menu(bot, chat_id):
+    await bot.set_chat_menu_button(
+        chat_id=chat_id,
+        menu_button=MenuButtonWebApp(
+            text="Админ-панель", web_app=WebAppInfo(url=SUPPORT_APP_URL)
+        )
+    )
+
 
 
 def keyboard(ticket_id=None,closed=False):
@@ -43,9 +61,14 @@ async def support_admin_start(message: types.Message):
             f"{code}\n\nКод действует 10 минут. Не передавайте его другим."
         )
         return
-    await message.answer("🛟 Техподдержка · "+staff["username"]+
-                         "\nОткройте обращения или ответьте на выбранный диалог.",
-                         reply_markup=keyboard())
+    try:
+        await install_staff_menu(message.bot,message.chat.id)
+    except Exception:
+        log.exception("Unable to set staff Telegram menu button")
+    await message.answer("🛟 Админ-панель · "+staff["username"]+
+                         "\nОткройте полноценную мобильную панель кнопкой ниже "
+                         "или через «Меню» внизу чата.",
+                         reply_markup=app_keyboard())
 
 
 async def support_admin_callback(query:types.CallbackQuery):
