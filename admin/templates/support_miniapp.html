@@ -53,8 +53,15 @@ async function api(path,options={}){
    method:options.method||"GET",credentials:"omit",cache:"no-store",
    headers:{"X-Telegram-Init-Data":init,...(options.body?{"Content-Type":"application/json"}:{})},
    body:options.body?JSON.stringify(options.body):undefined});
- const data=await response.json().catch(()=>({}));
- if(!response.ok)throw Error(typeof data.detail==="string"?data.detail:"Ошибка запроса ("+response.status+")");
+ const contentType=response.headers.get("content-type")||"";
+ const data=contentType.includes("application/json")?await response.json().catch(()=>({})):{};
+ if(!response.ok){
+   if(response.status===401 && !contentType.includes("application/json"))
+     throw Error("Веб-сервер запрашивает отдельный пароль (HTTP 401). Нужно отключить Basic Auth только для /tg-support на Nginx.");
+   if(response.status===401 && data.detail==="Проверка Telegram не пройдена")
+     throw Error("Telegram не подтвердил вход. Закройте панель и откройте её заново из чата бота.");
+   throw Error(typeof data.detail==="string"?data.detail:"Ошибка запроса ("+response.status+")");
+ }
  return data;
 }
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;if(text!=null)x.textContent=text;return x}
