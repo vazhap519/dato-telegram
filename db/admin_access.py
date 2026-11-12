@@ -17,6 +17,11 @@ async def initialize_staff():
         await c.execute(text("""
           ALTER TABLE admins ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE
         """))
+        for column in ("support_access", "support_can_reply", "support_can_change_status",
+                       "support_can_close", "support_can_delete"):
+            await c.execute(text(
+                f"ALTER TABLE admins ADD COLUMN IF NOT EXISTS {column} BOOLEAN NOT NULL DEFAULT TRUE"
+            ))
         # Existing oldest admin account is the initial owner. Other legacy
         # accounts remain admins rather than gaining owner-only privileges.
         await c.execute(text("""
@@ -64,8 +69,12 @@ async def read_staff(username):
 async def staff_list():
     async with SessionLocal() as s:
         return [dict(x) for x in (await s.execute(text("""
-          SELECT id,username,role,enabled,last_login_at
-          FROM admins ORDER BY id
+          SELECT a.id,a.username,a.role,a.enabled,a.last_login_at,
+                 a.support_access,a.support_can_reply,a.support_can_change_status,
+                 a.support_can_close,a.support_can_delete,
+                 l.telegram_id,COALESCE(l.notifications_enabled,FALSE) AS support_notify_telegram
+          FROM admins a LEFT JOIN support_telegram_links l ON l.admin_id=a.id
+          ORDER BY a.id
         """))).mappings().all()]
 
 async def staff_create(username,password_hash,role,actor):
@@ -138,3 +147,77 @@ async def recent_login_events(limit=80):
           FROM admin_auth_events ORDER BY id DESC LIMIT :limit
         """),{"limit":min(200,max(1,int(limit)))})).mappings().all()
         return [dict(row) for row in rows]
+
+async def support_permissions_change(target, actor, *, access=False, can_reply=False,
+                                     can_change_status=False, can_close=False,
+                                     can_delete=False, telegram_id=None, notify=False):
+    """Owner-only caller manages support rights and optional Telegram pairing.
+
+    This is separate from the web account role; owner role is immutable.
+    Revocation takes effect on the next Mini App request.
+    """
+    if target == actor:
+        raise ValueError("Нельзя изменять собственные права поддержки в этой форме")
+    if telegram_id not in (None, ""):
+        try:
+            telegram_id = int(telegram_id)
+        except (TypeError, ValueError):
+            raise ValueError("Неверный Telegram ID")
+        if telegram_id <= 0 or telegram_id >= 10**16:
+            raise ValueError("Неверный Telegram ID")
+    else:
+        telegram_id = None
+    async with SessionLocal() as s:
+        async with s.begin():
+            account=(await s.execute(text("""
+                SELECT id,role,enabled FROM admins WHERE username=:name FOR UPDATE
+            """),{"name":target})).mappings().first()
+            if not account or account["role"]=="owner":
+                raise ValueError("Сотрудник не найден или аккаунт владельца защищён")
+            access=bool(access) and account["role"] in ("admin","support")
+            rights={"access":access, "reply":access and bool(can_reply),
+                    "status":access and bool(can_change_status),
+                    "close":access and bool(can_close),
+                    "delete":access and bool(can_delete)}
+            await s.execute(text("""
+                UPDATE admins SET support_access=:access, support_can_reply=:reply,
+                    support_can_change_status=:status, support_can_close=:close,
+                    support_can_delete=:delete, session_version=session_version+1
+                WHERE id=:id
+            """),{"id":account["id"],**rights})
+            if telegram_id is not None:
+                taken=(await s.execute(text("""
+                    SELECT 1 FROM support_telegram_links
+                    WHERE telegram_id=:tid AND admin_id<>:id
+                """),{"tid":telegram_id,"id":account["id"]})).first()
+                if taken:
+                    raise ValueError("Этот Telegram ID уже привязан к другому сотруднику")
+                await s.execute(text("""
+                    INSERT INTO support_telegram_links
+                        (admin_id,telegram_id,notifications_enabled,notifications_since,reply_ticket_id)
+                    VALUES (:id,:tid,:notify,
+                        CASE WHEN :notify THEN NOW() ELSE NULL END,NULL)
+                    ON CONFLICT(admin_id) DO UPDATE SET telegram_id=EXCLUDED.telegram_id,
+                        notifications_enabled=EXCLUDED.notifications_enabled,
+                        notifications_since=CASE WHEN EXCLUDED.notifications_enabled
+                            THEN NOW() ELSE NULL END,
+                        reply_ticket_id=NULL,updated_at=NOW()
+                """),{"id":account["id"],"tid":telegram_id,
+                      "notify":access and account["enabled"] and bool(notify)})
+            else:
+                await s.execute(text("""
+                    UPDATE support_telegram_links
+                    SET notifications_enabled=:notify,
+                        notifications_since=CASE WHEN :notify THEN
+                            COALESCE(notifications_since,NOW()) ELSE NULL END,
+                        reply_ticket_id=CASE WHEN :access THEN reply_ticket_id ELSE NULL END,
+                        updated_at=NOW()
+                    WHERE admin_id=:id
+                """),{"id":account["id"],
+                      "notify":access and account["enabled"] and bool(notify),
+                      "access":access})
+            await s.execute(text("""
+                INSERT INTO admin_operation_audit(actor,action,target,details)
+                VALUES (:actor,'support_permissions_changed',:target,:details)
+            """),{"actor":actor,"target":target,
+                  "details":"access="+str(access)+", notify="+str(bool(notify))})
