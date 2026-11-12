@@ -92,8 +92,10 @@ async def staff_create(username,password_hash,role,actor):
             """),{"name":username})).first()
             if exists:raise ValueError("Учётная запись уже существует")
             await s.execute(text("""
-              INSERT INTO admins(username,password,role,enabled)
-              VALUES (:name,:password,:role,TRUE)
+              INSERT INTO admins(username,password,role,enabled,
+                support_access,support_can_reply,support_can_change_status,
+                support_can_close,support_can_delete)
+              VALUES (:name,:password,:role,TRUE,FALSE,FALSE,FALSE,FALSE,FALSE)
             """),{"name":username,"password":password_hash,"role":role})
             await s.execute(text("""
               INSERT INTO admin_operation_audit(actor,action,target,details)
