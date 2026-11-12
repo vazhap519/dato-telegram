@@ -202,7 +202,7 @@ def prepare_all(plan):
     # This does not stop/restart systemd units, and does not write Nginx.
     release=bg.snapshot(sha)
     bg.ensure_venv(release)
-    bot.prepare(sha)
+    bot.prepare(sha,reviewed_support=plan.get('reviewed_support',False))
     print("PREPARED BOTH:",sha[:12],"without service changes")
 
 
@@ -243,7 +243,7 @@ def deploy_all(plan):
         if admin.active_port()!=old or not bg.health(old):
             raise RuntimeError("Traffic changed during preparation; abort")
         if plan["admin_sha"]!=sha:
-            bg.stage(sha,allow_bot_changes=True)
+            bg.stage(sha,allow_bot_changes=True,reviewed_support=plan.get('reviewed_support',False))
             if admin.release_for(new)!=sha or not bg.health(new):
                 raise RuntimeError("New admin release did not pass staging verification")
             audit("admin_staged",target=sha,port=new)
@@ -253,7 +253,7 @@ def deploy_all(plan):
             audit("admin_switched",target=sha,port=new)
         # Stop/start the only poller only after admin is healthy.
         if plan["bot_sha"]!=sha:
-            bot.deploy(sha)
+            bot.deploy(sha,reviewed_support=plan.get('reviewed_support',False))
             bot_switched=True
             if bot.current_ref()!=sha or bot.poller_pids()!=[bot.current_pid()]:
                 raise RuntimeError("Bot post-deploy identity/poller validation failed")
