@@ -39,27 +39,29 @@ onsubmit="return confirm('Удалить сообщение из Telegram-чат
 <input type="hidden" name="confirm" value="DELETE_BOTH">
 <button class="text-xs text-red-200 hover:text-white underline">🗑 Удалить у пользователя</button>
 </form>{% endif %}
-{% if m.delivery_status=='failed' %}<form action="/support/{{ ticket.id }}/retry/{{ m.id }}" method="post" class="mt-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-xs text-red-200 underline">Не доставлено · повторить</button></form>{% endif %}
+{% if m.delivery_status=='failed' and support_permissions.support_can_reply %}<form action="/support/{{ ticket.id }}/retry/{{ m.id }}" method="post" class="mt-2"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-xs text-red-200 underline">Не доставлено · повторить</button></form>{% endif %}
 </div></div>
 {% else %}<p class="text-gray-400 text-sm">Сообщений пока нет.</p>{% endfor %}
 </div>
-{% if ticket.status!='closed' %}
+{% if ticket.status!='closed' and support_permissions.support_can_reply %}
 <form method="post" action="/support/{{ ticket.id }}/reply" class="border-t border-gray-700 p-3 flex gap-2 items-end" id="chat-form">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <textarea id="chat-input" name="body" rows="2" required maxlength="3000" placeholder="Сообщение участнику…" class="bg-gray-900 border border-gray-700 rounded-xl p-3 flex-1 min-w-0 resize-none focus:outline-none focus:border-indigo-500"></textarea>
 <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-3 rounded-xl font-semibold">Отправить ➤</button>
 </form>
-{% else %}<div class="border-t border-gray-700 p-4 text-sm text-gray-400">Диалог закрыт. Можно снова открыть ниже.</div>{% endif %}
+{% elif ticket.status=='closed' %}<div class="border-t border-gray-700 p-4 text-sm text-gray-400">Диалог закрыт.</div>{% endif %}
 <div class="px-3 py-2 border-t border-gray-700 flex flex-wrap gap-2 items-center">
 <span class="text-xs text-gray-400 mr-2">Управление:</span>
 {% for key,label in {'open':'Открыть','pending':'Отложить','closed':'Завершить диалог'}.items() %}
-<form method="post" action="/support/{{ ticket.id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="status" value="{{ key }}"><button {% if ticket.status==key %}disabled{% endif %} class="text-xs rounded-lg px-3 py-2 {% if ticket.status==key %}bg-indigo-900 opacity-60{% else %}bg-gray-700 hover:bg-gray-600{% endif %}">{{ label }}</button></form>
+{% if (key=='closed' and support_permissions.support_can_close) or (key!='closed' and support_permissions.support_can_change_status) %}
+<form method="post" action="/support/{{ ticket.id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="status" value="{{ key }}"><button {% if ticket.status==key %}disabled{% endif %} class="text-xs rounded-lg px-3 py-2 {% if ticket.status==key %}bg-indigo-900 opacity-60{% else %}bg-gray-700 hover:bg-gray-600{% endif %}">{{ label }}</button></form>{% endif %}
 {% endfor %}
 </div></section></div></main>
 <script>
 (()=> {
   const box=document.getElementById('chat-messages');
   const ticketId={{ ticket.id }};
+  const mayDelete={{ 'true' if support_permissions.support_can_delete else 'false' }};
   let lastId=Number(box.querySelector('[data-message-id]:last-of-type')?.dataset.messageId||0);
   const ids=[...box.querySelectorAll('[data-message-id]')].map(el=>Number(el.dataset.messageId));
   if(ids.length)lastId=Math.max(...ids);
@@ -88,7 +90,7 @@ onsubmit="return confirm('Удалить сообщение из Telegram-чат
     }
     if(m.body){const p=document.createElement('p');p.className='text-sm whitespace-pre-wrap break-words';p.textContent=m.body;bubble.appendChild(p);}
     if(m.deleted_at){const tag=document.createElement('small');tag.textContent='Удалено у пользователя';tag.className='text-amber-200';bubble.appendChild(tag);}
-    else if(m.can_delete){
+    else if(m.can_delete && mayDelete){
       const form=document.createElement('form');
       form.method='post';form.action='/support/'+ticketId+'/delete/'+m.id;
       form.className='mt-2';form.onsubmit=()=>confirm('Удалить сообщение у пользователя в Telegram?');

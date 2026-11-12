@@ -58,6 +58,7 @@ async def support_admin_start(message: types.Message):
         code=await generate_pair_code(message.from_user.id)
         await message.answer(
             "🔐 Подключение Telegram-поддержки\n\n"
+            f"Ваш Telegram ID: {message.from_user.id}\n\n"
             "Войдите в веб-админку со своей учётной записью, откройте "
             "«Поддержка → Telegram» и введите код:\n\n"
             f"{code}\n\nКод действует 10 минут. Не передавайте его другим."
@@ -113,6 +114,9 @@ async def support_admin_callback(query:types.CallbackQuery):
         await query.message.answer(text[:3900],
                                    reply_markup=keyboard(ticket_id,ticket["status"]=="closed"))
     elif data.startswith("staff:reply:"):
+        if not staff["can_reply"]:
+            await query.message.answer("Нет права отвечать на обращения.")
+            return
         try:ticket_id=int(data.split(":")[2])
         except (ValueError,IndexError):return
         try:await set_reply_target(query.from_user.id,ticket_id)
@@ -129,6 +133,12 @@ async def support_admin_callback(query:types.CallbackQuery):
         except ValueError:return
         status=parts[3]
         if status not in ("open","pending","closed"):return
+        if status=="closed" and not staff["can_close"]:
+            await query.message.answer("Нет права закрывать обращения.")
+            return
+        if status!="closed" and not staff["can_change_status"]:
+            await query.message.answer("Нет права изменять статус.")
+            return
         try:
             recipient=await set_ticket_status(ticket_id,status)
             if status=="closed":
@@ -161,12 +171,12 @@ async def is_support_admin_reply(message:types.Message):
     if message.text and message.text.startswith("/"):return False
     if not (message.text or message.photo or message.voice or message.document):return False
     staff=await telegram_staff(message.from_user.id)
-    return bool(staff and staff["reply_ticket_id"])
+    return bool(staff and staff["can_reply"] and staff["reply_ticket_id"])
 
 
 async def support_admin_reply(message:types.Message):
     staff=await telegram_staff(message.from_user.id)
-    if not staff or not staff["reply_ticket_id"]:return
+    if not staff or not staff["can_reply"] or not staff["reply_ticket_id"]:return
     ticket_id=staff["reply_ticket_id"]
     kind="text"
     file_id=None
