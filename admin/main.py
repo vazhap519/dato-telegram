@@ -76,6 +76,7 @@ async def admin_auth_exception_handler(request: Request, exc: HTTPException):
         and accepts_html
         and request.url.path != "/login"
         and not request.url.path.startswith("/webhooks/")
+        and not request.url.path.startswith("/tg-support")
     ):
         response = RedirectResponse(url="/login", status_code=303)
         if request.cookies.get("access_token"):
