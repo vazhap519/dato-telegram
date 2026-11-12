@@ -235,3 +235,66 @@ systemctl is-enabled dato-telegram-bot.service
 проверки расписания: одновременно стартующие админки на VPS <1GiB RAM
 создают пиковую нагрузку. При необходимости добавить последовательный
 запуск и дополнительные проверки готовности.
+
+## Этап 5 — отдельная единая команда обновления админки
+
+Файлы в GitHub:
+- `scripts/update_admin_safe.py` — оркестрация fetch → stage → cutover →
+  проверки, автоматический возврат Nginx на прежний порт при проблемах,
+  отдельный блокирующий flock, root-only JSONL-журнал
+  `/var/log/dato-deploy/admin-updates.jsonl`.
+- `scripts/install_admin_updater.py` — берёт **два проверенных скрипта**
+  из `origin/main`, проверяет синтаксис и устанавливает независимую
+  команду `/usr/local/bin/update-dato-admin`. Существующая
+  `/usr/local/bin/update-dato-telegram` **не изменяется**.
+  Существующие службы и Nginx **не перезапускаются при установке**.
+
+Установка с предварительной проверкой (запускать последовательно):
+
+```bash
+cd /opt/dato-telegram
+git fetch origin main
+git show origin/main:scripts/install_admin_updater.py > /root/install-dato-admin-updater.py
+/opt/dato-telegram/.venv/bin/python -m py_compile /root/install-dato-admin-updater.py
+/opt/dato-telegram/.venv/bin/python /root/install-dato-admin-updater.py
+/opt/dato-telegram/.venv/bin/python /root/install-dato-admin-updater.py --install
+update-dato-admin check
+```
+
+После подтверждения `check` новая единая команда:
+
+```bash
+update-dato-admin deploy
+```
+
+Она:
+1. Убедится в работоспособности активного экземпляра и автозапуске слотов.
+2. Обновит только git refs (`git fetch`) без изменения текущих исходников.
+3. Сравнит коммит целевого релиза с реально работающим; одинаковый →
+   сообщение об отсутствии обновлений.
+4. Откажется от опасных изменений `db/`, `bot/`, `requirements.txt`,
+   расхождения истории Git и грязного рабочего дерева.
+5. Создаст релиз из Git в отдельном каталоге, поставит пакеты в его venv,
+   заменит только неактивный systemd-слот.
+6. Протестирует оба экземпляра, переключит четыре upstream Nginx, проверит
+   публичную Mini App и статус Telegram-бота.
+7. При неудаче после переключения вернёт Nginx на прежний порт.
+8. Запишет начало, завершение и ошибку в приватный JSONL-журнал.
+
+Диагностика и ручной возврат:
+
+```bash
+update-dato-admin check
+update-dato-admin history
+update-dato-admin rollback
+```
+
+Ограничения: это бесшовное переключение **только FastAPI-админки**.
+Два слота имеют общую PostgreSQL — destructive migrations и изменения
+бота требуют отдельного согласованного релиза. Автоматическое
+обновление и перезапуск самого polling-бота пока не реализованы, старый
+комплексный установщик запрещён к использованию после перехода на
+слоты. HTTP-проверки не заменяют тесты бизнес-логики, обновление вебхуков
+или реальных действий пользователей. Переход на новую версию не означает
+абсолютную гарантию нулевых ошибок, но старый экземпляр остаётся
+доступен для отката.
