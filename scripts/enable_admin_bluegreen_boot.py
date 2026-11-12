@@ -65,8 +65,10 @@ def preflight():
         raise RuntimeError("Legacy admin is still running; refusing to change boot policy")
     blue_unit = run("systemctl", "cat", BLUE)
     standby_unit = run("systemctl", "cat", STANDBY)
-    if "--port 8081" not in blue_unit or "--port 8082" not in standby_unit:
-        raise RuntimeError("Unexpected managed slot ExecStart; inspect units manually")
+    if "--port 8081" not in blue_unit:
+        raise RuntimeError("Unexpected blue slot ExecStart")
+    if "dato-admin-slot-launcher.py serve " not in standby_unit:
+        raise RuntimeError("Unexpected standby slot ExecStart")
     if run("systemctl", "show", BLUE, "--property=WorkingDirectory", "--value").startswith("/opt/dato-admin-releases/") is False:
         raise RuntimeError("Blue unit is not pinned to an isolated release")
     if run("systemctl", "show", STANDBY, "--property=WorkingDirectory", "--value").startswith("/opt/dato-admin-releases/") is False:
