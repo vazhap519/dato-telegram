@@ -95,7 +95,7 @@ async def support_admin_callback(query:types.CallbackQuery):
             await query.message.answer(str(exc))
             return
         await query.message.answer(f"✍️ Ответ для обращения #{ticket_id}.\n"
-                                   "Отправьте текст следующим сообщением. "
+                                   "Отправьте текст, фото, голосовое или документ следующим сообщением. "
                                    "Отмена: /cancelreply")
     elif data.startswith("staff:status:"):
         parts=data.split(":")
@@ -133,7 +133,8 @@ async def support_admin_cancel(message:types.Message):
 
 async def is_support_admin_reply(message:types.Message):
     if message.chat.type!="private" or not message.from_user:return False
-    if not message.text or message.text.startswith("/"):return False
+    if message.text and message.text.startswith("/"):return False
+    if not (message.text or message.photo or message.voice or message.document):return False
     staff=await telegram_staff(message.from_user.id)
     return bool(staff and staff["reply_ticket_id"])
 
@@ -142,8 +143,24 @@ async def support_admin_reply(message:types.Message):
     staff=await telegram_staff(message.from_user.id)
     if not staff or not staff["reply_ticket_id"]:return
     ticket_id=staff["reply_ticket_id"]
+    kind="text"
+    file_id=None
+    body=message.text or message.caption or ""
+    if message.photo:
+        kind="photo"
+        file_id=message.photo[-1].file_id
+    elif message.voice:
+        kind="voice"
+        file_id=message.voice.file_id
+    elif message.document:
+        kind="document"
+        if message.document.file_size and message.document.file_size>20*1024*1024:
+            await message.answer("Файл слишком большой (максимум 20 МБ).")
+            return
+        file_id=message.document.file_id
+        body=body or (message.document.file_name or "Документ")
     try:
-        uid,mid=await admin_reply(ticket_id,staff["username"],message.text)
+        uid,mid=await admin_reply(ticket_id,staff["username"],body,kind,file_id)
     except ValueError as exc:
         await set_reply_target(message.from_user.id,None)
         await message.answer(str(exc))
@@ -151,7 +168,14 @@ async def support_admin_reply(message:types.Message):
     success=False
     sent_id=None
     try:
-        delivered=await message.bot.send_message(uid,message.text,parse_mode=None)
+        if kind=="photo":
+            delivered=await message.bot.send_photo(uid,file_id,caption=body[:1024] or None)
+        elif kind=="document":
+            delivered=await message.bot.send_document(uid,file_id,caption=body[:1024] or None)
+        elif kind=="voice":
+            delivered=await message.bot.send_voice(uid,file_id,caption=body[:1024] or None)
+        else:
+            delivered=await message.bot.send_message(uid,body,parse_mode=None)
         success=True
         sent_id=delivered.message_id
     except Exception:
