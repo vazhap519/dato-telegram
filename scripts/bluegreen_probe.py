@@ -41,6 +41,12 @@ def main():
         raise SystemExit("Missing live repo, venv, or .env; no action taken")
     if shutil.disk_usage(BASE).free < 1024**3:
         raise SystemExit("Less than 1 GiB disk space; no action taken")
+    meminfo=Path("/proc/meminfo").read_text()
+    available=next((int(line.split()[1])*1024 for line in meminfo.splitlines()
+                    if line.startswith("MemAvailable:")),0)
+    print("Available RAM: %d MiB" % (available//1024//1024))
+    if available < 250*1024*1024:
+        raise SystemExit("Less than 250 MiB available RAM; not safe to start a second process")
     with socket.socket() as sock:
         if sock.connect_ex(("127.0.0.1",PORT))==0:
             raise SystemExit("Port 8082 is in use; no action taken")
