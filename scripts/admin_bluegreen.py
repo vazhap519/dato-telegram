@@ -62,7 +62,7 @@ def nginx_target():
 
 
 def routing(content):
-    ports=re.findall(r"proxy_pass\\s+http://127\\.0\\.0\\.1:(8081|8082)\\s*;",content)
+    ports=re.findall(r"proxy_pass\s+http://127\.0\.0\.1:(8081|8082)\s*;",content)
     if len(ports)!=4 or len(set(ports))!=1:
         raise RuntimeError(
             f"Unexpected Nginx routing: matched {len(ports)} upstreams, "
