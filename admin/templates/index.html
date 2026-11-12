@@ -39,7 +39,7 @@
         {% if operations_status.failed_recipients or operations_status.failed_crm_alerts or operations_status.expiry_failures %}
         <a href="/issues" class="block rounded-xl p-3 bg-red-900/20 border border-red-800 text-red-200">⚠️ Неудачные доставки: {{ operations_status.failed_recipients + operations_status.failed_crm_alerts + operations_status.expiry_failures }}</a>{% endif %}
         {% if operations_status.reminder_problems %}
-        <a href="/automations" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">⏰ Напоминания с проблемами или в очереди: {{ operations_status.reminder_problems }}</a>{% endif %}
+        <a href="/automations#reminder-deliveries" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">⏰ Напоминания в очереди или с ошибками отправки: {{ operations_status.reminder_problems }} — посмотреть детали</a>{% endif %}
         {% if operations_status.tribute_attention %}<a href="/subscriptions/tribute-events" class="block rounded-xl p-3 bg-amber-900/20 border border-amber-800 text-amber-200">💳 События Tribute, требующие проверки: {{ operations_status.tribute_attention }}</a>{% endif %}
       </div>
       {% else %}<p class="text-sm text-gray-300 bg-slate-800 rounded-lg p-4">По отслеживаемым показателям нет задач, требующих внимания.</p>{% endif %}
