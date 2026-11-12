@@ -180,9 +180,6 @@ def stage(sha):
     if command("git","-C",str(ROOT),"status","--porcelain"):
         raise RuntimeError("Working repo has changes, refusing stage")
     current=command("git","-C",str(ROOT),"rev-parse","HEAD")
-    if not command("git","-C",str(ROOT),"merge-base","--is-ancestor",current,sha,check=False)=="":
-        # merge-base success prints nothing; verify exit code separately below.
-        pass
     ancestry=subprocess.run(["git","-C",str(ROOT),"merge-base","--is-ancestor",current,sha])
     if ancestry.returncode:raise RuntimeError("Git histories diverged")
     # Restrict unattended stages when a migration or polling bot code changed.
@@ -207,9 +204,9 @@ def stage(sha):
             print("Stopping only inactive legacy 8081 (public traffic uses 8082)")
             command("systemctl","stop",LEGACY)
     if previous_active:command("systemctl","stop",UNITS[idle])
-    if health(idle):
-        raise RuntimeError("Inactive port is still in use; refusing to start a second server")
     try:
+        if health(idle):
+            raise RuntimeError("Inactive port is still in use; refusing to start a second server")
         unit.write_text(unit_content(release,idle))
         unit.chmod(0o644)
         command("systemctl","daemon-reload")
