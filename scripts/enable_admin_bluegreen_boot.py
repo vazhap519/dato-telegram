@@ -29,7 +29,16 @@ def run(*args):
 
 def state(unit, operation):
     p = subprocess.run(["systemctl", operation, unit], capture_output=True, text=True, timeout=15)
-    return p.stdout.strip() if p.returncode == 0 else "unknown"
+    value = p.stdout.strip()
+    # systemctl is-enabled reports "disabled" with exit code 1. That is
+    # expected and must NOT be interpreted as an unknown/failed state.
+    if operation == "is-enabled" and value in ("enabled", "disabled"):
+        return value
+    if operation == "is-active" and value in ("active", "inactive", "failed"):
+        return value
+    if p.returncode == 0:
+        return value
+    raise RuntimeError(f"{operation} {unit} failed: {value or p.stderr.strip()[:160]}")
 
 
 def healthy(port):
@@ -91,12 +100,10 @@ def main():
         if not healthy(8081) or not healthy(8082):
             raise RuntimeError("Health check failed after changing boot policy")
     except Exception:
-        # Restore prior boot flags as far as possible; running units untouched.
-        for unit, previous in old_states.items():
-            if previous == "enabled":
-                subprocess.run(["systemctl","enable",unit],capture_output=True)
-            elif previous == "disabled":
-                subprocess.run(["systemctl","disable",unit],capture_output=True)
+        # Never restore a known-unsafe boot policy with two units competing
+        # for 8081. Keep the old legacy service disabled on any failure.
+        subprocess.run(["systemctl","disable",LEGACY],capture_output=True)
+        print("Boot config incomplete. Legacy was kept disabled to avoid the 8081 conflict.",file=sys.stderr)
         raise
     print("BOOT POLICY OK: blue=enabled, standby=enabled, legacy=disabled")
     print("All running services left untouched. Telegram bot unchanged.")
