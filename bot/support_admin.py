@@ -1,0 +1,188 @@
+"""Telegram-native support console for linked staff accounts."""
+import asyncio
+import logging
+
+from aiogram import types
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+from db.support import (list_tickets, ticket_detail, admin_reply,
+                        mark_delivery, set_ticket_status, STATUSES)
+from db.support_telegram import (generate_pair_code, telegram_staff, set_reply_target,
+                                 pending_notifications, mark_notification)
+
+log = logging.getLogger(__name__)
+
+
+def keyboard(ticket_id=None,closed=False):
+    if ticket_id is None:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📥 Обращения", callback_data="staff:list")],
+        ])
+    buttons=[]
+    if not closed:
+        buttons.append([InlineKeyboardButton(text="✍️ Ответить",callback_data=f"staff:reply:{ticket_id}")])
+        buttons.append([
+            InlineKeyboardButton(text="⏳ Отложить",callback_data=f"staff:status:{ticket_id}:pending"),
+            InlineKeyboardButton(text="✅ Закрыть",callback_data=f"staff:status:{ticket_id}:closed"),
+        ])
+    else:
+        buttons.append([InlineKeyboardButton(text="↩️ Открыть",callback_data=f"staff:status:{ticket_id}:open")])
+    buttons.append([InlineKeyboardButton(text="📥 Все обращения",callback_data="staff:list")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def support_admin_start(message: types.Message):
+    if message.chat.type!="private" or not message.from_user:return
+    staff=await telegram_staff(message.from_user.id)
+    if not staff:
+        code=await generate_pair_code(message.from_user.id)
+        await message.answer(
+            "🔐 Подключение Telegram-поддержки\n\n"
+            "Войдите в веб-админку со своей учётной записью, откройте "
+            "«Поддержка → Telegram» и введите код:\n\n"
+            f"{code}\n\nКод действует 10 минут. Не передавайте его другим."
+        )
+        return
+    await message.answer("🛟 Техподдержка · "+staff["username"]+
+                         "\nОткройте обращения или ответьте на выбранный диалог.",
+                         reply_markup=keyboard())
+
+
+async def support_admin_callback(query:types.CallbackQuery):
+    if not query.from_user or not query.message or query.message.chat.type!="private":return
+    staff=await telegram_staff(query.from_user.id)
+    if not staff:
+        await query.answer("Нет доступа. Подключите аккаунт через /supportadmin.",show_alert=True)
+        return
+    await query.answer()
+    data=query.data or ""
+    if data=="staff:list":
+        tickets,total=await list_tickets(status="open")
+        if not tickets:
+            tickets,_=await list_tickets(status="pending")
+        buttons=[[InlineKeyboardButton(
+            text=f"#{t['id']} · {(t['first_name'] or t['username'] or str(t['telegram_id']))[:25]}",
+            callback_data=f"staff:ticket:{t['id']}")] for t in tickets[:15]]
+        buttons.append([InlineKeyboardButton(text="🔄 Обновить",callback_data="staff:list")])
+        await query.message.answer(f"📥 Открытых обращений: {total}\n"
+                                   "Показаны последние обращения, требующие внимания.",
+                                   reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    elif data.startswith("staff:ticket:"):
+        try:ticket_id=int(data.split(":")[2])
+        except (ValueError,IndexError):return
+        ticket,messages=await ticket_detail(ticket_id)
+        if not ticket:
+            await query.message.answer("Обращение не найдено")
+            return
+        history=[]
+        for m in messages[-8:]:
+            if m.get("deleted_at"):continue
+            content=m["body"] or {"photo":"📷 Фото","voice":"🎤 Голосовое",
+                                   "document":"📎 Документ"}.get(m.get("media_type"),"Вложение")
+            actor="Участник" if m["actor"]=="user" else "Поддержка"
+            history.append(f"{actor}: {content[:350]}")
+        text=(f"💬 Обращение #{ticket_id}\n"
+              f"От: {ticket['first_name'] or ticket['username'] or ticket['telegram_id']}\n"
+              f"Статус: {STATUSES.get(ticket['status'],ticket['status'])}\n\n"
+              +("\n\n".join(history) or "Сообщений пока нет."))
+        await query.message.answer(text[:3900],
+                                   reply_markup=keyboard(ticket_id,ticket["status"]=="closed"))
+    elif data.startswith("staff:reply:"):
+        try:ticket_id=int(data.split(":")[2])
+        except (ValueError,IndexError):return
+        try:await set_reply_target(query.from_user.id,ticket_id)
+        except ValueError as exc:
+            await query.message.answer(str(exc))
+            return
+        await query.message.answer(f"✍️ Ответ для обращения #{ticket_id}.\n"
+                                   "Отправьте текст следующим сообщением. "
+                                   "Отмена: /cancelreply")
+    elif data.startswith("staff:status:"):
+        parts=data.split(":")
+        if len(parts)!=4:return
+        try:ticket_id=int(parts[2])
+        except ValueError:return
+        status=parts[3]
+        if status not in ("open","pending","closed"):return
+        try:
+            await set_ticket_status(ticket_id,status)
+        except ValueError as exc:
+            await query.message.answer(str(exc))
+            return
+        await query.message.answer(f"✅ Статус обращения #{ticket_id}: {STATUSES[status]}",
+                                   reply_markup=keyboard(ticket_id,status=="closed"))
+
+
+async def support_admin_cancel(message:types.Message):
+    if not message.from_user or message.chat.type!="private":return
+    if not await telegram_staff(message.from_user.id):return
+    await set_reply_target(message.from_user.id,None)
+    await message.answer("Режим ответа выключен.",reply_markup=keyboard())
+
+
+async def is_support_admin_reply(message:types.Message):
+    if message.chat.type!="private" or not message.from_user:return False
+    if not message.text or message.text.startswith("/"):return False
+    staff=await telegram_staff(message.from_user.id)
+    return bool(staff and staff["reply_ticket_id"])
+
+
+async def support_admin_reply(message:types.Message):
+    staff=await telegram_staff(message.from_user.id)
+    if not staff or not staff["reply_ticket_id"]:return
+    ticket_id=staff["reply_ticket_id"]
+    try:
+        uid,mid=await admin_reply(ticket_id,staff["username"],message.text)
+    except ValueError as exc:
+        await set_reply_target(message.from_user.id,None)
+        await message.answer(str(exc))
+        return
+    success=False
+    sent_id=None
+    try:
+        delivered=await message.bot.send_message(uid,message.text,parse_mode=None)
+        success=True
+        sent_id=delivered.message_id
+    except Exception:
+        log.exception("Telegram staff support reply failed ticket=%s",ticket_id)
+    await mark_delivery(mid,success,sent_id)
+    await set_reply_target(message.from_user.id,None)
+    if success:
+        await message.answer(f"✅ Ответ по обращению #{ticket_id} доставлен и сохранён.",
+                             reply_markup=keyboard(ticket_id))
+    else:
+        await message.answer(f"⚠️ Ответ по обращению #{ticket_id} не доставлен. "
+                             "Он сохранён как ошибка в общей истории; повторите из веб-панели.",
+                             reply_markup=keyboard(ticket_id))
+
+
+async def support_admin_notifications_worker(bot):
+    while True:
+        try:
+            pending=await pending_notifications()
+            for item in pending:
+                sent=False
+                try:
+                    body=item["body"] or {"photo":"📷 Фото","voice":"🎤 Голосовое",
+                                        "document":"📎 Файл"}.get(item["media_type"],"Вложение")
+                    name=item["first_name"] or item["username"] or str(item["user_id"])
+                    await bot.send_message(
+                        item["telegram_id"],
+                        f"🛟 Новое сообщение · обращение #{item['ticket_id']}\n"
+                        f"От: {name}\n\n{body[:2000]}",
+                        reply_markup=keyboard(item["ticket_id"]))
+                    if item["media_type"]!="text" and item["telegram_message_id"]:
+                        try:
+                            await bot.copy_message(item["telegram_id"],item["user_id"],
+                                                   item["telegram_message_id"])
+                        except Exception:
+                            log.warning("Support attachment preview unavailable ticket=%s",item["ticket_id"])
+                    sent=True
+                except Exception:
+                    log.exception("Staff support notification failed ticket=%s",item["ticket_id"])
+                await mark_notification(item["admin_id"],item["message_id"],sent)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Telegram staff notification worker failed")
+        await asyncio.sleep(5)
