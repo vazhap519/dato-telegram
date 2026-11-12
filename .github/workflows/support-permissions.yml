@@ -8,8 +8,9 @@ on:
       - 'db/**'
       - 'tests/test_support_permissions.py'
       - 'scripts/check_support_branch_readonly.sh'
-      - 'scripts/check_support_db_readonly.py'
+      - 'scripts/check_support_db_readonly.py scripts/prepare_support_candidate.py'
       - 'scripts/migrate_support_staff_permissions.py'
+      - 'scripts/prepare_support_candidate.py'
       - '.github/workflows/support-permissions.yml'
   workflow_dispatch:
 
