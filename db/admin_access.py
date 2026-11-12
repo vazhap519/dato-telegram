@@ -61,7 +61,9 @@ def allowed(role,path,method):
 async def read_staff(username):
     async with SessionLocal() as s:
         row=(await s.execute(text("""
-          SELECT id,username,role,enabled,last_login_at,session_version
+          SELECT id,username,role,enabled,last_login_at,session_version,
+                 support_access,support_can_reply,support_can_change_status,
+                 support_can_close,support_can_delete
           FROM admins WHERE username=:name
         """),{"name":username})).mappings().first()
         return dict(row) if row else None
