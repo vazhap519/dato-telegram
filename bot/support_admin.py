@@ -59,7 +59,7 @@ async def support_admin_callback(query:types.CallbackQuery):
     if data=="staff:list":
         tickets,total=await list_tickets(status="open")
         if not tickets:
-            tickets,_=await list_tickets(status="pending")
+            tickets,total=await list_tickets(status="pending")
         buttons=[[InlineKeyboardButton(
             text=f"#{t['id']} · {(t['first_name'] or t['username'] or str(t['telegram_id']))[:25]}",
             callback_data=f"staff:ticket:{t['id']}")] for t in tickets[:15]]
@@ -105,7 +105,18 @@ async def support_admin_callback(query:types.CallbackQuery):
         status=parts[3]
         if status not in ("open","pending","closed"):return
         try:
-            await set_ticket_status(ticket_id,status)
+            recipient=await set_ticket_status(ticket_id,status)
+            if status=="closed":
+                try:
+                    await query.bot.send_message(
+                        recipient,
+                        "✅ Ваш вопрос закрыт. Если нужна помощь, откройте чат поддержки снова.",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="🛟 Поддержка",callback_data="help_menu")
+                        ]])
+                    )
+                except Exception:
+                    log.warning("Support closure notice failed ticket=%s",ticket_id)
         except ValueError as exc:
             await query.message.answer(str(exc))
             return
