@@ -273,8 +273,14 @@ def deploy(sha):
             write_atomic(DROPIN,old_override)
         call("systemctl","daemon-reload",check=False)
         call("systemctl","reset-failed",UNIT,check=False)
-        call("systemctl","start",UNIT,check=False,timeout=80)
-        restored=bot_state()=="active"
+        survivors=poller_pids()
+        if survivors:
+            restored=False
+            print("CRITICAL: polling process still exists; refusing second start:",survivors,
+                  file=sys.stderr)
+        else:
+            call("systemctl","start",UNIT,check=False,timeout=80)
+            restored=bot_state()=="active"
         audit("failed",old_commit=old_ref,new_commit=sha,
               error=type(exc).__name__,restored=restored)
         if not restored:
