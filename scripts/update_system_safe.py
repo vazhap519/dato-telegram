@@ -48,7 +48,7 @@ SUPPORT_COLUMNS=("support_access","support_can_reply",
 def verified_support_schema():
     """Check already-applied migration, never run migrations from the deployer."""
     import psycopg2
-        from urllib.parse import urlsplit, unquote, parse_qs
+    from urllib.parse import urlsplit, unquote, parse_qs
     envfile=bot.ENV
     values={}
     for line in envfile.read_text().splitlines():
