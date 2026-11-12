@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 
 from bot.handlers import start_handler, accept_offer_handler, upload_command_handler, upload_video_note_handler, subscription_click_handler, choose_plan_handler, back_to_subscription_handler, my_subscription_command, my_subscription_callback, request_group_invite_handler
 from db.support import initialize_support
+from db.support_telegram import initialize_support_telegram
+from bot.support_admin import (support_admin_start, support_admin_callback,
+    support_admin_cancel, support_admin_reply, is_support_admin_reply,
+    support_admin_notifications_worker)
 from bot.support_handlers import support_start, support_callback, support_text
 from db.flow import initialize_flow
 from db.subscriptions import initialize_subscriptions
@@ -42,6 +46,9 @@ dp.chat_join_request.register(group_join_request_handler)
 dp.chat_member.register(managed_member_join_handler)
 dp.message.register(start_handler, CommandStart())
 dp.message.register(support_start, Command("help", "support"))
+dp.message.register(support_admin_start, Command("supportadmin"))
+dp.message.register(support_admin_cancel, Command("cancelreply"))
+dp.callback_query.register(support_admin_callback, F.data.startswith("staff:"))
 dp.callback_query.register(support_callback, F.data.startswith("help_"))
 dp.message.register(group_id_handler, Command("chatid"))
 dp.message.register(my_subscription_command, Command('subscription', 'my_subscription'))
@@ -67,11 +74,13 @@ dp.message.register(
     )
 )
 dp.message.register(moderate_group_message, F.chat.type.in_({"group", "supergroup"}))
+dp.message.register(support_admin_reply, is_support_admin_reply)
 dp.message.register(support_text)
 
 async def main():
     await initialize_flow()
     await initialize_support()
+    await initialize_support_telegram()
     await initialize_subscriptions()
     await initialize_payment_providers()
     await initialize_tribute_payment_tests()
@@ -93,6 +102,7 @@ async def main():
                 logging.exception("Reminder scheduler failure")
             await asyncio.sleep(60)
     reminders_task = asyncio.create_task(reminder_scheduler())
+    support_admin_task = asyncio.create_task(support_admin_notifications_worker(bot))
     task = asyncio.create_task(broadcast_worker(bot))
     expiry_task = asyncio.create_task(expiry_worker(bot))
     group_test_task = asyncio.create_task(group_removal_test_worker(bot))
@@ -102,11 +112,16 @@ async def main():
         await dp.start_polling(bot)
     finally:
         reminders_task.cancel()
+        support_admin_task.cancel()
         task.cancel()
         expiry_task.cancel()
         group_test_task.cancel()
         tribute_task.cancel()
         crm_task.cancel()
+        try:
+            await support_admin_task
+        except asyncio.CancelledError:
+            pass
         try:
             await task
         except asyncio.CancelledError:
