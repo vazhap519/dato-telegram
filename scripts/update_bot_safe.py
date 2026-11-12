@@ -53,6 +53,21 @@ def current_pid():
     return int(raw) if raw.isdecimal() else 0
 
 
+def poller_pids():
+    """Detect accidental independent bot.main or bot_runner processes."""
+    p=subprocess.run(["ps","-eo","pid=,args="],capture_output=True,text=True,timeout=10)
+    if p.returncode:
+        raise RuntimeError("Unable to inspect Telegram poller processes")
+    found=[]
+    for line in p.stdout.splitlines():
+        parts=line.strip().split(None,1)
+        if len(parts)!=2 or not parts[0].isdigit():continue
+        argv=parts[1]
+        if re.search(r"(?:^|\\s)-m\\s+(?:bot\\.main|scripts\\.bot_runner)(?:\\s|$)",argv):
+            found.append(int(parts[0]))
+    return found
+
+
 def recent_polling(pid):
     if pid<=0:return False
     # The logging string comes from aiogram's dispatcher after getMe.
@@ -224,13 +239,16 @@ def deploy(sha):
         audit("noop",commit=sha)
         return
     old_pid=current_pid()
+    found=poller_pids()
+    if found!=[old_pid]:
+        raise RuntimeError(f"Expected exactly one supervised polling process; found {found}, service PID {old_pid}")
     release,python=prepare(sha)
     old_override=DROPIN.read_text() if DROPIN.exists() else None
     # Never start a second poller before stop completed.
     audit("begin",old_commit=old_ref,new_commit=sha,old_pid=old_pid)
     try:
         call("systemctl","stop",UNIT,timeout=65)
-        if bot_state()=="active" or current_pid()!=0:
+        if bot_state()=="active" or current_pid()!=0 or poller_pids():
             raise RuntimeError("Old polling bot did not fully stop; refusing to start new bot")
         write_atomic(DROPIN,systemd_override(release,python))
         call("systemctl","daemon-reload")
@@ -280,7 +298,7 @@ def rollback():
             raise RuntimeError("Legacy working repo changed; refusing rollback")
     old_pid=current_pid()
     call("systemctl","stop",UNIT,timeout=65)
-    if bot_state()=="active" or current_pid()!=0:
+    if bot_state()=="active" or current_pid()!=0 or poller_pids():
         raise RuntimeError("Current poller still running; abort")
     if old is None:DROPIN.unlink(missing_ok=True)
     else:write_atomic(DROPIN,old)
