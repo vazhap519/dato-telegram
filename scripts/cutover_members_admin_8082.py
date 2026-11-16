@@ -55,8 +55,14 @@ def verify(bluegreen):
             raise RuntimeError(f"Standby {path}: HTTP {code}, expected {needed}")
     if status("http://127.0.0.1:8081/tg-support/api/members")!=404:
         raise RuntimeError("Unexpected members endpoint in active admin")
-    for url in ("https://bot.arutyun.me/login","https://bot.arutyun.me/tg-support"):
-        if status(url)!=200:raise RuntimeError("Public endpoint unhealthy: "+url)
+    # Public /login is intentionally protected by Nginx Basic Auth.
+    # Internal /login is expected to be HTTP 200, checked above by bg.health.
+    # Reject HTTP 200 here: it would indicate public Basic Auth was removed.
+    public_expected={"/login":401,"/tg-support":200}
+    for path,expected in public_expected.items():
+        received=status("https://bot.arutyun.me"+path)
+        if received!=expected:
+            raise RuntimeError(f"Public {path}: HTTP {received}, expected {expected}")
     pid=run("systemctl","show","dato-telegram-bot.service","-p","MainPID","--value")
     if int(pid)<=0 or run("systemctl","is-active","dato-telegram-bot.service")!="active":
         raise RuntimeError("Bot not healthy")
@@ -102,6 +108,8 @@ def main():
             for port,sha in ((8081,ACTIVE),(8082,NEW)):
                 if bg.release_sha_for_port(port)!=sha or not bg.health(port):
                     raise RuntimeError(f"Admin on {port} changed/failed")
+            if status("https://bot.arutyun.me/login")!=401:
+                raise RuntimeError("Public /login Basic Auth protection changed")
             for path,need in (("/tg-support/members",200),
                               ("/tg-support/api/members",401),
                               ("/tg-support/api/members/1",401),
