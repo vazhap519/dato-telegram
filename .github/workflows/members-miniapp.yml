@@ -1,0 +1,30 @@
+name: Members Mini App checks
+
+on:
+  pull_request:
+    paths:
+      - 'admin/main.py'
+      - 'admin/members_miniapp.py'
+      - 'admin/support_miniapp.py'
+      - 'admin/templates/members_miniapp.html'
+      - 'admin/templates/support_miniapp.html'
+      - 'tests/test_members_miniapp.py'
+      - '.github/workflows/members-miniapp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-members:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Mini App modules
+        run: python -m compileall -q admin/members_miniapp.py admin/main.py admin/support_miniapp.py
+      - name: Run members permission regression
+        run: python -m unittest discover -s tests -p test_members_miniapp.py -v
