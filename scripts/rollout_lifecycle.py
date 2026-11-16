@@ -58,7 +58,14 @@ def bot_state():
         raise RuntimeError("Unexpected polling bot PID or pinned release")
     if cmd("systemctl","is-active","dato-owner-alerts.timer")!="active":
         raise RuntimeError("Owner alerts timer inactive")
-    if cmd("systemctl","is-active","dato-lifecycle-followups.timer")=="active":
+    # systemctl returns 4 when the opt-in timer unit does not yet exist.
+    # That is the expected safe state, not a release failure.
+    timer=subprocess.run(
+        ["systemctl","is-active","dato-lifecycle-followups.timer"],
+        stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=15)
+    if timer.stdout.strip() not in ("inactive","unknown","") or timer.returncode not in (0,3,4):
+        raise RuntimeError("Lifecycle scheduler state is unsafe: "+timer.stdout.strip())
+    if timer.stdout.strip()=="active":
         raise RuntimeError("Unexpected lifecycle scheduler active")
     return pid
 
