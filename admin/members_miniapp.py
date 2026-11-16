@@ -72,7 +72,8 @@ def describe_access(grants,subs,now=None):
               if g["revoked_at"] is None and g["ends_at"] is not None
               and aware(g["ends_at"])<=now]
     historic += [aware(s["paid_until"]) for s in subs
-                 if s["paid_until"] is not None and aware(s["paid_until"])<=now]
+                 if s["status"]=="active" and s["paid_until"] is not None
+                 and aware(s["paid_until"])<=now]
     if lifetime:
         status="lifetime"
     elif active or paid:
@@ -153,7 +154,7 @@ async def members_list(q:str="", status:str="all", page:int=1,
               SELECT telegram_id,grant_type,starts_at,ends_at,revoked_at
               FROM access_grants
               WHERE resource='community' AND telegram_id=ANY(:ids)
-                AND revoked_at IS NULL AND starts_at<=NOW()
+                AND revoked_at IS NULL
                 AND (ends_at IS NULL OR ends_at>NOW())
             """),{"ids":ids})).mappings().all()
             subs=(await session.execute(text("""
@@ -196,6 +197,10 @@ async def members_detail(telegram_id:int,staff=Depends(members_staff)):
         raise HTTPException(404,"Участник не найден")
     user,grants,subs,audit,selection=result
     async with SessionLocal() as session:
+        payment_count=(await session.execute(text("""
+          SELECT COUNT(*) FROM verified_payment_receipts
+          WHERE telegram_id=:uid AND payment_status='paid'
+        """),{"uid":telegram_id})).scalar_one()
         receipts=(await session.execute(text("""
           SELECT provider,amount,currency,payment_status,verified_at
           FROM verified_payment_receipts WHERE telegram_id=:uid
@@ -210,6 +215,7 @@ async def members_detail(telegram_id:int,staff=Depends(members_staff)):
         },
         "access":describe_access(grants,subs),
         "can_manage":staff["role"]=="owner",
+        "verified_payment_count":payment_count,
         "grants":[{
             "id":g["id"],"state":grant_state(g),
             "resource":g["resource"],"grant_type":g["grant_type"],
