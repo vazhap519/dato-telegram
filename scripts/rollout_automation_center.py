@@ -42,9 +42,16 @@ MARK='id="expiry-enabled"'
 def cmd(*args):
     return subprocess.check_output(args,text=True,timeout=30).strip()
 
-def req(url):
+def req(url,method="GET"):
+    headers={"Cache-Control":"no-cache"}
+    body=None
+    if method=="POST":
+        headers["Content-Type"]="application/json"
+        # Complete valid payload without Telegram credentials; a protected
+        # action must reject this with 401 and never reach the write handler.
+        body=b'{"enabled":false,"confirm":"SAVE_EXPIRY_NOTICES"}'
     try:
-        with urlopen(Request(url,headers={"Cache-Control":"no-cache"}),timeout=8) as r:
+        with urlopen(Request(url,headers=headers,data=body,method=method),timeout=8) as r:
             return r.status,r.read(180000).decode("utf-8",errors="replace")
     except HTTPError as exc:return exc.code,""
 
@@ -163,10 +170,11 @@ def stage(bg):
         if code!=200 or MARK not in html:raise RuntimeError("Staged dashboard missing")
         for path in ("/tg-support/api/automations",
                      "/tg-support/api/home",
-                     "/tg-support/api/automations/expiry",
                      "/tg-support/api/owner-alerts"):
             if req("http://127.0.0.1:8081"+path)[0]!=401:
                 raise RuntimeError("Telegram signature authorization failed for "+path)
+        if req("http://127.0.0.1:8081/tg-support/api/automations/expiry",method="POST")[0]!=401:
+            raise RuntimeError("Unsigned automation POST was not denied")
         if bg.routing(bg.nginx_path().read_text())!=8082 or not bg.health(8082) or bot_pid()!=pid:
             raise RuntimeError("Public admin, bot or timer changed unexpectedly")
     except BaseException:
