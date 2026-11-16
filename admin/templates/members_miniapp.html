@@ -200,7 +200,7 @@ async function openMember(uid){
   $("access-until").textContent=a.lifetime?"Без ограничения":a.ends_at?date(a.ends_at):a.active?"Не указан":"—";
   $("access-basis").textContent=a.basis;
   $("active-subs").textContent=a.paid_subscription_count;
-  $("payment-count").textContent=data.payments.filter(p=>p.status==="paid").length+(data.payments.length===30?" (последние 30)":"");
+  $("payment-count").textContent=data.verified_payment_count;
   $("member-note").textContent=data.note;
   renderGrants(data.grants);renderSubscriptions(data.subscriptions);renderPayments(data.payments);
   $("history-section").open=false;show(true);
