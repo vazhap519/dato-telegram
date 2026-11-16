@@ -1,0 +1,149 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Автоматизация · Круг Души</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark;background:#101827;color:#f0f4fc}*{box-sizing:border-box}body{margin:0;background:var(--tg-theme-bg-color,#101827);color:var(--tg-theme-text-color,#f0f4fc)}
+main{max-width:820px;margin:auto;padding:16px 14px 80px}
+h1{font-size:22px;margin:4px 0}h2{font-size:17px;margin:18px 0 10px}
+small,.muted{color:var(--tg-theme-hint-color,#acbed4);font-size:12px;line-height:1.5}
+p{line-height:1.6}.bar,.row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+button,input,textarea{font:inherit;border-radius:10px;padding:10px 12px}
+button{background:#30425e;border:0;color:inherit;cursor:pointer}button.primary{background:var(--tg-theme-button-color,#446ec6);color:var(--tg-theme-button-text-color,#fff)}button:disabled{opacity:.5}
+textarea{width:100%;background:#122137;color:inherit;border:1px solid #455a75;min-height:90px;resize:vertical}
+.card{background:var(--tg-theme-secondary-bg-color,#1d2b41);border:1px solid #34485f;border-radius:14px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.metric strong{display:block;font-size:25px;margin:9px 0;font-variant-numeric:tabular-nums}
+label{font-size:13px}.field{display:block;margin:10px 0}
+.field textarea{display:block;margin-top:8px}input[type=checkbox]{width:20px;height:20px;vertical-align:middle}
+.tag{font-size:11px;padding:5px 8px;border-radius:7px;background:#3d465a}
+.good{color:#a5e3bd}.warn{color:#ffdaad}.bad{color:#ffb1a9}
+.notice{font-size:12px;color:#afbed3}
+#err{color:#ffb1a9;margin-top:10px}
+.hidden{display:none!important}
+.history{border-top:1px solid #40516c;padding:10px 0;font-size:13px}
+</style></head><body><main>
+<header class="bar"><div><h1>⚙️ Автоматизация</h1><div class="muted">Действующие сценарии «Круга Души»</div></div>
+<div class="row"><button id="home">🏠 Главная</button><button id="refresh">↻ Обновить</button></div></header>
+<p id="who" class="muted">Проверка Telegram…</p><p id="err" role="alert"></p>
+<section><h2>Состояние системы</h2><div class="grid">
+<div class="card metric"><small>Напоминания об оформлении</small><strong id="rules-enabled">—</strong><small>Включённые правила</small></div>
+<div class="card metric"><small>Рассылки в очереди</small><strong id="queued">—</strong><small>Существующая очередь</small></div>
+<div class="card metric"><small>Проблемы доставки</small><strong id="failed">—</strong><small>Неудачные и неопределённые</small></div>
+<div class="card metric"><small>Проблемы напоминаний</small><strong id="reminder-issues">—</strong><small>Ожидают проверки</small></div>
+</div></section>
+<section><h2>Напоминания о сроке доступа</h2><div class="card">
+<p class="muted">Существующий механизм уведомлений об окончании доступа. Управление удалением участников здесь недоступно.</p>
+<div class="row"><label><input id="expiry-enabled" type="checkbox"> Отправлять напоминания об окончании доступа</label><span id="expiry-state" class="tag">—</span></div>
+<p class="muted" id="expiry-removal"></p>
+<div class="row"><button class="primary hidden" id="expiry-save">Сохранить</button><span class="muted" id="expiry-feedback" role="status"></span></div>
+</div></section>
+<section><h2>Напоминания об оформлении</h2><p class="muted">Три существующих сценария. Их текущий статус загружается из базы: они не выключаются автоматически при обновлении.</p><div id="rules"><div class="card">Загрузка…</div></div></section>
+<section><h2>Очередь и ошибки</h2>
+<div class="card"><div class="row"><strong>Недавние кампании</strong><small>Последние 12</small></div><div id="campaigns"></div></div>
+<div class="card"><div class="row"><strong>Проблемные напоминания</strong><small>Последние 25</small></div><div id="problems"></div></div>
+</section>
+<section><h2>Следующие сценарии</h2><div id="planned"></div><p class="notice">Эти сценарии пока не реализованы: они не создают очередь и не отправляют сообщения. Для запуска понадобится отдельный безопасный этап.</p></section>
+<p id="updated" class="muted"></p>
+</main><script>
+(()=>{
+"use strict";
+const tg=window.Telegram?.WebApp,init=tg?.initData||"",$=id=>document.getElementById(id);
+let owner=false,busy=false;
+const fmt=n=>Number(n||0).toLocaleString("ru-RU");
+function elem(tag,cls,value){const n=document.createElement(tag);if(cls)n.className=cls;if(value!==undefined)n.textContent=String(value);return n}
+async function api(path,method="GET",body){
+ if(!init)throw Error("Откройте Mini App через Telegram.");
+ const response=await fetch("/tg-support/api"+path,{
+   method,cache:"no-store",credentials:"omit",
+   headers:{"X-Telegram-Init-Data":init,...(body?{"Content-Type":"application/json"}:{})},
+   body:body?JSON.stringify(body):undefined});
+ const data=(response.headers.get("content-type")||"").includes("application/json")?await response.json().catch(()=>({})):{};
+ if(!response.ok)throw Error(typeof data.detail==="string"?data.detail:"HTTP "+response.status);
+ return data;
+}
+function state(value){return value?"Включено":"Выключено"}
+function set(id,value){$(id).textContent=fmt(value)}
+function renderRules(rules){
+ const box=$("rules");box.replaceChildren();
+ if(!rules.length){box.append(elem("div","card","Правила не найдены"));return}
+ for(const r of rules){
+  const card=elem("div","card"),top=elem("div","row"),title=elem("strong","",r.title),
+        tag=elem("span","tag",state(r.enabled));
+  top.append(title,tag);card.append(top);
+  const form=elem("form",""),label=elem("label","field"),switcher=elem("input");
+  switcher.type="checkbox";switcher.checked=!!r.enabled;switcher.disabled=!owner;
+  label.append(switcher,document.createTextNode(" Сценарий включён"));form.append(label);
+  const bodyLabel=elem("label","field","Текст напоминания"),textarea=elem("textarea");
+  textarea.value=r.body;textarea.maxLength=4000;textarea.disabled=!owner;
+  bodyLabel.append(textarea);form.append(bodyLabel);
+  const foot=elem("div","row"),button=elem("button","primary","Сохранить"),msg=elem("span","muted","");
+  button.type="submit";button.disabled=!owner;foot.append(button,msg);form.append(foot);
+  if(!owner)button.classList.add("hidden");
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    if(!owner)return;
+    if(!confirm("Сохранить изменения существующего сценария? Включённое правило может отправлять новые сообщения подходящим участникам."))return;
+    button.disabled=true;msg.textContent="Сохранение…";
+    try{
+      const result=await api("/automations/reminders/"+encodeURIComponent(r.trigger),"POST",{
+        enabled:switcher.checked,body:textarea.value,confirm:"SAVE_REMINDER"});
+      msg.textContent="✅ Сохранено: "+state(result.enabled);
+      tag.textContent=state(result.enabled);
+    }catch(err){msg.textContent="Ошибка: "+err.message}finally{button.disabled=false}
+  };
+  card.append(form);box.append(card);
+ }
+}
+function renderRecent(rows,id,mapper,emptyText){
+ const box=$(id);box.replaceChildren();
+ if(!rows.length){box.append(elem("div","history muted",emptyText));return}
+ for(const r of rows){
+  const item=elem("div","history"),txt=mapper(r);
+  item.textContent=txt;box.append(item);
+ }
+}
+async function load(){
+ if(busy)return;busy=true;$("refresh").disabled=true;$("err").textContent="";
+ try{
+  const data=await api("/automations");
+  set("rules-enabled",data.summary.reminder_rules_enabled);
+  set("queued",data.summary.queued_broadcasts);
+  set("failed",data.summary.failed_recipients);
+  set("reminder-issues",data.summary.reminder_problems);
+  $("expiry-enabled").checked=!!data.expiry.enabled;
+  $("expiry-enabled").disabled=!owner;
+  $("expiry-state").textContent=state(data.expiry.enabled);
+  $("expiry-removal").textContent="Автоматическое исключение из группы: "+state(data.expiry.removal_enabled)+" · льготный период: "+data.expiry.grace_hours+" ч. (здесь не изменяется)";
+  $("expiry-save").classList.toggle("hidden",!owner);
+  renderRules(data.rules);
+  renderRecent(data.recent,"campaigns",r=>"№"+r.id+" · "+r.kind+" · "+r.status+" · отправлено "+r.sent+" / "+r.recipients+" · проблем "+r.problems,"Кампаний пока нет.");
+  renderRecent(data.problems,"problems",r=>"Кампания №"+r.broadcast_id+" · "+r.trigger+" · "+r.status+(r.error_code?" · "+r.error_code:""),"Проблемных напоминаний нет.");
+  const planned=$("planned");planned.replaceChildren();
+  for(const p of data.planned){const c=elem("div","card"),line=elem("div","row");line.append(elem("strong","",p.name),elem("span","tag","Не реализовано"));c.append(line);planned.append(c)}
+  $("updated").textContent="Данные загружены · "+new Date().toLocaleString("ru-RU",{timeZone:"Asia/Tbilisi"})+" (Тбилиси)";
+ }catch(err){$("err").textContent=err.message}
+ finally{busy=false;$("refresh").disabled=false}
+}
+$("expiry-save").onclick=async()=>{
+ if(!owner)return;
+ if(!confirm("Сохранить переключатель напоминаний об окончании доступа? При включении бот может отправлять сообщения участникам по существующим правилам."))return;
+ const btn=$("expiry-save"),msg=$("expiry-feedback");btn.disabled=true;msg.textContent="Сохранение…";
+ try{
+  const result=await api("/automations/expiry","POST",{enabled:$("expiry-enabled").checked,confirm:"SAVE_EXPIRY_NOTICES"});
+  msg.textContent="✅ Сохранено: "+state(result.enabled);$("expiry-state").textContent=state(result.enabled);
+ }catch(e){msg.textContent="Ошибка: "+e.message}finally{btn.disabled=false}
+};
+$("home").onclick=()=>{window.location.href="/tg-support/home"+window.location.hash};
+$("refresh").onclick=load;
+(async()=>{
+ try{
+  if(!tg||!init)throw Error("Откройте Mini App из Telegram.");
+  tg.ready();tg.expand();
+  const me=await api("/me");
+  if(!["owner","admin"].includes(me.role))throw Error("Доступ только владельцу и администраторам.");
+  owner=me.role==="owner";
+  $("who").textContent=(owner?"Владелец: ":"Администратор: ")+me.username;
+  await load();
+ }catch(e){$("err").textContent=e.message}
+})();
+})();
+</script></body></html>
