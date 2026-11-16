@@ -23,7 +23,7 @@ form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{backgroun
 .hidden{display:none!important}.empty{text-align:center;color:#9eacc2;padding:24px}
 #new-messages{position:sticky;bottom:8px;text-align:center;z-index:3}
 </style></head><body>
-<main><header><div><h1>🛟 Техподдержка</h1><div class="muted" id="who">Проверка доступа…</div></div><button id="refresh">↻ Обновить</button></header>
+<main><header><div><h1>🛟 Техподдержка</h1><div class="muted" id="who">Проверка доступа…</div></div><div style="display:flex;gap:6px;align-items:center"><button id="members-link" class="hidden">👥 Участники</button><button id="refresh">↻ Обновить</button></div></header>
 <div id="error" role="alert"></div><div id="notice" role="status"></div>
 <section id="inbox" class="panel active">
 <div class="tabs" id="tabs">
@@ -154,6 +154,7 @@ async function openMedia(m,button,bubble){
   button.classList.add("hidden");
  }catch(e){error(e.message);button.disabled=false}
 }
+$("members-link").onclick=()=>{window.location.href="/tg-support/members"};
 $("refresh").onclick=async()=>{try{await(state.ticket?refreshTicket():loadList())}catch(e){error(e.message)}};
 $("jump-bottom").onclick=()=>{const box=$("messages");box.scrollTop=box.scrollHeight;state.unread=0;setNewMessageIndicator()};
 $("messages").addEventListener("scroll",()=>{if(state.unread&&nearBottom($("messages"))){state.unread=0;setNewMessageIndicator()}},{passive:true});
@@ -183,6 +184,7 @@ $("reply-form").onsubmit=async e=>{
   if(!tg||!init)throw Error("Эта панель доступна только внутри Telegram.");
   tg.ready();tg.expand();
   const me=await api("/me");state.permissions=me;$("who").textContent="Оператор: "+me.username;
+  if(me.role==="owner"||me.role==="admin")$("members-link").classList.remove("hidden");
   await loadList();
  }catch(e){error(e.message);$("list").textContent="Не удалось открыть панель"}
 })();
