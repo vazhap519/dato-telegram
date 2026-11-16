@@ -41,7 +41,20 @@ def main():
     if run("git","-C",str(ROOT),"rev-parse","--verify",NEW)!=NEW:
         raise RuntimeError("Pinned hotfix commit missing: git fetch the branch")
     changed=set(run("git","-C",str(ROOT),"diff","--name-only",LIVE,NEW).splitlines())
-    if changed!={UI}:raise RuntimeError("Non-UI changes detected: "+str(changed))
+    # LIVE is the immutable release SHA from before the alert deployment
+    # scripts were committed. Those script-only additions are expected in the
+    # intervening branch history; NEW itself changes only the UI relative to
+    # its immediate parent. Pin both sets rather than relaxing this guard.
+    expected={UI,"scripts/cutover_owner_alerts_8081.py",
+              "scripts/install_owner_alert_timer.py",
+              "scripts/prepare_owner_alerts.py",
+              "scripts/stage_owner_alerts_8081.py",
+              "tests/test_owner_alerts.py"}
+    if changed!=expected:
+        raise RuntimeError("Unexpected changed files: "+str(sorted(changed.symmetric_difference(expected))))
+    previous=run("git","-C",str(ROOT),"rev-parse",NEW+"^")
+    if set(run("git","-C",str(ROOT),"diff","--name-only",previous,NEW).splitlines())!={UI}:
+        raise RuntimeError("Pinned UI commit contains non-template changes")
     sys.path.insert(0,str(RELEASES/LIVE/"scripts"))
     import deploy_admin_bluegreen as bg
     bg.LOCK.parent.mkdir(parents=True,exist_ok=True)
