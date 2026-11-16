@@ -34,9 +34,13 @@ def main():
         raise RuntimeError("Requires root")
     if run("git","-C",str(ROOT),"status","--porcelain"):
         raise RuntimeError("Live repository has uncommitted changes")
-    if run("git","-C",str(ROOT),"rev-parse","--verify",
-           "refs/remotes/origin/feature/miniapp-members-subscriptions-20261116")!=CANDIDATE:
-        raise RuntimeError("Pinned candidate branch has moved; re-review required")
+    head=run("git","-C",str(ROOT),"rev-parse","--verify",
+             "refs/remotes/origin/feature/miniapp-members-subscriptions-20261116")
+    if subprocess.run(["git","-C",str(ROOT),"merge-base","--is-ancestor",
+                       CANDIDATE,head],timeout=20).returncode!=0:
+        raise RuntimeError("Prepared candidate is no longer an ancestor of the feature branch")
+    if run("git","-C",str(ROOT),"rev-parse","--verify",CANDIDATE)!=CANDIDATE:
+        raise RuntimeError("Prepared pinned commit is missing")
     release=RELEASES/CANDIDATE
     if not (release/".venv/.install-ok").is_file() or not (release/"admin/members_miniapp.py").is_file():
         raise RuntimeError("Candidate must be prepared first")
