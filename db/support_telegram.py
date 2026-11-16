@@ -64,9 +64,9 @@ async def link_staff(username, code):
     async with SessionLocal() as s:
         async with s.begin():
             account=(await s.execute(text("""
-              SELECT id,role,enabled FROM admins WHERE username=:name FOR UPDATE
+              SELECT id,role,enabled,support_access FROM admins WHERE username=:name FOR UPDATE
             """),{"name":username})).mappings().first()
-            if not account or not account["enabled"] or account["role"] not in SUPPORT_ROLES:
+            if not account or not account["enabled"] or account["role"] not in SUPPORT_ROLES or (account["role"]!="owner" and not account["support_access"]):
                 raise ValueError("Нет доступа к техподдержке")
             pairing=(await s.execute(text("""
               SELECT telegram_id FROM support_telegram_pairing
@@ -107,11 +107,11 @@ async def configure_staff(username, notifications_enabled=False, unlink=False):
     async with SessionLocal() as s:
         async with s.begin():
             account=(await s.execute(text("""
-              SELECT a.id,a.role,a.enabled,l.telegram_id
+              SELECT a.id,a.role,a.enabled,a.support_access,l.telegram_id
               FROM admins a JOIN support_telegram_links l ON l.admin_id=a.id
               WHERE a.username=:name FOR UPDATE OF l
             """),{"name":username})).mappings().first()
-            if not account or not account["enabled"] or account["role"] not in SUPPORT_ROLES:
+            if not account or not account["enabled"] or account["role"] not in SUPPORT_ROLES or (account["role"]!="owner" and not account["support_access"]):
                 raise ValueError("Telegram не привязан или учётная запись отключена")
             if unlink:
                 await s.execute(text("DELETE FROM support_telegram_links WHERE admin_id=:id"),
@@ -131,10 +131,15 @@ async def configure_staff(username, notifications_enabled=False, unlink=False):
 async def telegram_staff(telegram_id):
     async with SessionLocal() as s:
         row=(await s.execute(text("""
-          SELECT a.id,a.username,a.role,l.reply_ticket_id,l.notifications_enabled
+          SELECT a.id,a.username,a.role,l.reply_ticket_id,l.notifications_enabled,
+                 (a.role='owner' OR a.support_can_reply) AS can_reply,
+                 (a.role='owner' OR a.support_can_change_status) AS can_change_status,
+                 (a.role='owner' OR a.support_can_close) AS can_close,
+                 (a.role='owner' OR a.support_can_delete) AS can_delete
           FROM support_telegram_links l JOIN admins a ON a.id=l.admin_id
           WHERE l.telegram_id=:uid AND a.enabled=TRUE
             AND a.role IN ('owner','admin','support')
+            AND (a.role='owner' OR a.support_access=TRUE)
         """),{"uid":telegram_id})).mappings().first()
         return dict(row) if row else None
 
@@ -169,6 +174,7 @@ async def pending_notifications(limit=30):
                 JOIN support_tickets t ON t.id=m.ticket_id
                 LEFT JOIN users u ON u.telegram_id=t.telegram_id
                 WHERE a.enabled=TRUE AND a.role IN ('owner','admin','support')
+                  AND (a.role='owner' OR a.support_access=TRUE)
                   AND l.notifications_enabled=TRUE
                   AND NOT EXISTS (
                     SELECT 1 FROM support_telegram_notifications n

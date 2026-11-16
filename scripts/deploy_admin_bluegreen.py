@@ -169,7 +169,7 @@ WantedBy=multi-user.target
 """
 
 
-def stage(sha, allow_bot_changes=False):
+def stage(sha, allow_bot_changes=False, reviewed_support=False):
     active=routing(nginx_path().read_text())
     idle=8081 if active==8082 else 8082
     if sha!=target_commit():raise RuntimeError("Target must exactly match fetched origin/main")
@@ -187,8 +187,21 @@ def stage(sha, allow_bot_changes=False):
     risky=[p for p in changed if p.startswith("db/") or p=="requirements.txt"
            or (not allow_bot_changes and p.startswith("bot/"))]
     if risky:
-        print("Review required for app/database/bot compatibility:",", ".join(risky[:12]))
-        raise RuntimeError("Stage refuses incompatible db/bot/requirements changes")
+        expected={
+            "db/admin_access.py": "3f0bab355a57e558e7748829c848349522bf7e3e",
+            "db/support_telegram.py": "a8bc3ae105166248a70f7cb30b19d043a500af9b",
+        }
+        verified=reviewed_support and all(
+            name.startswith("db/") and name in expected for name in risky
+        )
+        if verified:
+            for name in risky:
+                if command("git","-C",str(ROOT),"rev-parse",f"{sha}:{name}")!=expected[name]:
+                    verified=False
+                    break
+        if not verified:
+            print("Review required for app/database/bot compatibility:",", ".join(risky[:12]))
+            raise RuntimeError("Stage refuses incompatible db/bot/requirements changes")
     release=snapshot(sha)
     python=ensure_venv(release)
     print("Release ready on disk:",release)

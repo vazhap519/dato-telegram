@@ -46,7 +46,7 @@ form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{backgroun
 const tg=window.Telegram?.WebApp;
 const init=tg?.initData||"";
 const $=id=>document.getElementById(id);
-const state={status:"",ticket:null,loading:false,syncing:false,threadKey:null,listKey:null,unread:0};
+const state={status:"",ticket:null,loading:false,syncing:false,threadKey:null,listKey:null,unread:0,permissions:null};
 function error(message){$("error").textContent=message||""}
 function notice(message){$("notice").textContent=message||""}
 async function api(path,options={}){
@@ -137,7 +137,10 @@ async function refreshTicket({quiet=false}={}){
    if(quiet)state.unread+=newUserMessages;
  }
  setNewMessageIndicator();
- $("reply-form").classList.toggle("hidden",data.ticket.status==="closed");
+ $("reply-form").classList.toggle("hidden",data.ticket.status==="closed" || !state.permissions?.can_reply);
+ for(const button of document.querySelectorAll("[data-set]")){
+   button.classList.toggle("hidden",button.dataset.set==="closed"?!state.permissions?.can_close:!state.permissions?.can_change_status);
+ }
 }
 async function openMedia(m,button,bubble){
  button.disabled=true;
@@ -179,7 +182,7 @@ $("reply-form").onsubmit=async e=>{
  try{
   if(!tg||!init)throw Error("Эта панель доступна только внутри Telegram.");
   tg.ready();tg.expand();
-  const me=await api("/me");$("who").textContent="Администратор: "+me.username;
+  const me=await api("/me");state.permissions=me;$("who").textContent="Оператор: "+me.username;
   await loadList();
  }catch(e){error(e.message);$("list").textContent="Не удалось открыть панель"}
 })();

@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.operations_dashboard import automation_overview, reminder_delivery_attention
-from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events
+from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events, support_permissions_change
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, webhook_attention, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
@@ -137,6 +137,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/issues/review",
         "/staff/add",
         "/staff/update",
+        "/staff/support",
         "/subscriptions/message",
         "/subscriptions/message/delete",
         "/subscriptions/history/clear",
@@ -250,8 +251,25 @@ async def get_current_user(request: Request,access_token: str = Cookie(None)):
         raise HTTPException(status_code=401,detail="Сессия завершена. Войдите снова")
     if not staff_allowed(account["role"],request.url.path,request.method):
         raise HTTPException(status_code=403,detail="Недостаточно полномочий")
+    if request.url.path=="/support" or request.url.path.startswith("/support/"):
+        if account["role"]!="owner":
+            if not account["support_access"]:
+                raise HTTPException(403,detail="Доступ к техподдержке отключён")
+            action=request.url.path.rsplit("/",1)[-1] if request.method=="POST" else ""
+            permission={"reply":"support_can_reply","retry":"support_can_reply",
+                        "delete":"support_can_delete"}.get(action)
+            # Delete and retry URLs end with numeric message ID.
+            if request.method=="POST":
+                if "/delete/" in request.url.path:permission="support_can_delete"
+                if "/retry/" in request.url.path:permission="support_can_reply"
+            if permission and not account[permission]:
+                raise HTTPException(403,detail="Недостаточно прав для действия")
     request.state.admin_role=account["role"]
-    return {"user":account["username"],"role":account["role"]}
+    return {"user":account["username"],"role":account["role"],
+            "support_can_reply":account["role"]=="owner" or account["support_can_reply"],
+            "support_can_delete":account["role"]=="owner" or account["support_can_delete"],
+            "support_can_change_status":account["role"]=="owner" or account["support_can_change_status"],
+            "support_can_close":account["role"]=="owner" or account["support_can_close"]}
 
 
 # 🌐 ROOT
@@ -583,6 +601,34 @@ async def change_staff_account(
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
     return RedirectResponse("/staff?updated=1",303)
+
+@app.post("/staff/support")
+async def change_staff_support_permissions(
+    target:str=Form(...),telegram_id:str=Form(""),
+    support_access:bool=Form(False),support_can_reply:bool=Form(False),
+    support_can_change_status:bool=Form(False),support_can_close:bool=Form(False),
+    support_can_delete:bool=Form(False),support_notify_telegram:bool=Form(False),
+    confirm:str=Form(""),csrf_check=Depends(verify_csrf),
+    user=Depends(get_current_user)
+):
+    if user["role"]!="owner":
+        raise HTTPException(403,detail="Только владелец")
+    if confirm!="CHANGE_SUPPORT":
+        raise HTTPException(400,detail="Подтвердите права техподдержки")
+    try:
+        await support_permissions_change(
+            target,user["user"],access=support_access,
+            can_reply=support_can_reply,
+            can_change_status=support_can_change_status,
+            can_close=support_can_close,
+            can_delete=support_can_delete,
+            telegram_id=telegram_id.strip(),
+            notify=support_notify_telegram
+        )
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/staff?support_updated=1",status_code=303)
+
 
 @app.get("/analytics")
 async def analytics_page(request:Request,user=Depends(get_current_user)):
@@ -1112,7 +1158,8 @@ async def support_thread(request: Request,ticket_id:int,
             m.get("telegram_sent_at") if m["actor"]!="user" else m["created_at"])}
     return templates.TemplateResponse(request=request,name="support_ticket.html",context={
         "ticket":ticket,"messages":messages,"chats":chats,
-        "support_deletable_ids":support_deletable_ids,
+        "support_deletable_ids":support_deletable_ids if user["support_can_delete"] else set(),
+        "support_permissions":user,
         "categories":SUPPORT_CATEGORIES,"statuses":SUPPORT_STATUSES,
         "csrf_token":make_csrf_token(request.cookies.get("access_token","")),
     })
@@ -1201,6 +1248,10 @@ async def support_retry_failed_message(ticket_id:int,message_id:int,
 async def support_change_status(ticket_id:int,status:str=Form(...),
                                 csrf_check=Depends(verify_csrf),
                                 user=Depends(get_current_user)):
+    if status=="closed" and not user["support_can_close"]:
+        raise HTTPException(403,detail="Нет разрешения закрывать обращения")
+    if status!="closed" and not user["support_can_change_status"]:
+        raise HTTPException(403,detail="Нет разрешения изменять статус")
     try: uid=await set_ticket_status(ticket_id,status)
     except ValueError as exc: raise HTTPException(400,detail=str(exc))
     if status == "closed":
