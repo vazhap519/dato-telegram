@@ -41,8 +41,9 @@ class MembersMiniAppTests(unittest.TestCase):
                 route=(dec.args[0].value if dec.args and isinstance(dec.args[0],ast.Constant) else "")
                 if route.startswith("/api/members"):
                     api_routes.append((dec.func.attr,route,node))
-        self.assertEqual(len(api_routes),6)
+        self.assertEqual(len(api_routes),8)
         expected_write={
+            "/api/members/{telegram_id}/crm",
             "/api/members/{telegram_id}/grant",
             "/api/members/{telegram_id}/extend",
             "/api/members/{telegram_id}/grants/{grant_id}/expiry",
@@ -50,7 +51,10 @@ class MembersMiniAppTests(unittest.TestCase):
         }
         for verb,route,node in api_routes:
             with self.subTest(route=route):
-                self.assertEqual(verb,"post" if route in expected_write else "get")
+                if route=="/api/members/{telegram_id}/crm":
+                    self.assertIn(verb,("get","post"))
+                else:
+                    self.assertEqual(verb,"post" if route in expected_write else "get")
                 # staff=Depends(members_staff) is a positional-or-keyword
                 # parameter, so its default is stored in args.defaults.
                 # kw_defaults only contains keyword-only parameters.
@@ -63,7 +67,7 @@ class MembersMiniAppTests(unittest.TestCase):
                     and arg.func.id=="Depends"
                     and arg.args
                     and isinstance(arg.args[0],ast.Name)
-                    and arg.args[0].id==("members_owner" if route in expected_write else "members_staff")
+                    and arg.args[0].id==("members_owner" if verb=="post" else "members_staff")
                     for arg in defaults
                 ))
 

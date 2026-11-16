@@ -16,6 +16,8 @@ from admin.support_miniapp import require_staff
 from db.database import SessionLocal
 from db.miniapp_analytics import report as miniapp_analytics_report
 from db.owner_alerts import owner_settings,configure as configure_owner_alerts
+from db.subscriber_profile import get_subscriber_profile, save_subscriber_profile
+from db.subscriber_crm import crm_timeline
 from db.subscriptions import (people, person, grant_access, revoke_grant,
                               change_grant_expiry, extend_community_access)
 
@@ -129,6 +131,11 @@ class ExpiryPayload(BaseModel):
 class RevokePayload(BaseModel):
     confirm: str
 
+class MemberCrmPayload(BaseModel):
+    note: str = Field(default="", max_length=3000)
+    tags: str = Field(default="", max_length=700)
+
+
 class OwnerAlertSettingsPayload(BaseModel):
     enabled: bool
     payments: bool = True
@@ -232,6 +239,50 @@ async def members_list(q:str="", status:str="all", page:int=1,
             "access_basis":basis[r["telegram_id"]]["basis"],
         } for r in rows]
     }
+
+@router.get("/api/members/{telegram_id}/crm")
+async def member_crm_detail(telegram_id:int,staff=Depends(members_staff)):
+    if telegram_id<=0:
+        raise HTTPException(400,"Некорректный Telegram ID")
+    if not await person(telegram_id):
+        raise HTTPException(404,"Участник не найден")
+    profile=await get_subscriber_profile(telegram_id)
+    timeline=await crm_timeline(telegram_id,limit=60)
+    async with SessionLocal() as session:
+        tickets=(await session.execute(text("""
+            SELECT id,category,status,created_at,updated_at
+            FROM support_tickets
+            WHERE telegram_id=:uid
+            ORDER BY updated_at DESC,id DESC LIMIT 20
+        """),{"uid":telegram_id})).mappings().all()
+    return {
+        "profile":{"note":profile["note"],"tags":profile["tags"],
+                   "updated_by":profile["updated_by"],
+                   "updated_at":stamp(profile["updated_at"])},
+        "can_edit":staff["role"]=="owner",
+        "tickets":[{"id":row["id"],"category":row["category"],
+                    "status":row["status"],"created_at":stamp(row["created_at"]),
+                    "updated_at":stamp(row["updated_at"])} for row in tickets],
+        "timeline":[{"kind":row["kind"],"description":row["description"],
+                     "actor":row["actor"],"status":row["status"],
+                     "detail":row["detail"],"happened_at":stamp(row["happened_at"])}
+                    for row in timeline],
+        "limits":{"tickets":20,"timeline":60},
+    }
+
+
+@router.post("/api/members/{telegram_id}/crm")
+async def member_crm_update(telegram_id:int,payload:MemberCrmPayload,
+                            staff=Depends(members_owner)):
+    if telegram_id<=0:
+        raise HTTPException(400,"Некорректный Telegram ID")
+    try:
+        await save_subscriber_profile(telegram_id,payload.note,payload.tags,
+                                      "telegram:"+staff["username"])
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {"ok":True}
+
 
 @router.get("/api/members/{telegram_id}")
 async def members_detail(telegram_id:int,staff=Depends(members_staff)):
