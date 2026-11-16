@@ -1,0 +1,47 @@
+name: Telegram command centre checks
+
+on:
+  pull_request:
+    paths:
+      - 'admin/support_miniapp.py'
+      - 'admin/templates/command_center_miniapp.html'
+      - 'admin/templates/support_miniapp.html'
+      - 'admin/templates/analytics_miniapp.html'
+      - 'admin/templates/members_miniapp.html'
+      - 'db/miniapp_command_center.py'
+      - 'tests/test_command_center_miniapp.py'
+      - '.github/workflows/command-center.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  command-centre:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python and regression tests
+        run: |
+          python -m compileall -q admin/support_miniapp.py db/miniapp_command_center.py
+          python -m unittest discover -s tests -p 'test_command_center_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_owner_alerts.py' -v
+          python -m unittest discover -s tests -p 'test_miniapp_analytics.py' -v
+          python -m unittest discover -s tests -p 'test_members_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_support_permissions.py' -v
+      - name: Mini App JavaScript syntax checks
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          for path in ("command_center_miniapp.html","support_miniapp.html","members_miniapp.html","analytics_miniapp.html"):
+              html=Path("admin/templates",path).read_text()
+              js=[s for s in re.findall(r"<script>(.*?)</script>",html,re.S) if s.strip()]
+              assert len(js)==1,path
+              Path("/tmp/"+path+".js").write_text(js[0])
+          PY
+          for file in /tmp/*miniapp.html.js; do node --check "$file"; done
