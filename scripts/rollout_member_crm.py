@@ -30,6 +30,7 @@ EXPECTED={
  "admin/templates/members_miniapp.html",
  "scripts/cutover_command_center_8081.py",
  "scripts/prepare_command_center.py",
+ "scripts/rollout_member_crm.py",
  "scripts/stage_command_center_8081.py",
  "tests/test_member_crm_miniapp.py",
  "tests/test_members_miniapp.py",
