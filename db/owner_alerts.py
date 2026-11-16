@@ -233,7 +233,11 @@ async def reserve(admin_id,event_key,event_kind):
             result=(await db.execute(text("""
               INSERT INTO owner_alert_deliveries(admin_id,event_key,event_kind,attempts)
               VALUES (:admin,:event,:kind,1)
-              ON CONFLICT (admin_id,event_key) DO NOTHING
+              ON CONFLICT (admin_id,event_key) DO UPDATE
+              SET status='reserved', attempts=owner_alert_deliveries.attempts+1,
+                  reserved_at=NOW(), last_error=NULL
+              WHERE owner_alert_deliveries.status='failed'
+                AND owner_alert_deliveries.attempts<3
               RETURNING id
             """),{"admin":admin_id,"event":event_key,"kind":event_kind})).scalar_one_or_none()
     return result
