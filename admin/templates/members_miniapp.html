@@ -257,7 +257,7 @@ $("go-analytics").onclick=()=>{window.location.href="/tg-support/analytics"+wind
   $("who").textContent=(me.role==="owner"?"Владелец: ":"Администратор: ")+me.username;
   await load();
   const requested=new URLSearchParams(window.location.search).get("member");
-  if(requested&&/^\\d{1,18}$/.test(requested))await openMember(Number(requested));
+  if(requested&&/^\d{1,18}$/.test(requested))await openMember(Number(requested));
  }catch(e){msg(e.message);$("count").textContent="Нет доступа"}
 })();
 })();
