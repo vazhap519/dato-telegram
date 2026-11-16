@@ -3,7 +3,7 @@
 # service restart, Nginx change, or Telegram API call.
 set -Eeuo pipefail
 cd /opt/dato-telegram
-branch="feature/miniapp-members-subscriptions-20261116"
+branch="feature/members-cards-actions-20261116"
 temp="$(mktemp -d /tmp/dato-members-check.XXXXXXXX)"
 trap 'rm -rf "$temp"' EXIT
 git fetch --no-tags origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
@@ -27,9 +27,24 @@ class Parser(HTMLParser):
 source=Path(os.environ["DATO_HTML"]).read_text(encoding="utf-8")
 Parser().feed(source)
 assert "/tg-support/api" in source
-assert "Только просмотр" in source
-print("HTML parsed. Static read-only controls present.")
+assert "Управление доступом" in source
+print("HTML parsed. Member management controls present.")
 PY
+echo "== Mini App JavaScript syntax =="
+if command -v node >/dev/null 2>&1; then
+  DATO_HTML="$temp/admin/templates/members_miniapp.html" DATO_JS="$temp/members-inline.js" python3 - <<'PY'
+import os,re
+from pathlib import Path
+html=Path(os.environ["DATO_HTML"]).read_text(encoding="utf-8")
+scripts=re.findall(r'<script>(.*?)</script>',html,re.S)
+scripts=[s for s in scripts if s.strip()]
+assert len(scripts)==1,"Expected one inline application script"
+Path(os.environ["DATO_JS"]).write_text(scripts[0],encoding="utf-8")
+PY
+  node --check "$temp/members-inline.js"
+else
+  echo "Node.js is unavailable: JavaScript syntax check skipped"
+fi
 echo "== Existing DB schema (read only) =="
 /opt/dato-telegram/.venv/bin/python - <<'PY'
 import sys
@@ -64,4 +79,4 @@ with psycopg2.connect(**params) as conn:
 PY
 echo "== Server services (unchanged) =="
 systemctl is-active dato-telegram-bot.service dato-telegram-admin-blue.service dato-telegram-admin-standby.service
-echo "MEMBERS PREFLIGHT PASSED. No deployment performed."
+echo "MEMBER CARDS AND ACTIONS PREFLIGHT PASSED. No deployment performed."
