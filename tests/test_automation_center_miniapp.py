@@ -38,6 +38,14 @@ class AutomationCentreTests(unittest.TestCase):
                        "Bot(","send_message(","claim_expiry_alerts"):
             self.assertNotIn(banned,src)
         self.assertIn("settings[\"removal_enabled\"]",src)
+    def test_staging_checks_post_route_using_post_not_get(self):
+        script=get("scripts/rollout_automation_center.py")
+        self.assertIn('def req(url,method="GET"):',script)
+        self.assertIn('method="POST"',script)
+        self.assertIn('b\'{"enabled":false,"confirm":"SAVE_EXPIRY_NOTICES"}\'',script)
+        self.assertIn('req("http://127.0.0.1:8081/tg-support/api/automations/expiry",method="POST")[0]!=401',script)
+        self.assertNotIn('                     "/tg-support/api/automations/expiry",\n',script)
+
     def test_ui_safe_and_no_false_claims(self):
         ui=get("admin/templates/automation_center_miniapp.html")
         for required in ("id=\"expiry-enabled\"","id=\"rules\"",
