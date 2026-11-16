@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Аналитика · Круг Души</title><script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark;background:#101827;color:#eef3ff}
+*{box-sizing:border-box}body{margin:0;background:var(--tg-theme-bg-color,#101827);color:var(--tg-theme-text-color,#eef3ff)}
+main{max-width:830px;margin:0 auto;padding:18px 14px 90px}h1{font-size:22px;margin:3px 0}h2{font-size:17px;margin:23px 0 11px}
+p{line-height:1.5}.muted{font-size:12px;line-height:1.5;color:var(--tg-theme-hint-color,#aab9cd)}
+header{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+button,select{font:inherit;padding:10px 12px;border:0;border-radius:11px;background:#2b3951;color:inherit}
+button{cursor:pointer}button.primary{background:var(--tg-theme-button-color,#446ec6);color:var(--tg-theme-button-text-color,#fff)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.card{background:var(--tg-theme-secondary-bg-color,#1b2940);border:1px solid #33465f;border-radius:15px;padding:14px;margin:9px 0}
+.metric{min-height:112px}.metric strong{font-size:29px;display:block;margin-top:11px;font-variant-numeric:tabular-nums}.metric label{font-size:12px;color:#b4c4d9}
+.metric small{font-size:11px;color:#aab9cd;display:block;margin-top:6px}
+.row{display:flex;align-items:flex-start;gap:12px;justify-content:space-between}
+.pill{font-size:12px;background:#504028;color:#ffe2a9;padding:4px 8px;border-radius:8px;white-space:nowrap}
+.name{font-size:14px;font-weight:700}.amount{font-size:24px;font-weight:750;overflow-wrap:anywhere;margin:9px 0}
+.payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.actions select{flex:1;min-width:120px;border:1px solid #52627c}
+.empty{padding:20px 14px;text-align:center;border:1px dashed #50627d;border-radius:12px;color:#9eacc2}
+#notice{color:#a6e6c1;font-size:12px;margin-top:8px}#error{color:#ffb4a8;font-size:13px;margin:12px 0}
+.link{background:none;color:#add1ff;text-decoration:underline;font-size:12px;padding:3px 0}
+.hide{display:none!important}
+</style></head><body><main>
+<header><div><h1>📊 Аналитика</h1><div class="muted">Круг Души · фактические данные из реестра</div></div><button id="back">← Участники</button></header>
+<div id="who" class="muted">Проверка Telegram…</div><div id="error" role="alert"></div><div id="notice" role="status"></div>
+<section><h2>Участники и доступ</h2>
+<div class="grid">
+<div class="card metric"><label>👥 Всего в боте</label><strong id="registered">—</strong><small>Зарегистрированные пользователи</small></div>
+<div class="card metric"><label>✅ Активный доступ</label><strong id="active">—</strong><small>По подписке или ручному праву</small></div>
+<div class="card metric"><label>♾️ Бессрочный доступ</label><strong id="lifetime">—</strong><small>Действующее право без окончания</small></div>
+<div class="card metric"><label>💳 Активные подписки</label><strong id="subscription-users">—</strong><small>Уникальные пользователи</small></div>
+<div class="card metric"><label>🧾 Подписчики с оплатой</label><strong id="paid-subscription-users">—</strong><small>Есть активная подписка и подтверждённый платёж</small></div>
+<div class="card metric"><label>⏳ Истекает за 7 дней</label><strong id="expiring-count">—</strong><small>Итоговый доступ, без бессрочных</small></div>
+</div>
+<p class="muted">«Подписчики с оплатой» — люди, у которых есть активная запись подписки и хотя бы один подтверждённый платёж. Платёж мог относиться к предыдущему периоду. Это не показатель выручки за текущий месяц.</p>
+</section>
+<section><h2>⏰ Скоро закончится доступ</h2>
+<p class="muted">Ближайшие 7 дней. Учитывается самая поздняя дата действующего права или подписки. Бессрочные доступы исключены.</p>
+<div id="expiries"></div><div id="expiry-limit" class="muted"></div>
+</section>
+<section><h2>💰 Подтверждённые платежи</h2>
+<div class="actions"><label for="period" class="muted">Период</label><select id="period"><option value="30d">Последние 30 дней</option><option value="all">За всё время</option></select><button class="primary" id="refresh">↻ Обновить</button></div>
+<div class="grid">
+<div class="card metric"><label>Подтверждено операций</label><strong id="paid-events">—</strong><small>Статус paid</small></div>
+<div class="card metric"><label>Уникальных плательщиков</label><strong id="buyers">—</strong><small>В выбранном периоде</small></div>
+</div>
+<div class="muted" id="reversals"></div>
+<div id="payments" class="payment-grid"></div>
+<p class="muted">Суммы отдельно по валютам, без конвертации. Учитываются только записи со статусом «оплачено»; возвраты и оспоренные платежи исключены. Суммы не учитывают комиссии. Платежи без указанной суммы отмечаются отдельно.</p>
+</section>
+<p class="muted" id="updated"></p>
+</main><script>
+(()=>{
+"use strict";
+const tg=window.Telegram?.WebApp,init=tg?.initData||"",$=id=>document.getElementById(id);
+let busy=false;
+function text(id,value){$(id).textContent=value===null||value===undefined?"—":String(value)}
+function number(v){return Number(v||0).toLocaleString("ru-RU")}
+function date(v){return v?new Date(v).toLocaleDateString("ru-RU",{timeZone:"Asia/Tbilisi",day:"2-digit",month:"2-digit",year:"numeric"}):"—"}
+function tag(tagName,cls,value){const node=document.createElement(tagName);node.className=cls||"";if(value!==undefined)node.textContent=String(value);return node}
+function memberName(m){return [m.first_name,m.last_name].filter(Boolean).join(" ")||m.username||"ID "+m.telegram_id}
+async function api(path){
+ if(!init)throw Error("Откройте раздел через Telegram-бота.");
+ const r=await fetch("/tg-support/api"+path,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});
+ const data=(r.headers.get("content-type")||"").includes("application/json")?await r.json().catch(()=>({})):{};
+ if(!r.ok)throw Error(typeof data.detail==="string"?data.detail:"HTTP "+r.status);
+ return data;
+}
+function renderExpiry(data){
+ const list=$("expiries");list.replaceChildren();
+ if(!data.expiring.length){list.append(tag("div","empty","В ближайшие 7 дней доступ ни у кого не заканчивается."));return}
+ for(const m of data.expiring){
+  const item=tag("div","card"),top=tag("div","row"),left=tag("div",""),name=tag("div","name",memberName(m));
+  left.append(name,tag("div","muted",(m.username?"@"+m.username+" · ":"")+"ID "+m.telegram_id));
+  top.append(left,tag("span","pill",date(m.expires_at)));item.append(top,tag("div","muted",m.basis));
+  const link=tag("button","link","Открыть участника");link.onclick=()=>{window.location.href="/tg-support/members?member="+encodeURIComponent(m.telegram_id)+window.location.hash};
+  item.append(link);list.append(item);
+ }
+ text("expiry-limit",data.members.expiring_7d>data.expiring_displayed?"Показаны первые "+data.expiring_displayed+" из "+data.members.expiring_7d+" участников.":"");
+}
+function renderAmounts(rows){
+ const box=$("payments");box.replaceChildren();
+ if(!rows.length){box.append(tag("div","empty","Подтверждённых оплат за выбранный период нет."));return}
+ for(const r of rows){
+  const item=tag("div","card"),sum=r.amount===null?"—":Number(r.amount).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2});
+  item.append(tag("div","muted",r.currency),tag("div","amount",sum+" "+r.currency),tag("div","muted","Операций: "+number(r.count)));
+  if(r.missing_amount)item.append(tag("div","muted","Без указанной суммы: "+r.missing_amount));
+  box.append(item);
+ }
+}
+async function load(){
+ if(busy)return;busy=true;$("refresh").disabled=true;$("error").textContent="";
+ try{
+  const data=await api("/analytics?period="+encodeURIComponent($("period").value));
+  for(const [id,key] of [["registered","registered"],["active","active"],["lifetime","lifetime"],
+                         ["subscription-users","active_subscription_users"],
+                         ["paid-subscription-users","active_subscribers_with_paid_receipt"],
+                         ["expiring-count","expiring_7d"]])text(id,number(data.members[key]));
+  renderExpiry(data);
+  text("paid-events",number(data.payments.paid_events));text("buyers",number(data.payments.buyers));
+  text("reversals","Возвратов / оспоренных операций: "+number(data.payments.reversals));
+  renderAmounts(data.payments.by_currency);
+  text("updated","Актуально на "+new Date(data.as_of).toLocaleString("ru-RU",{timeZone:"Asia/Tbilisi"})+" (Тбилиси)");
+  text("notice","Данные обновлены.");
+ }catch(e){text("error",e.message)}finally{busy=false;$("refresh").disabled=false}
+}
+$("refresh").onclick=load;$("period").onchange=load;
+$("back").onclick=()=>{window.location.href="/tg-support/members"+window.location.hash};
+(async()=>{
+ try{
+  if(!tg||!init)throw Error("Откройте аналитику через Telegram Mini App.");
+  tg.ready();tg.expand();
+  const me=await api("/me");
+  if(!["owner","admin"].includes(me.role))throw Error("У вас нет доступа к аналитике.");
+  text("who",(me.role==="owner"?"Владелец: ":"Администратор: ")+me.username);
+  await load();
+ }catch(e){text("error",e.message)}
+})();
+})();
+</script></body></html>
