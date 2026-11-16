@@ -72,7 +72,8 @@ def recent_polling(pid):
     if pid<=0:return False
     # The logging string comes from aiogram's dispatcher after getMe.
     p=subprocess.run(["journalctl","--no-pager","-o","cat","_PID="+str(pid),
-                      "-n","120"],capture_output=True,text=True,timeout=15)
+                      "--grep=Run polling for bot|Start polling","-n","5"],
+                     capture_output=True,text=True,timeout=20)
     text=p.stdout
     return p.returncode==0 and any(marker in text for marker in POLLING)
 
