@@ -45,12 +45,12 @@ class MembersMiniAppTests(unittest.TestCase):
             with self.subTest(route=route):
                 self.assertEqual(verb,"get")
                 self.assertTrue(any(
-                    isinstance(arg.value,ast.Call)
-                    and isinstance(arg.value.func,ast.Name)
-                    and arg.value.func.id=="Depends"
-                    and arg.value.args
-                    and isinstance(arg.value.args[0],ast.Name)
-                    and arg.value.args[0].id=="members_staff"
+                    isinstance(arg,ast.Call)
+                    and isinstance(arg.func,ast.Name)
+                    and arg.func.id=="Depends"
+                    and arg.args
+                    and isinstance(arg.args[0],ast.Name)
+                    and arg.args[0].id=="members_staff"
                     for arg in node.args.kw_defaults if arg is not None
                 ))
 
