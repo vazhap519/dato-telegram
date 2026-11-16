@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.operations_dashboard import automation_overview, reminder_delivery_attention
+from db.lifecycle_followups import initialize_lifecycle
 from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events, support_permissions_change
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, webhook_attention, audit as admin_action_audit
@@ -93,6 +94,7 @@ async def setup_onboarding():
     await initialize_broadcasts()
     await initialize_automation()
     await initialize_subscriptions()
+    await initialize_lifecycle()
     await initialize_health_snapshots()
     await initialize_subscriber_profiles()
     await initialize_crm()
