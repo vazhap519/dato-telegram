@@ -51,6 +51,18 @@ button{cursor:pointer}button.primary{background:var(--tg-theme-button-color,#446
 <div id="payments" class="payment-grid"></div>
 <p class="muted">Суммы отдельно по валютам, без конвертации. Учитываются только записи со статусом «оплачено»; возвраты и оспоренные платежи исключены. Суммы не учитывают комиссии. Платежи без указанной суммы отмечаются отдельно.</p>
 </section>
+<section class="card hide" id="owner-alerts">
+<h2>🔔 Уведомления владельцу</h2>
+<p class="muted">Сообщения приходят в личный Telegram, привязанный к учётной записи владельца. До включения система ничего не отправляет. Старые платежи не рассылаются.</p>
+<form id="alerts-form">
+<label style="display:block;margin:12px 0"><input type="checkbox" id="alert-enabled"> Включить автоматические уведомления</label>
+<label style="display:block;margin:12px 0"><input type="checkbox" id="alert-payments" checked> Новые подтверждённые платежи</label>
+<label style="display:block;margin:12px 0"><input type="checkbox" id="alert-expiry" checked> Окончание доступа: за 3 дня, за день и в день окончания</label>
+<label style="display:block;margin:12px 0"><input type="checkbox" id="alert-attention" checked> Возвраты и оспаривания платежей</label>
+<label style="display:block;margin:12px 0"><input type="checkbox" id="alert-digest" checked> Ежедневная сводка, после 10:00 по Тбилиси</label>
+<button type="submit" class="primary" id="alert-save">Сохранить настройки</button>
+</form><div class="muted" id="alert-hint"></div>
+</section>
 <p class="muted" id="updated"></p>
 </main><script>
 (()=>{
@@ -107,6 +119,26 @@ async function load(){
   text("notice","Данные обновлены.");
  }catch(e){text("error",e.message)}finally{busy=false;$("refresh").disabled=false}
 }
+async function loadAlerts(){
+ const data=await api("/owner-alerts");
+ $("owner-alerts").classList.remove("hide");
+ for(const k of ["enabled","payments","expiry","attention","digest"])$("alert-"+k).checked=!!data[k];
+ text("alert-hint",data.telegram_linked?"Личный Telegram владельца подключён.":"Telegram владельца не привязан: включение недоступно.");
+ $("alert-enabled").disabled=!data.telegram_linked;
+}
+$("alerts-form").onsubmit=async e=>{
+ e.preventDefault();$("alert-save").disabled=true;text("error","");
+ try{
+  const body={};
+  for(const k of ["enabled","payments","expiry","attention","digest"])body[k]=$("alert-"+k).checked;
+  const r=await fetch("/tg-support/api/owner-alerts",{method:"POST",
+     headers:{"X-Telegram-Init-Data":init,"Content-Type":"application/json"},
+     credentials:"omit",cache:"no-store",body:JSON.stringify(body)});
+  const data=(r.headers.get("content-type")||"").includes("application/json")?await r.json():{};
+  if(!r.ok)throw Error(typeof data.detail==="string"?data.detail:"HTTP "+r.status);
+  text("notice","Настройки уведомлений сохранены.");await loadAlerts();
+ }catch(e){text("error",e.message)}finally{$("alert-save").disabled=false}
+};
 $("refresh").onclick=load;$("period").onchange=load;
 $("back").onclick=()=>{window.location.href="/tg-support/members"+window.location.hash};
 (async()=>{
@@ -117,6 +149,7 @@ $("back").onclick=()=>{window.location.href="/tg-support/members"+window.locatio
   if(!["owner","admin"].includes(me.role))throw Error("У вас нет доступа к аналитике.");
   text("who",(me.role==="owner"?"Владелец: ":"Администратор: ")+me.username);
   await load();
+  if(me.role==="owner")await loadAlerts();
  }catch(e){text("error",e.message)}
 })();
 })();
