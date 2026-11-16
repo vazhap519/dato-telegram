@@ -105,7 +105,7 @@ $("search-form").onsubmit=e=>{e.preventDefault();state.query=$("search").value.t
 $("prev").onclick=()=>{if(state.page>1){state.page--;load()}};
 $("next").onclick=()=>{if(state.page*30<state.total){state.page++;load()}};
 $("back").onclick=()=>{view(false);load()};
-$("go-support").onclick=()=>{window.location.href="/tg-support"};
+$("go-support").onclick=()=>{window.location.href="/tg-support"+window.location.hash};
 (async()=>{
  try{
   if(!tg||!init)throw Error("Откройте страницу через кнопку Telegram Mini App.");
