@@ -184,6 +184,11 @@ $("reply-form").onsubmit=async e=>{
 (async()=>{
  try{
   if(!tg||!init)throw Error("Эта панель доступна только внутри Telegram.");
+  const params=new URLSearchParams(window.location.search);
+  if(!params.has("view")&&!params.has("ticket")){
+    window.location.replace("/tg-support/home"+window.location.hash);
+    return;
+  }
   tg.ready();tg.expand();
   const me=await api("/me");state.permissions=me;$("who").textContent="Оператор: "+me.username;
   if(me.role==="owner"||me.role==="admin"){$("members-link").classList.remove("hidden");$("analytics-link").classList.remove("hidden")}
