@@ -37,6 +37,10 @@ label{font-size:13px}.field{display:block;margin:10px 0}
 <div class="row"><button class="primary hidden" id="expiry-save">Сохранить</button><span class="muted" id="expiry-feedback" role="status"></span></div>
 </div></section>
 <section><h2>Напоминания об оформлении</h2><p class="muted">Три существующих сценария. Их текущий статус загружается из базы: они не выключаются автоматически при обновлении.</p><div id="rules"><div class="card">Загрузка…</div></div></section>
+<section><h2>Сопровождение участников</h2>
+<p class="muted">Новые сценарии сохраняются отдельно от текущих напоминаний. Отправляющий планировщик пока не подключён: включение правила не запускает сообщения. Прежде чем включать реальные отправки, отдельно проверим механизм.</p>
+<div id="lifecycle-status" class="card muted">Загрузка сценариев…</div>
+<div id="lifecycle-rules"></div></section>
 <section><h2>Очередь и ошибки</h2>
 <div class="card"><div class="row"><strong>Недавние кампании</strong><small>Последние 12</small></div><div id="campaigns"></div></div>
 <div class="card"><div class="row"><strong>Проблемные напоминания</strong><small>Последние 25</small></div><div id="problems"></div></div>
@@ -101,6 +105,48 @@ function renderRecent(rows,id,mapper,emptyText){
   item.textContent=txt;box.append(item);
  }
 }
+async function loadLifecycle(){
+ const info=$("lifecycle-status"),box=$("lifecycle-rules");
+ try{
+  const result=await api("/automations/lifecycle");
+  info.textContent="Режим: только настройка и предварительная проверка. Планировщик отправки не подключён.";
+  box.replaceChildren();
+  for(const item of result.rules){
+   const card=elem("div","card"),top=elem("div","row"),
+         title=elem("strong","",item.title),status=elem("span","tag",item.supported?state(item.enabled):"Недоступно");
+   top.append(title,status);card.append(top);
+   if(item.note)card.append(elem("p","notice",item.note));
+   const stats=result.preview[item.kind];
+   if(stats)card.append(elem("p","muted","Подходящих событий сейчас: "+fmt(stats.eligible_now)));
+   const form=elem("form",""),line=elem("label","field"),toggle=elem("input");
+   toggle.type="checkbox";toggle.checked=!!item.enabled;
+   toggle.disabled=!owner||!item.supported;
+   line.append(toggle,document.createTextNode(" Сценарий включён"));form.append(line);
+   const bodyLabel=elem("label","field","Текст сообщения"),textarea=elem("textarea");
+   textarea.value=item.body;textarea.maxLength=3000;textarea.disabled=!owner;
+   bodyLabel.append(textarea);form.append(bodyLabel);
+   if(owner){
+    const button=elem("button","primary","Сохранить"),feedback=elem("span","muted","");
+    button.type="submit";
+    form.append(button,feedback);
+    form.onsubmit=async e=>{
+     e.preventDefault();
+     if(toggle.checked&&!item.supported){feedback.textContent="Недоступно без достоверной активности";return}
+     if(!confirm("Сохранить настройки? Планировщик пока выключен, сообщений не будет."))return;
+     button.disabled=true;feedback.textContent="Сохранение…";
+     try{
+      await api("/automations/lifecycle/"+encodeURIComponent(item.kind),"POST",
+       {enabled:toggle.checked,body:textarea.value,confirm:"SAVE_LIFECYCLE"});
+      feedback.textContent="✅ Сохранено; отправки пока не подключены.";
+      status.textContent=state(toggle.checked);
+     }catch(err){feedback.textContent="Ошибка: "+err.message}
+     finally{button.disabled=false}
+    };
+   }
+   card.append(form);box.append(card);
+  }
+ }catch(err){info.textContent="Ошибка загрузки сценариев: "+err.message}
+}
 async function load(){
  if(busy)return;busy=true;$("refresh").disabled=true;$("err").textContent="";
  try{
@@ -115,6 +161,7 @@ async function load(){
   $("expiry-removal").textContent="Автоматическое исключение из группы: "+state(data.expiry.removal_enabled)+" · льготный период: "+data.expiry.grace_hours+" ч. (здесь не изменяется)";
   $("expiry-save").classList.toggle("hidden",!owner);
   renderRules(data.rules);
+  await loadLifecycle();
   renderRecent(data.recent,"campaigns",r=>"№"+r.id+" · "+r.kind+" · "+r.status+" · отправлено "+r.sent+" / "+r.recipients+" · проблем "+r.problems,"Кампаний пока нет.");
   renderRecent(data.problems,"problems",r=>"Кампания №"+r.broadcast_id+" · "+r.trigger+" · "+r.status+(r.error_code?" · "+r.error_code:""),"Проблемных напоминаний нет.");
   const planned=$("planned");planned.replaceChildren();
