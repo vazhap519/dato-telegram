@@ -40,10 +40,16 @@ class MembersMiniAppTests(unittest.TestCase):
                 route=(dec.args[0].value if dec.args and isinstance(dec.args[0],ast.Constant) else "")
                 if route.startswith("/api/members"):
                     api_routes.append((dec.func.attr,route,node))
-        self.assertEqual(len(api_routes),2)
+        self.assertEqual(len(api_routes),6)
+        expected_write={
+            "/api/members/{telegram_id}/grant",
+            "/api/members/{telegram_id}/extend",
+            "/api/members/{telegram_id}/grants/{grant_id}/expiry",
+            "/api/members/{telegram_id}/grants/{grant_id}/revoke",
+        }
         for verb,route,node in api_routes:
             with self.subTest(route=route):
-                self.assertEqual(verb,"get")
+                self.assertEqual(verb,"post" if route in expected_write else "get")
                 # staff=Depends(members_staff) is a positional-or-keyword
                 # parameter, so its default is stored in args.defaults.
                 # kw_defaults only contains keyword-only parameters.
@@ -56,7 +62,7 @@ class MembersMiniAppTests(unittest.TestCase):
                     and arg.func.id=="Depends"
                     and arg.args
                     and isinstance(arg.args[0],ast.Name)
-                    and arg.args[0].id=="members_staff"
+                    and arg.args[0].id==("members_owner" if route in expected_write else "members_staff")
                     for arg in defaults
                 ))
 
@@ -80,11 +86,37 @@ class MembersMiniAppTests(unittest.TestCase):
         self.assertIn('me.role==="owner"||me.role==="admin"',ui)
         self.assertIn('/tg-support/members',ui)
 
-    def test_markup_does_not_offer_mutation_of_subscriptions(self):
+    def test_owner_can_manage_only_grants_not_payment_records(self):
+        source=file("admin/members_miniapp.py")
+        self.assertIn('staff["role"]!="owner"',source)
+        self.assertIn("Depends(members_owner)",source)
+        self.assertIn("await grant_access(",source)
+        self.assertIn("await revoke_grant(",source)
+        self.assertIn("await change_grant_expiry(",source)
+        self.assertIn("await extend_community_access(",source)
+        self.assertIn("require_confirm(payload.confirm",source)
+        self.assertIn("send_group_invitation",source)
+        self.assertIn("remove_after_revoke",source)
+        self.assertNotIn("INSERT INTO verified_payment_receipts",source)
+        self.assertNotIn("UPDATE subscriptions",source)
+
+    def test_human_readable_access_cards(self):
         ui=file("admin/templates/members_miniapp.html")
-        self.assertIn("Только просмотр",ui)
-        self.assertNotIn('method:"POST"',ui)
+        for phrase in ("Текущий доступ", "История доступа",
+                       "Ручной временный доступ", "Бессрочный доступ",
+                       "Подтверждённых платежей", "Подтвердить продление",
+                       "Отозвать доступ", "Выдать новый доступ"):
+            self.assertIn(phrase,ui)
         self.assertNotIn('type="password"',ui)
+        self.assertIn('id="manage"',ui)
+        self.assertIn('data.can_manage',ui)
+
+    def test_access_calculation_ignores_revoked_grants(self):
+        source=file("admin/members_miniapp.py")
+        self.assertIn('if grant["revoked_at"] is not None:return "revoked"',source)
+        self.assertIn('if start>now:return "scheduled"',source)
+        self.assertIn('if end is not None and end<=now:return "expired"',source)
+        self.assertIn('active=[g for g in grants if grant_state(g,now)=="active"]',source)
 
 if __name__=="__main__":
     unittest.main()
