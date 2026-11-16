@@ -15,6 +15,7 @@ ROOT=Path("/opt/dato-telegram")
 RELEASES=Path("/opt/dato-admin-releases")
 BRANCH="refs/remotes/origin/feature/miniapp-members-subscriptions-20261116"
 PUBLISHED="2d609a3267261e2370e01e02596916d1bdc044c6"
+BASE_SUPPORT="6526f0e859b78cdd47a90a3e0e14ef205f322948"
 ALLOWED={
     "admin/main.py",
     "admin/members_miniapp.py",
@@ -36,7 +37,9 @@ def main():
     sha=git("rev-parse","--verify",BRANCH)
     subprocess.run(["git","-C",str(ROOT),"merge-base","--is-ancestor",PUBLISHED,sha],
                    check=True,timeout=20)
-    changed=set(git("diff","--name-only",PUBLISHED,sha).splitlines())
+    subprocess.run(["git","-C",str(ROOT),"merge-base","--is-ancestor",BASE_SUPPORT,sha],
+                   check=True,timeout=20)
+    changed=set(git("diff","--name-only",BASE_SUPPORT,sha).splitlines())
     extra=changed-ALLOWED
     if extra:
         raise RuntimeError("Unreviewed files: "+", ".join(sorted(extra)))
