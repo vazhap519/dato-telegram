@@ -31,7 +31,7 @@ class OwnerAlertTests(unittest.TestCase):
         self.assertIn("UNIQUE(admin_id,event_key)",src)
         self.assertIn("ON CONFLICT (admin_id,event_key)",src)
         self.assertIn("attempts<3",src)
-        self.assertIn('status="sent" if success else "failed"',src)
+        self.assertIn('"status":"sent" if success else "failed"',src)
         self.assertIn('if claimed is None:continue',src)
         self.assertIn('if dry_run:continue',src)
 
