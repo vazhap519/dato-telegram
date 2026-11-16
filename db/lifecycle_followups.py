@@ -113,9 +113,23 @@ WITH events AS (
   WHERE r.enabled AND r.enabled_at IS NOT NULL
     AND a.created_at>=r.enabled_at AND a.created_at>=NOW()-INTERVAL '48 hours'
     AND (
-      (:kind='welcome' AND a.action IN
-        ('grant_access','tribute_auto_paid','tribute_test_payment_activated'))
-      OR (:kind='renewal' AND a.action='manual_renewal')
+      (:kind='welcome' AND (
+        a.action='grant_access'
+        OR a.action='tribute_test_payment_activated'
+        OR (a.action='tribute_auto_paid'
+            AND a.details->>'kind'='new_subscription')
+      ) AND NOT EXISTS(
+        SELECT 1 FROM subscription_audit_log prior
+        WHERE prior.telegram_id=a.telegram_id AND prior.id<a.id
+          AND prior.action IN
+          ('grant_access','manual_renewal','tribute_auto_paid',
+           'tribute_test_payment_activated')
+      ))
+      OR (:kind='renewal' AND (
+        a.action='manual_renewal'
+        OR (a.action='tribute_auto_paid'
+            AND a.details->>'kind'='renewed_subscription')
+      ))
     )
 )
 SELECT e.id,e.telegram_id,e.action,e.created_at
