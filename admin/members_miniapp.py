@@ -67,8 +67,12 @@ def describe_access(grants,subs,now=None):
     grant_to=max((aware(g["ends_at"]) for g in active if g["ends_at"] is not None),default=None)
     expiry=max((d for d in (paid_to,grant_to) if d is not None),default=None)
     future=any(grant_state(g,now)=="scheduled" for g in grants)
-    historic=[aware(g["ends_at"]) for g in grants if g["ends_at"] is not None]
-    historic += [aware(s["paid_until"]) for s in subs if s["paid_until"] is not None]
+    # Revoked future-dated rights are history, NOT an expired entitlement.
+    historic=[aware(g["ends_at"]) for g in grants
+              if g["revoked_at"] is None and g["ends_at"] is not None
+              and aware(g["ends_at"])<=now]
+    historic += [aware(s["paid_until"]) for s in subs
+                 if s["paid_until"] is not None and aware(s["paid_until"])<=now]
     if lifetime:
         status="lifetime"
     elif active or paid:
