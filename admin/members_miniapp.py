@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from admin.support_miniapp import require_staff
 from db.database import SessionLocal
+from db.miniapp_analytics import report as miniapp_analytics_report
 from db.subscriptions import (people, person, grant_access, revoke_grant,
                               change_grant_expiry, extend_community_access)
 
@@ -126,6 +127,21 @@ class ExpiryPayload(BaseModel):
 
 class RevokePayload(BaseModel):
     confirm: str
+
+@router.get("/analytics")
+async def analytics_page():
+    file=Path(__file__).resolve().parent/"templates"/"analytics_miniapp.html"
+    return FileResponse(file,media_type="text/html",headers={
+        "Cache-Control":"no-store",
+        "Content-Security-Policy":"default-src 'self'; script-src 'self' https://telegram.org 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
+        "Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff",
+    })
+
+@router.get("/api/analytics")
+async def analytics_data(period:str="30d",staff=Depends(members_staff)):
+    if period not in ("30d","all"):
+        raise HTTPException(400,"Недопустимый период")
+    return await miniapp_analytics_report(period)
 
 @router.get("/members")
 async def members_page():
