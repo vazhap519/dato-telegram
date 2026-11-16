@@ -103,7 +103,7 @@ class MembersMiniAppTests(unittest.TestCase):
     def test_human_readable_access_cards(self):
         ui=file("admin/templates/members_miniapp.html")
         for phrase in ("Текущий доступ", "История доступа",
-                       "Ручной временный доступ", "Бессрочный доступ",
+                       "Временный доступ", "Бессрочный доступ",
                        "Подтверждённых платежей", "Подтвердить продление",
                        "Отозвать доступ", "Выдать новый доступ"):
             self.assertIn(phrase,ui)
