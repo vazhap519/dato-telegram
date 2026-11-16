@@ -29,14 +29,6 @@ SELECT COUNT(*) AS count
 FROM verified_payment_receipts
 WHERE payment_status='paid' AND verified_at>=NOW()-INTERVAL '30 days'
 """
-EXPIRING_SQL="""
-SELECT COUNT(*) AS count FROM (
- SELECT telegram_id FROM access_grants
- WHERE resource='community' AND revoked_at IS NULL
- LIMIT 0
-) unused
-"""
-
 def iso(v):
     return v.isoformat() if isinstance(v,datetime) else None
 
