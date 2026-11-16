@@ -18,6 +18,7 @@ from db.miniapp_analytics import report as miniapp_analytics_report
 from db.owner_alerts import owner_settings,configure as configure_owner_alerts
 from db.subscriber_profile import get_subscriber_profile, save_subscriber_profile
 from db.subscriber_crm import crm_timeline
+from db.miniapp_automation_center import dashboard as automation_dashboard,update_existing_rule,update_expiry_notifications
 from db.subscriptions import (people, person, grant_access, revoke_grant,
                               change_grant_expiry, extend_community_access)
 
@@ -142,6 +143,46 @@ class OwnerAlertSettingsPayload(BaseModel):
     expiry: bool = True
     attention: bool = True
     digest: bool = True
+
+class AutomationReminderPayload(BaseModel):
+    enabled: bool
+    body: str = Field(min_length=1,max_length=4000)
+    confirm: str
+
+class AutomationExpiryPayload(BaseModel):
+    enabled: bool
+    confirm: str
+
+@router.get("/automations")
+async def automation_center_page():
+    file=Path(__file__).resolve().parent/"templates"/"automation_center_miniapp.html"
+    return FileResponse(file,media_type="text/html",headers={
+        "Cache-Control":"no-store",
+        "Content-Security-Policy":"default-src 'self'; script-src 'self' https://telegram.org 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
+        "Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff",
+    })
+
+@router.get("/api/automations")
+async def automation_center_data(staff=Depends(members_staff)):
+    return await automation_dashboard()
+
+@router.post("/api/automations/reminders/{trigger}")
+async def automation_center_reminder_save(trigger:str,payload:AutomationReminderPayload,
+                                          staff=Depends(members_owner)):
+    if payload.confirm!="SAVE_REMINDER":
+        raise HTTPException(400,"Подтвердите изменение сценария")
+    try:
+        await update_existing_rule(trigger,payload.enabled,payload.body,"telegram:"+staff["username"])
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {"ok":True,"enabled":payload.enabled}
+
+@router.post("/api/automations/expiry")
+async def automation_center_expiry_save(payload:AutomationExpiryPayload,staff=Depends(members_owner)):
+    if payload.confirm!="SAVE_EXPIRY_NOTICES":
+        raise HTTPException(400,"Подтвердите изменение уведомлений")
+    await update_expiry_notifications(payload.enabled,staff["username"])
+    return {"ok":True,"enabled":payload.enabled}
 
 @router.get("/api/owner-alerts")
 async def owner_alert_settings(staff=Depends(members_owner)):
