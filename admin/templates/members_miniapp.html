@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Участники · Круг Души</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:dark;background:#101827;color:#eef3ff}
+*{box-sizing:border-box}body{margin:0;background:var(--tg-theme-bg-color,#101827);color:var(--tg-theme-text-color,#eef3ff)}
+main{max-width:830px;margin:auto;padding:17px 14px 90px}
+h1{font-size:21px;margin:8px 0 4px}h2{font-size:17px;margin:16px 0 10px}
+.muted{color:var(--tg-theme-hint-color,#a9b8cf);font-size:13px}
+.bar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-bottom:15px}
+button,input,select{font:inherit;border-radius:11px;padding:11px 12px}
+button{border:0;background:#293850;color:inherit;cursor:pointer}
+button.primary{background:var(--tg-theme-button-color,#4169c8);color:var(--tg-theme-button-text-color,#fff)}
+input,select{background:#192638;color:inherit;border:1px solid #45556f;min-width:0}
+form{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:15px}form input{flex:1;min-width:140px}
+.panel{background:var(--tg-theme-secondary-bg-color,#1b2940);border:1px solid #32445d;border-radius:14px;padding:14px;margin:10px 0}
+.item{display:block;width:100%;text-align:left}.row{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.meta{color:#9eacc2;font-size:12px;margin-top:6px;line-height:1.6}
+.pill{font-size:12px;border-radius:8px;padding:4px 7px;background:#354967;white-space:nowrap}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:9px 6px;border-bottom:1px solid #35455c;text-align:left;vertical-align:top}th{color:#a9b8cf;font-weight:500}
+#error{color:#ffb3ab;margin:10px 0}#note{color:#b4d4ba;margin:10px 0}
+.hidden{display:none!important}.pages{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:15px 0}
+.pages button:disabled{opacity:.35}
+</style></head>
+<body><main>
+<div class="bar"><div><h1>👥 Участники и подписки</h1><div id="who" class="muted">Проверка Telegram…</div></div><button type="button" id="go-support">← Поддержка</button></div>
+<div class="muted">Данные из реестра подписок и подтверждённых платежей. Только просмотр — изменение доступа пока недоступно.</div>
+<div id="error" role="alert"></div><div id="note" role="status"></div>
+<section id="list-section">
+<form id="search-form"><input id="search" maxlength="80" placeholder="Имя, @username или Telegram ID" aria-label="Поиск участников">
+<select id="status" aria-label="Статус доступа"><option value="all">Все</option><option value="active">Активные</option><option value="lifetime">Навсегда</option><option value="expiring">Истекает за 7 дней</option><option value="expired">Истекли</option><option value="none">Без доступа</option></select>
+<button class="primary" type="submit">Найти</button></form>
+<div class="muted" id="count">Загрузка…</div><div id="members"></div>
+<div class="pages"><button id="prev">← Назад</button><span class="muted" id="page"></span><button id="next">Далее →</button></div>
+</section>
+<section id="detail-section" class="hidden">
+<button id="back">← К списку</button>
+<div class="panel"><h2 id="member-name"></h2><div class="meta" id="member-id"></div><p class="muted" id="member-note"></p></div>
+<h2>Доступ в сообщество</h2><div id="grants"></div>
+<h2>Подписки</h2><div id="subscriptions"></div>
+<h2>Подтверждённые платежи</h2><div id="payments"></div>
+</section>
+</main>
+<script>
+(()=>{
+"use strict";
+const tg=window.Telegram?.WebApp, init=tg?.initData||"", $=id=>document.getElementById(id);
+const state={page:1,total:0,query:"",status:"all",busy:false};
+function element(tag,cls,value){const n=document.createElement(tag);if(cls)n.className=cls;if(value!==undefined&&value!==null)n.textContent=String(value);return n}
+function tell(message){$("error").textContent=message||""}
+function date(s){return s?new Date(s).toLocaleDateString("ru-RU"):"—"}
+function name(m){return [m.first_name,m.last_name].filter(Boolean).join(" ")||m.username||("ID "+m.telegram_id)}
+function statusLabel(s){return ({active:"Активен",lifetime:"Бессрочно",expiring:"Истекает",expired:"Истёк",none:"Нет доступа",scheduled:"Запланирован"})[s]||s}
+async function api(path){
+ if(!init)throw Error("Откройте панель через Telegram-бота.");
+ const response=await fetch("/tg-support/api"+path,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});
+ const contentType=response.headers.get("content-type")||"";
+ const json=contentType.includes("application/json")?await response.json().catch(()=>({})):{};
+ if(!response.ok)throw Error(typeof json.detail==="string"?json.detail:"Ошибка запроса HTTP "+response.status);
+ return json;
+}
+function view(detail){$("list-section").classList.toggle("hidden",detail);$("detail-section").classList.toggle("hidden",!detail)}
+function empty(node,text){node.replaceChildren(element("p","muted",text))}
+async function load(){
+ if(state.busy)return;state.busy=true;tell("");
+ try{
+  const data=await api("/members?q="+encodeURIComponent(state.query)+"&status="+encodeURIComponent(state.status)+"&page="+state.page);
+  state.total=data.total;
+  $("count").textContent="Найдено: "+data.total;
+  $("page").textContent="Страница "+state.page;
+  $("prev").disabled=state.page<=1;$("next").disabled=state.page*30>=data.total;
+  const holder=$("members");holder.replaceChildren();
+  if(!data.members.length)empty(holder,"Участников не найдено");
+  for(const m of data.members){
+   const b=element("button","panel item"),top=element("div","row");
+   top.append(element("strong","",name(m)),element("span","pill",statusLabel(m.access_status)));
+   b.append(top,element("div","meta","@"+(m.username||"—")+" · ID "+m.telegram_id+" · До: "+date(m.expiry)+" · Подтверждённых платежей: "+m.verified_payment_count));
+   b.onclick=()=>openMember(m.telegram_id);holder.append(b);
+  }
+ }catch(e){tell(e.message)}finally{state.busy=false}
+}
+function cards(id,rows,format){
+ const box=$(id);box.replaceChildren();if(!rows.length){empty(box,"Нет записей");return}
+ for(const row of rows){
+  const card=element("div","panel");
+  card.append(element("strong","",format(row)[0]),element("div","meta",format(row)[1]));
+  box.append(card);
+ }
+}
+async function openMember(uid){
+ tell("");$("note").textContent="";
+ try{
+  const data=await api("/members/"+uid),m=data.member;
+  $("member-name").textContent=name(m);
+  $("member-id").textContent="Telegram ID: "+m.telegram_id+(m.username?" · @"+m.username:"");
+  $("member-note").textContent=data.note;
+  cards("grants",data.grants,g=>[(g.grant_type==="lifetime"?"Бессрочный":g.grant_type)+" · "+g.resource,"Начало: "+date(g.starts_at)+" · До: "+date(g.ends_at)+(g.revoked_at?" · Отозван: "+date(g.revoked_at):"")]);
+  cards("subscriptions",data.subscriptions,s=>[(s.plan||"План не указан")+" · "+s.status,"Провайдер: "+s.provider+" · Оплачено до: "+date(s.paid_until)+(s.renews_automatically?" · Автопродление":"")]);
+  cards("payments",data.payments,p=>[p.provider+" · "+p.status,(p.amount===null?"Сумма не указана":p.amount+" "+(p.currency||""))+" · "+date(p.verified_at)]);
+  view(true);
+ }catch(e){tell(e.message)}
+}
+$("search-form").onsubmit=e=>{e.preventDefault();state.query=$("search").value.trim();state.status=$("status").value;state.page=1;load()};
+$("prev").onclick=()=>{if(state.page>1){state.page--;load()}};
+$("next").onclick=()=>{if(state.page*30<state.total){state.page++;load()}};
+$("back").onclick=()=>{view(false);load()};
+$("go-support").onclick=()=>{window.location.href="/tg-support"+window.location.hash};
+(async()=>{
+ try{
+  if(!tg||!init)throw Error("Откройте страницу через кнопку Telegram Mini App.");
+  tg.ready();tg.expand();const me=await api("/me");
+  if(!["owner","admin"].includes(me.role))throw Error("Недостаточно прав для просмотра участников.");
+  $("who").textContent="Сотрудник: "+me.username;
+  await load();
+ }catch(e){tell(e.message);$("count").textContent="Доступ не предоставлен"}
+})();
+})();
+</script></body></html>
