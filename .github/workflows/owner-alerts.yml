@@ -1,0 +1,43 @@
+name: Owner Telegram alert checks
+
+on:
+  pull_request:
+    paths:
+      - 'db/owner_alerts.py'
+      - 'admin/members_miniapp.py'
+      - 'admin/templates/analytics_miniapp.html'
+      - 'scripts/owner_alert_worker.py'
+      - 'tests/test_owner_alerts.py'
+      - '.github/workflows/owner-alerts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  owner-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and test alert guards
+        run: |
+          python -m compileall -q db/owner_alerts.py admin/members_miniapp.py scripts/owner_alert_worker.py
+          python -m unittest discover -s tests -p 'test_owner_alerts.py' -v
+          python -m unittest discover -s tests -p 'test_miniapp_analytics.py' -v
+          python -m unittest discover -s tests -p 'test_members_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_support_permissions.py' -v
+      - name: Check analytics Mini App JavaScript syntax
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          source=Path('admin/templates/analytics_miniapp.html').read_text()
+          parts=[x for x in re.findall(r'<script>(.*?)</script>',source,re.S) if x.strip()]
+          assert len(parts)==1
+          Path('/tmp/owner-alerts.js').write_text(parts[0])
+          PY
+          node --check /tmp/owner-alerts.js
