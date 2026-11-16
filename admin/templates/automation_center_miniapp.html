@@ -45,7 +45,7 @@ label{font-size:13px}.field{display:block;margin:10px 0}
 <div class="card"><div class="row"><strong>Недавние кампании</strong><small>Последние 12</small></div><div id="campaigns"></div></div>
 <div class="card"><div class="row"><strong>Проблемные напоминания</strong><small>Последние 25</small></div><div id="problems"></div></div>
 </section>
-<section><h2>Следующие сценарии</h2><div id="planned"></div><p class="notice">Эти сценарии пока не реализованы: они не создают очередь и не отправляют сообщения. Для запуска понадобится отдельный безопасный этап.</p></section>
+<section><h2>Следующие сценарии</h2><div id="planned"></div><p class="notice">Приветствие и продление можно настроить выше, но отправка отключена до отдельного подключения планировщика. Возвращение неактивных пока не реализовано: нужен достоверный сигнал активности.</p></section>
 <p id="updated" class="muted"></p>
 </main><script>
 (()=>{
@@ -165,7 +165,7 @@ async function load(){
   renderRecent(data.recent,"campaigns",r=>"№"+r.id+" · "+r.kind+" · "+r.status+" · отправлено "+r.sent+" / "+r.recipients+" · проблем "+r.problems,"Кампаний пока нет.");
   renderRecent(data.problems,"problems",r=>"Кампания №"+r.broadcast_id+" · "+r.trigger+" · "+r.status+(r.error_code?" · "+r.error_code:""),"Проблемных напоминаний нет.");
   const planned=$("planned");planned.replaceChildren();
-  for(const p of data.planned){const c=elem("div","card"),line=elem("div","row");line.append(elem("strong","",p.name),elem("span","tag","Не реализовано"));c.append(line);planned.append(c)}
+  for(const p of data.planned){const c=elem("div","card"),line=elem("div","row");line.append(elem("strong","",p.name),elem("span","tag",p.state==="configuration_ready"?"Настройка готова":"Не реализовано"));c.append(line);planned.append(c)}
   $("updated").textContent="Данные загружены · "+new Date().toLocaleString("ru-RU",{timeZone:"Asia/Tbilisi"})+" (Тбилиси)";
  }catch(err){$("err").textContent=err.message}
  finally{busy=false;$("refresh").disabled=false}
