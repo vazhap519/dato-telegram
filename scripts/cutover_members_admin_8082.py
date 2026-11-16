@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -28,6 +29,36 @@ def status(url):
 
 def run(*args):
     return subprocess.check_output(args,timeout=20,text=True).strip()
+
+def wait_for_public_members(expected=200, attempts=20, pause=0.5):
+    """Allow Nginx old workers to drain after an asynchronous reload.
+
+    Test both the publicly resolved domain and the local TLS listener.
+    Preserve Basic Auth and signed Telegram API protections throughout.
+    """
+    last=None
+    for i in range(attempts):
+        public=status("https://bot.arutyun.me/tg-support/members")
+        local=subprocess.run(
+            ["curl","--silent","--show-error","--output","/dev/null",
+             "--write-out","%{http_code}","--max-time","5",
+             "--resolve","bot.arutyun.me:443:127.0.0.1",
+             "https://bot.arutyun.me/tg-support/members"],
+            capture_output=True,text=True,timeout=7,
+        )
+        local_code=int(local.stdout) if local.returncode==0 and local.stdout.isdigit() else 0
+        if public==expected and local_code==expected:
+            print("PUBLIC ROUTE READY: /tg-support/members HTTP",expected,
+                  "(public and local TLS), attempt",i+1,flush=True)
+            return
+        last=(public,local_code)
+        if i in (0,4,9,19):
+            print("Waiting for Nginx reload, public/local HTTP:",public,local_code,flush=True)
+        if i<attempts-1:time.sleep(pause)
+    raise RuntimeError(
+        f"Public members route remained HTTP {last} after {attempts} checks"
+    )
+
 
 def verify(bluegreen):
     if bluegreen.routing(bluegreen.nginx_path().read_text())!=8081:
@@ -108,10 +139,10 @@ def main():
             for port,sha in ((8081,ACTIVE),(8082,NEW)):
                 if bg.release_sha_for_port(port)!=sha or not bg.health(port):
                     raise RuntimeError(f"Admin on {port} changed/failed")
+            wait_for_public_members()
             if status("https://bot.arutyun.me/login")!=401:
                 raise RuntimeError("Public /login Basic Auth protection changed")
-            for path,need in (("/tg-support/members",200),
-                              ("/tg-support/api/members",401),
+            for path,need in (("/tg-support/api/members",401),
                               ("/tg-support/api/members/1",401),
                               ("/tg-support",200)):
                 got=status("https://bot.arutyun.me"+path)
@@ -126,7 +157,8 @@ def main():
             bg.cutover()
             if bg.routing(bg.nginx_path().read_text())!=8081:
                 raise RuntimeError("CRITICAL: Automatic Nginx rollback did not restore 8081")
-            print("Previous public version restored to 8081.",file=sys.stderr)
+            wait_for_public_members(expected=404)
+            print("Previous public version restored to 8081 and verified.",file=sys.stderr)
             raise
 
 if __name__=="__main__":
