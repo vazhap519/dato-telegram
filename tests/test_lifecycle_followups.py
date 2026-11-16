@@ -56,6 +56,13 @@ class LifecycleTests(unittest.TestCase):
             self.assertIn(marker,ui)
         self.assertNotIn("innerHTML",ui)
 
+    def test_missing_scheduler_timer_is_safe(self):
+        script=source("scripts/rollout_lifecycle.py")
+        self.assertIn('["systemctl","is-active","dato-lifecycle-followups.timer"]',script)
+        self.assertIn('timer.returncode not in (0,3,4)',script)
+        self.assertIn('timer.stdout.strip()=="active"',script)
+        self.assertNotIn('cmd("systemctl","is-active","dato-lifecycle-followups.timer")',script)
+
     def test_scheduler_not_running_automatically(self):
         s=source("scripts/lifecycle_scheduler.py")
         self.assertIn('parser.add_argument("--enqueue",action="store_true")',s)
