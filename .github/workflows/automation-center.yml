@@ -1,0 +1,41 @@
+name: Mini App automation centre checks
+on:
+  pull_request:
+    paths:
+      - 'admin/members_miniapp.py'
+      - 'admin/templates/automation_center_miniapp.html'
+      - 'admin/templates/command_center_miniapp.html'
+      - 'db/miniapp_automation_center.py'
+      - 'tests/test_automation_center_miniapp.py'
+      - '.github/workflows/automation-center.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  automation-centre:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Regression tests
+        run: |
+          python -m unittest discover -s tests -p 'test_automation_center_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_member_crm_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_members_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_command_center_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_owner_alerts.py' -v
+          python -m unittest discover -s tests -p 'test_support_permissions.py' -v
+      - name: JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          for name in ("automation_center_miniapp.html","command_center_miniapp.html"):
+              scripts=[s for s in re.findall(r'<script>(.*?)</script>',Path('admin/templates',name).read_text(),re.S) if s.strip()]
+              assert len(scripts)==1
+              Path('/tmp/'+name+'.js').write_text(scripts[0])
+          PY
+          for path in /tmp/*miniapp.html.js; do node --check "$path"; done
