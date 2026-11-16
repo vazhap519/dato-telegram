@@ -44,6 +44,12 @@ class MembersMiniAppTests(unittest.TestCase):
         for verb,route,node in api_routes:
             with self.subTest(route=route):
                 self.assertEqual(verb,"get")
+                # staff=Depends(members_staff) is a positional-or-keyword
+                # parameter, so its default is stored in args.defaults.
+                # kw_defaults only contains keyword-only parameters.
+                defaults=list(node.args.defaults)+[
+                    arg for arg in node.args.kw_defaults if arg is not None
+                ]
                 self.assertTrue(any(
                     isinstance(arg,ast.Call)
                     and isinstance(arg.func,ast.Name)
@@ -51,7 +57,7 @@ class MembersMiniAppTests(unittest.TestCase):
                     and arg.args
                     and isinstance(arg.args[0],ast.Name)
                     and arg.args[0].id=="members_staff"
-                    for arg in node.args.kw_defaults if arg is not None
+                    for arg in defaults
                 ))
 
     def test_uses_verified_payment_ledger_and_existing_subscription_registry(self):
