@@ -45,8 +45,6 @@ def main():
     if result.returncode:raise RuntimeError("Invalid systemd schedule")
     if SERVICE.exists() or TIMER.exists():
         raise RuntimeError("Alert unit already installed; inspect before changing anything")
-    if run("systemctl","is-enabled","dato-owner-alerts.timer")=="enabled":
-        raise RuntimeError("Timer already enabled")
     print("OWNER ALERTS TIMER PLAN: one-shot every 15 min, owner opt-in only",flush=True)
     print("Admin release:",RELEASE.name,"Bot unchanged",flush=True)
     if not args.install:
