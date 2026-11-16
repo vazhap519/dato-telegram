@@ -22,7 +22,7 @@ ROOT=Path("/opt/dato-telegram")
 RELEASES=Path("/opt/dato-admin-releases")
 CURRENT="a6eee074d8088ef98819f6777931cd2936148197"
 OLD_STANDBY="da7e07eaf7e79cf7228842efa4c77df0bec0ac45"
-TARGET="c7b76b0f964b54012dfc4a151d5717cd7307c1bd"
+TARGET="bdc9903c962acac7549c9d5a3591ca112f990f68"
 BOT="2d609a3267261e2370e01e02596916d1bdc044c6"
 EXPECTED={
  ".github/workflows/member-crm.yml",
@@ -32,6 +32,7 @@ EXPECTED={
  "scripts/prepare_command_center.py",
  "scripts/stage_command_center_8081.py",
  "tests/test_member_crm_miniapp.py",
+ "tests/test_members_miniapp.py",
 }
 TESTS=("test_member_crm_miniapp.py","test_members_miniapp.py",
        "test_command_center_miniapp.py","test_miniapp_analytics.py",
