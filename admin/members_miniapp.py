@@ -19,6 +19,7 @@ from db.owner_alerts import owner_settings,configure as configure_owner_alerts
 from db.subscriber_profile import get_subscriber_profile, save_subscriber_profile
 from db.subscriber_crm import crm_timeline
 from db.miniapp_automation_center import dashboard as automation_dashboard,update_existing_rule,update_expiry_notifications
+from db.lifecycle_followups import rules as lifecycle_rules, dry_run as lifecycle_dry_run, set_lifecycle_rule
 from db.subscriptions import (people, person, grant_access, revoke_grant,
                               change_grant_expiry, extend_community_access)
 
@@ -183,6 +184,33 @@ async def automation_center_expiry_save(payload:AutomationExpiryPayload,staff=De
         raise HTTPException(400,"Подтвердите изменение уведомлений")
     await update_expiry_notifications(payload.enabled,staff["username"])
     return {"ok":True,"enabled":payload.enabled}
+
+class LifecyclePayload(BaseModel):
+    enabled: bool
+    body: str = Field(min_length=1,max_length=3000)
+    confirm: str
+
+@router.get("/api/automations/lifecycle")
+async def lifecycle_data(staff=Depends(members_staff)):
+    preview=await lifecycle_dry_run()
+    data=await lifecycle_rules()
+    if staff["role"]!="owner":
+        # Keep individual Telegram IDs private from non-owner staff.
+        for item in preview.values():
+            item.pop("sample_telegram_ids",None)
+    return {"rules":data,"preview":preview,"can_manage":staff["role"]=="owner",
+            "sender_status":"not_scheduled"}
+
+@router.post("/api/automations/lifecycle/{kind}")
+async def lifecycle_save(kind:str,payload:LifecyclePayload,staff=Depends(members_owner)):
+    if payload.confirm!="SAVE_LIFECYCLE":
+        raise HTTPException(400,"Подтвердите сохранение сценария")
+    try:
+        await set_lifecycle_rule(kind,payload.enabled,payload.body,
+                                 "telegram:"+staff["username"])
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {"ok":True,"enabled":payload.enabled,"sender_status":"not_scheduled"}
 
 @router.get("/api/owner-alerts")
 async def owner_alert_settings(staff=Depends(members_owner)):
