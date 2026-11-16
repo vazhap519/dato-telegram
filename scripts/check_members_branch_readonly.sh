@@ -27,8 +27,8 @@ class Parser(HTMLParser):
 source=Path(os.environ["DATO_HTML"]).read_text(encoding="utf-8")
 Parser().feed(source)
 assert "/tg-support/api" in source
-assert "Только просмотр" in source
-print("HTML parsed. Static read-only controls present.")
+assert "Управление доступом" in source
+print("HTML parsed. Member management controls present.")
 PY
 echo "== Mini App JavaScript syntax =="
 if command -v node >/dev/null 2>&1; then
@@ -36,7 +36,7 @@ if command -v node >/dev/null 2>&1; then
 import os,re
 from pathlib import Path
 html=Path(os.environ["DATO_HTML"]).read_text(encoding="utf-8")
-scripts=re.findall(r'<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>',html)
+scripts=re.findall(r'<script>(.*?)</script>',html,re.S)
 scripts=[s for s in scripts if s.strip()]
 assert len(scripts)==1,"Expected one inline application script"
 Path(os.environ["DATO_JS"]).write_text(scripts[0],encoding="utf-8")
