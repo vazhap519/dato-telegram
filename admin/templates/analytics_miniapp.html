@@ -61,6 +61,7 @@ button{cursor:pointer}button.primary{background:var(--tg-theme-button-color,#446
 <label style="display:block;margin:12px 0"><input type="checkbox" id="alert-attention" checked> Возвраты и оспаривания платежей</label>
 <label style="display:block;margin:12px 0"><input type="checkbox" id="alert-digest" checked> Ежедневная сводка, после 10:00 по Тбилиси</label>
 <button type="submit" class="primary" id="alert-save">Сохранить настройки</button>
+<div id="alert-feedback" role="status" aria-live="polite" style="margin:12px 0;font-weight:650"></div>
 </form><div class="muted" id="alert-hint"></div>
 </section>
 <p class="muted" id="updated"></p>
@@ -123,11 +124,11 @@ async function loadAlerts(){
  const data=await api("/owner-alerts");
  $("owner-alerts").classList.remove("hide");
  for(const k of ["enabled","payments","expiry","attention","digest"])$("alert-"+k).checked=!!data[k];
- text("alert-hint",data.telegram_linked?"Личный Telegram владельца подключён.":"Telegram владельца не привязан: включение недоступно.");
+ text("alert-hint",data.telegram_linked?(data.enabled?"✅ Уведомления включены. Сообщения будут поступать в привязанный Telegram владельца.":"Уведомления отключены. Включите главный переключатель и сохраните настройки."):"Telegram владельца не привязан: включение недоступно.");
  $("alert-enabled").disabled=!data.telegram_linked;
 }
 $("alerts-form").onsubmit=async e=>{
- e.preventDefault();$("alert-save").disabled=true;text("error","");
+ e.preventDefault();$("alert-save").disabled=true;text("alert-feedback","Сохраняем настройки…");$("alert-feedback").style.color="#b4c4d9";
  try{
   const body={};
   for(const k of ["enabled","payments","expiry","attention","digest"])body[k]=$("alert-"+k).checked;
@@ -136,8 +137,10 @@ $("alerts-form").onsubmit=async e=>{
      credentials:"omit",cache:"no-store",body:JSON.stringify(body)});
   const data=(r.headers.get("content-type")||"").includes("application/json")?await r.json():{};
   if(!r.ok)throw Error(typeof data.detail==="string"?data.detail:"HTTP "+r.status);
-  text("notice","Настройки уведомлений сохранены.");await loadAlerts();
- }catch(e){text("error",e.message)}finally{$("alert-save").disabled=false}
+  await loadAlerts();
+  text("alert-feedback",data.enabled?"✅ Настройки сохранены. Уведомления включены.":"✅ Настройки сохранены. Уведомления выключены.");
+  $("alert-feedback").style.color="#a6e6c1";
+ }catch(e){text("alert-feedback","Не удалось сохранить: "+e.message);$("alert-feedback").style.color="#ffb4a8"}finally{$("alert-save").disabled=false}
 };
 $("refresh").onclick=load;$("period").onchange=load;
 $("back").onclick=()=>{window.location.href="/tg-support/members"+window.location.hash};
