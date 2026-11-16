@@ -54,6 +54,25 @@ textarea{width:100%;resize:vertical;min-height:60px}
 </div>
 <p id="member-note" class="notice"></p>
 </section>
+<section class="card" id="crm-panel">
+<h2 style="margin-top:0">🗂️ CRM · работа с участником</h2>
+<p class="notice">Заметки и метки доступны только сотрудникам с доступом к участникам. Изменять их может владелец. Данные общие с веб-админкой.</p>
+<div id="crm-state" class="muted">Загрузка CRM…</div>
+<div id="crm-meta" class="meta"></div>
+<form id="crm-form" class="hidden">
+<label class="field">Внутренняя заметка<textarea id="crm-note" maxlength="3000" rows="4" placeholder="Важная информация для работы с участником"></textarea></label>
+<label class="field">Метки (через запятую, не более 15)<input id="crm-tags" maxlength="700" placeholder="Например: интересуется практикумом, вопрос по доступу"></label>
+<button class="primary" type="submit" id="crm-save">Сохранить заметку и метки</button>
+</form>
+<div id="crm-read" class="hidden">
+<div class="meta"><strong>Метки:</strong> <span id="crm-tags-view">—</span></div>
+<div class="meta" id="crm-note-view" style="white-space:pre-wrap"></div>
+</div>
+<div id="crm-feedback" role="status" class="meta"></div>
+</section>
+<details class="card history" id="crm-tickets-section"><summary>🛟 Обращения в поддержку <span id="crm-ticket-count"></span></summary><div id="crm-tickets"></div></details>
+<details class="card history" id="crm-timeline-section"><summary>🕘 История взаимодействия <span id="crm-timeline-count"></span></summary><div id="crm-timeline"></div>
+<p class="notice">История объединяет события доступа, подтверждённые оплаты, обращения, сообщения и рассылки. Показаны последние 60 событий из существующего журнала CRM.</p></details>
 <h2>🔑 Текущий доступ в сообщество</h2><div id="current-grants"></div>
 <h2>💳 Подписки</h2><div id="subscriptions"></div>
 <h2>🧾 Подтверждённые платежи</h2><div id="payments"></div>
@@ -186,6 +205,67 @@ function renderPayments(payments){
   ["Статус",p.status==="paid"?"Оплачен":p.status==="refunded"?"Возврат":p.status==="chargeback"?"Оспорен":p.status],
   ["Дата",date(p.verified_at)]],p.status==="paid"?"active":"revoked"));
 }
+function renderCrmTickets(tickets){
+ const dest=$("crm-tickets");dest.replaceChildren();
+ $("crm-ticket-count").textContent="("+tickets.length+(tickets.length===20?"+":"")+")";
+ if(!tickets.length){empty("crm-tickets","Обращений пока нет");return}
+ for(const t of tickets){
+  const item=el("div","card"),top=el("div","row"),left=el("div","");
+  left.append(el("strong","","Обращение №"+t.id),el("div","meta",t.category+" · "+date(t.updated_at)));
+  top.append(left,pill(t.status));item.append(top);
+  const open=el("button","","Открыть переписку");
+  open.onclick=()=>{window.location.href="/tg-support?ticket="+encodeURIComponent(t.id)+window.location.hash};
+  item.append(open);dest.append(item);
+ }
+}
+function renderCrmTimeline(items){
+ const dest=$("crm-timeline");dest.replaceChildren();
+ $("crm-timeline-count").textContent="("+items.length+(items.length===60?"+":"")+")";
+ if(!items.length){empty("crm-timeline","Событий пока нет");return}
+ const names={access:"Доступ",payment:"Платёж",support:"Поддержка",support_message:"Сообщение поддержки",direct:"Личное сообщение",broadcast:"Рассылка"};
+ for(const t of items){
+  const item=el("div","card"),title=el("strong","",names[t.kind]||"Событие");
+  item.append(title);
+  item.append(el("div","meta",date(t.happened_at)+" · "+(t.description||"")));
+  if(t.status)item.append(el("div","meta","Статус: "+t.status));
+  if(t.actor)item.append(el("div","meta","Источник: "+t.actor));
+  if(t.detail)item.append(el("div","meta",t.detail));
+  dest.append(item);
+ }
+}
+async function loadCrm(uid){
+ $("crm-state").textContent="Загрузка CRM…";
+ $("crm-feedback").textContent="";
+ $("crm-form").classList.add("hidden");$("crm-read").classList.add("hidden");
+ $("crm-tickets").replaceChildren();$("crm-timeline").replaceChildren();
+ try{
+  const data=await api("/members/"+uid+"/crm");
+  if(state.member!==uid)return;
+  state.canEditCrm=!!data.can_edit;
+  $("crm-note").value=data.profile.note||"";
+  $("crm-tags").value=data.profile.tags||"";
+  $("crm-tags-view").textContent=data.profile.tags||"Метки не указаны";
+  $("crm-note-view").textContent=data.profile.note||"Внутренних заметок пока нет";
+  $("crm-meta").textContent=data.profile.updated_at?
+   "Обновлено "+date(data.profile.updated_at)+" · "+(data.profile.updated_by||"—"):"Заметок ещё нет";
+  $("crm-form").classList.toggle("hidden",!state.canEditCrm);
+  $("crm-read").classList.toggle("hidden",state.canEditCrm);
+  $("crm-state").textContent="";
+  renderCrmTickets(data.tickets);renderCrmTimeline(data.timeline);
+ }catch(e){if(state.member===uid)$("crm-state").textContent="Не удалось загрузить CRM: "+e.message}
+}
+$("crm-form").onsubmit=async e=>{
+ e.preventDefault();if(!state.member||!state.canEditCrm)return;
+ const uid=state.member;
+ $("crm-save").disabled=true;$("crm-feedback").textContent="Сохранение…";
+ try{
+  await api("/members/"+uid+"/crm","POST",{note:$("crm-note").value,tags:$("crm-tags").value});
+  if(state.member!==uid)return;
+  await loadCrm(uid);
+  $("crm-feedback").textContent="✅ Заметка и метки сохранены в общей CRM.";
+ }catch(e){$("crm-feedback").textContent="Ошибка сохранения: "+e.message}
+ finally{$("crm-save").disabled=false}
+};
 async function openMember(uid){
  msg("");state.member=uid;
  try{
@@ -203,6 +283,7 @@ async function openMember(uid){
   $("payment-count").textContent=data.verified_payment_count;
   $("member-note").textContent=data.note;
   renderGrants(data.grants);renderSubscriptions(data.subscriptions);renderPayments(data.payments);
+  await loadCrm(uid);
   $("history-section").open=false;show(true);
  }catch(e){msg(e.message)}
 }
