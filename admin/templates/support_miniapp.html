@@ -23,7 +23,7 @@ form{display:flex;gap:8px;align-items:stretch;margin-top:10px}textarea{backgroun
 .hidden{display:none!important}.empty{text-align:center;color:#9eacc2;padding:24px}
 #new-messages{position:sticky;bottom:8px;text-align:center;z-index:3}
 </style></head><body>
-<main><header><div><h1>🛟 Техподдержка</h1><div class="muted" id="who">Проверка доступа…</div></div><div style="display:flex;gap:6px;align-items:center"><button id="members-link" class="hidden">👥 Участники</button><button id="analytics-link" class="hidden">📊 Аналитика</button><button id="refresh">↻ Обновить</button></div></header>
+<main><header><div><h1>🛟 Техподдержка</h1><div class="muted" id="who">Проверка доступа…</div></div><div style="display:flex;gap:6px;align-items:center"><button id="home-link">🏠 Главная</button><button id="members-link" class="hidden">👥 Участники</button><button id="analytics-link" class="hidden">📊 Аналитика</button><button id="refresh">↻ Обновить</button></div></header>
 <div id="error" role="alert"></div><div id="notice" role="status"></div>
 <section id="inbox" class="panel active">
 <div class="tabs" id="tabs">
@@ -154,6 +154,7 @@ async function openMedia(m,button,bubble){
   button.classList.add("hidden");
  }catch(e){error(e.message);button.disabled=false}
 }
+$("home-link").onclick=()=>{window.location.href="/tg-support/home"+window.location.hash};
 $("members-link").onclick=()=>{window.location.href="/tg-support/members"+window.location.hash};
 $("analytics-link").onclick=()=>{window.location.href="/tg-support/analytics"+window.location.hash};
 $("refresh").onclick=async()=>{try{await(state.ticket?refreshTicket():loadList())}catch(e){error(e.message)}};
@@ -187,6 +188,8 @@ $("reply-form").onsubmit=async e=>{
   const me=await api("/me");state.permissions=me;$("who").textContent="Оператор: "+me.username;
   if(me.role==="owner"||me.role==="admin"){$("members-link").classList.remove("hidden");$("analytics-link").classList.remove("hidden")}
   await loadList();
+  const ticket=new URLSearchParams(window.location.search).get("ticket");
+  if(ticket&&/^\d{1,18}$/.test(ticket))await openTicket(Number(ticket));
  }catch(e){error(e.message);$("list").textContent="Не удалось открыть панель"}
 })();
 async function backgroundSync(){
