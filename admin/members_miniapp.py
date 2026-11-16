@@ -15,6 +15,7 @@ from sqlalchemy import text
 from admin.support_miniapp import require_staff
 from db.database import SessionLocal
 from db.miniapp_analytics import report as miniapp_analytics_report
+from db.owner_alerts import owner_settings,configure as configure_owner_alerts
 from db.subscriptions import (people, person, grant_access, revoke_grant,
                               change_grant_expiry, extend_community_access)
 
@@ -127,6 +128,34 @@ class ExpiryPayload(BaseModel):
 
 class RevokePayload(BaseModel):
     confirm: str
+
+class OwnerAlertSettingsPayload(BaseModel):
+    enabled: bool
+    payments: bool = True
+    expiry: bool = True
+    attention: bool = True
+    digest: bool = True
+
+@router.get("/api/owner-alerts")
+async def owner_alert_settings(staff=Depends(members_owner)):
+    current=await owner_settings(staff["id"])
+    if not current:
+        raise HTTPException(403,"Доступ только владельцу")
+    return {"enabled":current["enabled"],"payments":current["payments"],
+            "expiry":current["expiry"],"attention":current["attention"],
+            "digest":current["digest"],
+            "telegram_linked":bool(current["telegram_id"]),
+            "enabled_at":stamp(current["enabled_at"])}
+
+@router.post("/api/owner-alerts")
+async def update_owner_alert_settings(payload:OwnerAlertSettingsPayload,staff=Depends(members_owner)):
+    try:
+        current=await configure_owner_alerts(staff["id"],enabled=payload.enabled,
+                payments=payload.payments,expiry=payload.expiry,
+                attention=payload.attention,digest=payload.digest)
+    except ValueError as exc:
+        raise HTTPException(400,str(exc))
+    return {"ok":True,"enabled":current["enabled"]}
 
 @router.get("/analytics")
 async def analytics_page():
