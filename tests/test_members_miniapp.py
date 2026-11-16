@@ -4,6 +4,7 @@ No DB or Telegram credentials required. Live authorization and data integrity
 must still be verified against a staged release.
 """
 import ast
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import unittest
 
@@ -110,6 +111,32 @@ class MembersMiniAppTests(unittest.TestCase):
         self.assertNotIn('type="password"',ui)
         self.assertIn('id="manage"',ui)
         self.assertIn('data.can_manage',ui)
+
+    def test_access_summary_behavior_with_real_dates(self):
+        # Compile only the pure calculation helpers: no external DB or Bot.
+        source=ast.parse(file("admin/members_miniapp.py"))
+        wanted={"stamp","aware","grant_state","describe_access"}
+        helpers=[node for node in source.body
+                 if isinstance(node,ast.FunctionDef) and node.name in wanted]
+        self.assertEqual({node.name for node in helpers},wanted)
+        scope={"datetime":datetime,"timezone":timezone,"timedelta":timedelta}
+        exec(compile(ast.Module(body=helpers,type_ignores=[]),
+                     "<membership-helpers>","exec"),scope)
+        now=datetime(2026,11,16,12,tzinfo=timezone.utc)
+        start=now-timedelta(days=1)
+        future=now+timedelta(days=20)
+        def grant(kind="temporary",end=future,revoked=None):
+            return {"grant_type":kind,"starts_at":start,
+                    "ends_at":end,"revoked_at":revoked}
+        describe=scope["describe_access"]
+        self.assertEqual(describe([grant("lifetime",None)],[],now)["status"],"lifetime")
+        self.assertEqual(describe([grant()],[],now)["basis"],"Ручной временный доступ")
+        self.assertEqual(describe([grant(revoked=now)],[],now)["status"],"none")
+        self.assertEqual(describe([],[{"status":"active","paid_until":future}],now)["basis"],"Подписка")
+        combined=describe([grant()],[{"status":"active","paid_until":future}],now)
+        self.assertEqual(combined["manual_count"],1)
+        self.assertEqual(combined["paid_subscription_count"],1)
+        self.assertEqual(describe([grant(end=now-timedelta(seconds=1))],[],now)["status"],"expired")
 
     def test_access_calculation_ignores_revoked_grants(self):
         source=file("admin/members_miniapp.py")
