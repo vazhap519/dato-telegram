@@ -24,7 +24,7 @@ button{cursor:pointer}button.primary{background:var(--tg-theme-button-color,#446
 .link{background:none;color:#add1ff;text-decoration:underline;font-size:12px;padding:3px 0}
 .hide{display:none!important}
 </style></head><body><main>
-<header><div><h1>📊 Аналитика</h1><div class="muted">Круг Души · фактические данные из реестра</div></div><button id="back">← Участники</button></header>
+<header><div><h1>📊 Аналитика</h1><div class="muted">Круг Души · фактические данные из реестра</div></div><div class="actions"><button id="go-home">🏠 Главная</button><button id="back">← Участники</button></div></header>
 <div id="who" class="muted">Проверка Telegram…</div><div id="error" role="alert"></div><div id="notice" role="status"></div>
 <section><h2>Участники и доступ</h2>
 <div class="grid">
@@ -143,6 +143,7 @@ $("alerts-form").onsubmit=async e=>{
  }catch(e){text("alert-feedback","Не удалось сохранить: "+e.message);$("alert-feedback").style.color="#ffb4a8"}finally{$("alert-save").disabled=false}
 };
 $("refresh").onclick=load;$("period").onchange=load;
+$("go-home").onclick=()=>{window.location.href="/tg-support/home"+window.location.hash};
 $("back").onclick=()=>{window.location.href="/tg-support/members"+window.location.hash};
 (async()=>{
  try{

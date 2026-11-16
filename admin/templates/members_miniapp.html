@@ -31,7 +31,7 @@ textarea{width:100%;resize:vertical;min-height:60px}
 .pages{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:14px 0}
 .notice{font-size:12px;color:#a6b4c9;line-height:1.6}
 </style></head><body><main>
-<header class="bar"><div><h1>👥 Участники «Круга Души»</h1><div id="who" class="muted">Проверка Telegram…</div></div><div class="actions"><button type="button" id="go-analytics">📊 Аналитика</button><button type="button" id="go-support">← Поддержка</button></div></header>
+<header class="bar"><div><h1>👥 Участники «Круга Души»</h1><div id="who" class="muted">Проверка Telegram…</div></div><div class="actions"><button type="button" id="go-home">🏠 Главная</button><button type="button" id="go-analytics">📊 Аналитика</button><button type="button" id="go-support">← Поддержка</button></div></header>
 <p class="notice">Здесь видно, у кого есть доступ, по какой причине и когда он заканчивается. Ручной доступ не означает, что участник оплатил подписку.</p>
 <div id="error" role="alert"></div><div id="notice" role="status"></div>
 <section id="list-section">
@@ -247,7 +247,8 @@ $("search-form").onsubmit=e=>{e.preventDefault();state.query=$("search").value.t
 $("prev").onclick=()=>{if(state.page>1){state.page--;load()}};
 $("next").onclick=()=>{if(state.page*30<state.total){state.page++;load()}};
 $("back").onclick=()=>{state.member=null;show(false);load()};
-$("go-support").onclick=()=>{window.location.href="/tg-support"+window.location.hash};
+$("go-home").onclick=()=>{window.location.href="/tg-support/home"+window.location.hash};
+$("go-support").onclick=()=>{window.location.href="/tg-support?view=tickets"+window.location.hash};
 $("go-analytics").onclick=()=>{window.location.href="/tg-support/analytics"+window.location.hash};
 (async()=>{
  try{

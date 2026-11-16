@@ -24,6 +24,7 @@ from db.support import (list_tickets, ticket_detail, admin_reply,
                         mark_delivery, set_ticket_status, support_media_record,
                         STATUSES)
 from db.support_telegram import telegram_staff
+from db.miniapp_command_center import overview as command_overview
 
 log=logging.getLogger(__name__)
 router=APIRouter(prefix="/tg-support",tags=["telegram-support"])
@@ -72,6 +73,20 @@ async def miniapp_page():
         "Referrer-Policy":"no-referrer",
         "X-Content-Type-Options":"nosniff",
     })
+
+@router.get("/home")
+async def command_centre_page():
+    file=Path(__file__).resolve().parent/"templates"/"command_center_miniapp.html"
+    return FileResponse(file,media_type="text/html",headers={
+        "Cache-Control":"no-store",
+        "Content-Security-Policy":"default-src 'self'; script-src 'self' https://telegram.org 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
+        "Referrer-Policy":"no-referrer",
+        "X-Content-Type-Options":"nosniff",
+    })
+
+@router.get("/api/home")
+async def command_centre_data(staff=Depends(require_staff)):
+    return await command_overview(include_members=staff["role"] in ("owner","admin"))
 
 @router.get("/api/me")
 async def current_staff(staff=Depends(require_staff)):
