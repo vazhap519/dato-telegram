@@ -40,6 +40,7 @@ button:disabled{opacity:.5}
 <a href="/tg-support?view=tickets" id="support"><span>🛟</span>Техподдержка</a>
 <a href="/tg-support/members" id="members" class="hidden"><span>👥</span>Участники и подписки</a>
 <a href="/tg-support/analytics" id="analytics" class="hidden"><span>📊</span>Аналитика</a>
+<a href="/tg-support/automations" id="automations" class="hidden"><span>⚙️</span>Автоматизация</a>
 </nav></section>
 <section><div class="row"><h2>Требуют внимания</h2><span class="muted">Последние обращения</span></div>
 <div id="tickets"><div class="empty">Загрузка…</div></div></section>
@@ -95,7 +96,7 @@ for(const a of document.querySelectorAll("a[href^='/tg-support']"))a.onclick=e=>
   const me=await api("/me");
   $("who").textContent=(me.role==="owner"?"Владелец":me.role==="admin"?"Администратор":"Сотрудник поддержки")+": "+me.username;
   if(me.role==="owner"||me.role==="admin"){
-    $("members").classList.remove("hidden");$("analytics").classList.remove("hidden");
+    $("members").classList.remove("hidden");$("analytics").classList.remove("hidden");$("automations").classList.remove("hidden");
   }
   await load();
  }catch(e){$("err").textContent=e.message}
