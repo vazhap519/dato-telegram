@@ -1,0 +1,44 @@
+name: Telegram Mini App analytics checks
+
+on:
+  pull_request:
+    paths:
+      - 'db/miniapp_analytics.py'
+      - 'admin/members_miniapp.py'
+      - 'admin/templates/analytics_miniapp.html'
+      - 'admin/templates/members_miniapp.html'
+      - 'admin/templates/support_miniapp.html'
+      - 'tests/test_miniapp_analytics.py'
+      - '.github/workflows/miniapp-analytics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analytics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python and run analytics tests
+        run: |
+          python -m compileall -q db/miniapp_analytics.py admin/members_miniapp.py
+          python -m unittest discover -s tests -p 'test_miniapp_analytics.py' -v
+          python -m unittest discover -s tests -p 'test_members_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_support_permissions.py' -v
+      - name: Validate Telegram Mini App JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          for path in ('admin/templates/analytics_miniapp.html','admin/templates/members_miniapp.html','admin/templates/support_miniapp.html'):
+              html=Path(path).read_text(encoding='utf-8')
+              parts=[p for p in re.findall(r'<script>(.*?)</script>',html,re.S) if p.strip()]
+              assert len(parts)==1,path
+              Path('/tmp/'+Path(path).stem+'.js').write_text(parts[0],encoding='utf-8')
+          PY
+          for file in /tmp/*_miniapp.js; do node --check "$file"; done
