@@ -63,7 +63,7 @@ class MiniAppAnalyticsTests(unittest.TestCase):
 
     def test_ui_is_auth_gated_and_has_navigation(self):
         dash=source("admin/templates/analytics_miniapp.html")
-        for value in ('X-Telegram-Init-Data',"/api/me",'/api/analytics?period=',
+        for value in ('X-Telegram-Init-Data','api("/me")','api("/analytics?period="',
                       "Подписчики с оплатой","Истекает за 7 дней","Подтверждённые платежи",
                       "/tg-support/members?member=", "Asia/Tbilisi"):
             self.assertIn(value,dash)
