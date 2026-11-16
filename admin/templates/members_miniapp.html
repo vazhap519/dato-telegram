@@ -248,7 +248,7 @@ $("prev").onclick=()=>{if(state.page>1){state.page--;load()}};
 $("next").onclick=()=>{if(state.page*30<state.total){state.page++;load()}};
 $("back").onclick=()=>{state.member=null;show(false);load()};
 $("go-home").onclick=()=>{window.location.href="/tg-support/home"+window.location.hash};
-$("go-support").onclick=()=>{window.location.href="/tg-support"+window.location.hash};
+$("go-support").onclick=()=>{window.location.href="/tg-support?view=tickets"+window.location.hash};
 $("go-analytics").onclick=()=>{window.location.href="/tg-support/analytics"+window.location.hash};
 (async()=>{
  try{
