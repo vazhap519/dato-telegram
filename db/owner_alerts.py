@@ -150,7 +150,7 @@ async def candidate_events(recipient,now=None):
             due=(await db.execute(text(expr))).mappings().all()
             if recipient["expiry"]:
                 for m in due:
-                    delta=(m["expires_at"].date()-now.date()).days
+                    delta=(m["expires_at"].astimezone(TZ).date()-now.astimezone(TZ).date()).days
                     if delta not in (0,1,3):continue
                     name=m["first_name"] or m["username"] or str(m["telegram_id"])
                     events.append(("expiry",f"expiry:{m['telegram_id']}:{m['expires_at'].isoformat()}:{delta}",
@@ -158,6 +158,45 @@ async def candidate_events(recipient,now=None):
                         f"Срок: {m['expires_at'].astimezone(TZ).strftime('%d.%m.%Y')} (Тбилиси)\\n"
                         "Проверьте карточку участника."))
         if recipient["attention"]:
+            # Newly expired complete access: exclude people with any active
+            # manual grant or paid subscription. Schedule only after opt-in.
+            expired=(await db.execute(text("""
+              WITH last_ends AS (
+                SELECT telegram_id,MAX(ends_at) AS ended
+                FROM access_grants
+                WHERE resource='community' AND revoked_at IS NULL
+                  AND starts_at<=NOW() AND ends_at IS NOT NULL
+                GROUP BY telegram_id
+                UNION ALL
+                SELECT telegram_id,MAX(paid_until) AS ended
+                FROM subscriptions WHERE status='active' AND paid_until IS NOT NULL
+                GROUP BY telegram_id
+              ), last_access AS (
+                SELECT telegram_id,MAX(ended) AS ended FROM last_ends GROUP BY telegram_id
+              )
+              SELECT a.telegram_id,a.ended,u.first_name,u.username
+              FROM last_access a JOIN users u ON u.telegram_id=a.telegram_id
+              WHERE a.ended<=NOW() AND a.ended>NOW()-INTERVAL '24 hours'
+                AND a.ended>=:start
+                AND NOT EXISTS (
+                  SELECT 1 FROM access_grants g
+                  WHERE g.telegram_id=a.telegram_id AND g.resource='community'
+                    AND g.revoked_at IS NULL AND g.starts_at<=NOW()
+                    AND (g.ends_at IS NULL OR g.ends_at>NOW())
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM subscriptions sub
+                  WHERE sub.telegram_id=a.telegram_id AND sub.status='active'
+                    AND sub.paid_until>NOW()
+                )
+              ORDER BY a.ended DESC LIMIT 100
+            """),{"start":recipient["enabled_at"]})).mappings().all()
+            for m in expired:
+                events.append(("attention",f"expired:{m['telegram_id']}:{m['ended'].isoformat()}",
+                    f"⚠️ Доступ закончился\\n{m['first_name'] or m['username'] or m['telegram_id']}"
+                    f" · ID {m['telegram_id']}\\n"
+                    f"Дата окончания: {m['ended'].astimezone(TZ).strftime('%d.%m.%Y')}\\n"
+                    "Действующих прав или подписок больше нет."))
             # Reversals are genuine payment attention events; never re-notify past
             # transactions on activation. Payment records have no updated_at:
             # a reversed old payment cannot be dated reliably, so only recent
