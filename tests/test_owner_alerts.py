@@ -64,6 +64,24 @@ class OwnerAlertTests(unittest.TestCase):
                        '"X-Telegram-Init-Data"'):
             self.assertIn(marker,ui)
 
+    def test_deployment_scripts_parse_and_are_explicit_opt_in(self):
+        for name in ("prepare_owner_alerts.py","stage_owner_alerts_8081.py",
+                     "cutover_owner_alerts_8081.py","install_owner_alert_timer.py"):
+            path="scripts/"+name
+            with self.subTest(path=path):
+                ast.parse(read(path),filename=path)
+        stage=read("scripts/stage_owner_alerts_8081.py")
+        self.assertIn("OWNER ALERT ADDITIVE TABLES READY",stage)
+        self.assertIn("RESTORING PREVIOUS STANDBY",stage)
+        self.assertNotIn("start_polling",stage)
+        cutover=read("scripts/cutover_owner_alerts_8081.py")
+        self.assertIn('add_argument("--cutover",action="store_true")',cutover)
+        self.assertIn("wait_route(False)",cutover)
+        timer=read("scripts/install_owner_alert_timer.py")
+        self.assertIn('add_argument("--install",action="store_true"',timer)
+        self.assertIn('scripts.owner_alert_worker --run',timer)
+        self.assertIn("No Telegram polling bot started",timer)
+
     def test_no_second_polling_worker(self):
         src=read("scripts/owner_alert_worker.py")
         self.assertIn("--dry-run",src)
