@@ -154,7 +154,7 @@ async function openMedia(m,button,bubble){
   button.classList.add("hidden");
  }catch(e){error(e.message);button.disabled=false}
 }
-$("members-link").onclick=()=>{window.location.href="/tg-support/members"};
+$("members-link").onclick=()=>{window.location.href="/tg-support/members"+window.location.hash};
 $("refresh").onclick=async()=>{try{await(state.ticket?refreshTicket():loadList())}catch(e){error(e.message)}};
 $("jump-bottom").onclick=()=>{const box=$("messages");box.scrollTop=box.scrollHeight;state.unread=0;setNewMessageIndicator()};
 $("messages").addEventListener("scroll",()=>{if(state.unread&&nearBottom($("messages"))){state.unread=0;setNewMessageIndicator()}},{passive:true});
