@@ -30,6 +30,24 @@ def code_at(url):
     except HTTPError as exc:
         return exc.code
 
+def polling_confirmed(pid):
+    """Find startup markers for THIS PID in the full journal, not last N log lines.
+
+    Frequent maintenance messages may push polling startup messages beyond the
+    former 120-line lookback window. Require exact PID and aiogram markers.
+    """
+    if not isinstance(pid, int) or pid<=0:
+        return False
+    result=subprocess.run(
+        ["journalctl", "--no-pager", "-o", "cat", f"_PID={pid}",
+         "--grep=Run polling for bot|Start polling", "-n", "5"],
+        capture_output=True, text=True, timeout=20,
+    )
+    return result.returncode==0 and any(
+        marker in result.stdout for marker in ("Run polling for bot", "Start polling")
+    )
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--deploy",action="store_true",
@@ -54,6 +72,10 @@ def main():
     import update_system_safe as system
     bg.target_commit=lambda:SHA
     bot.origin=lambda:SHA
+    # The pinned update_bot_safe uses only the last 120 journal entries.
+    # Replace that single diagnostic with an exact-PID full-journal query.
+    # All singleton checks, lock ownership and rollback logic remain intact.
+    bot.recent_polling=polling_confirmed
 
     bg.LOCK.parent.mkdir(parents=True,exist_ok=True)
     with bg.LOCK.open("a+") as lock:
