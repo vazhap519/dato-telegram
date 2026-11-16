@@ -86,6 +86,14 @@ class SupportPermissionsTests(unittest.TestCase):
         self.assertIn("admin_reply(ticket_id", mini)
         self.assertIn("admin_reply(ticket_id", admin)
 
+    def test_long_running_bot_polling_marker_does_not_expire_from_log_noise(self):
+        updater = function_text("scripts/update_bot_safe.py", "recent_polling")
+        self.assertIn("--grep=Run polling for bot|Start polling", updater)
+        self.assertNotIn('"120"', updater)
+        release = function_text("scripts/deploy_support_bot_pinned.py", "polling_confirmed")
+        self.assertIn("--grep=Run polling for bot|Start polling", release)
+        self.assertIn("_PID=", release)
+
     def test_owner_controls_are_present(self):
         markup = source("admin/templates/admin_staff.html")
         self.assertIn('action="/staff/support"', markup)
