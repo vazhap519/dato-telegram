@@ -133,8 +133,8 @@ async def candidate_events(recipient,now=None):
             for p in payments:
                 val=(str(p["amount"])+" "+(p["currency"] or "валюта не указана")) if p["amount"] is not None else "сумма не указана"
                 events.append(("payments",f"payment:{p['id']}",
-                    f"💳 Подтверждённая оплата\\nУчастник: {p['telegram_id']}\\n"
-                    f"Система: {p['provider']}\\nСумма: {val}\\n"
+                    f"💳 Подтверждённая оплата\nУчастник: {p['telegram_id']}\n"
+                    f"Система: {p['provider']}\nСумма: {val}\n"
                     "Откройте Mini App → Аналитика → Платежи."))
         # A person expires on the last surviving right, not on any one grant.
         # Rows exclude revoked and superseded entitlements and lifetime grants.
@@ -154,8 +154,8 @@ async def candidate_events(recipient,now=None):
                     if delta not in (0,1,3):continue
                     name=m["first_name"] or m["username"] or str(m["telegram_id"])
                     events.append(("expiry",f"expiry:{m['telegram_id']}:{m['expires_at'].isoformat()}:{delta}",
-                        f"⏳ Скоро закончится доступ\\n{name} · ID {m['telegram_id']}\\n"
-                        f"Срок: {m['expires_at'].astimezone(TZ).strftime('%d.%m.%Y')} (Тбилиси)\\n"
+                        f"⏳ Скоро закончится доступ\n{name} · ID {m['telegram_id']}\n"
+                        f"Срок: {m['expires_at'].astimezone(TZ).strftime('%d.%m.%Y')} (Тбилиси)\n"
                         "Проверьте карточку участника."))
         if recipient["attention"]:
             # Newly expired complete access: exclude people with any active
@@ -193,9 +193,9 @@ async def candidate_events(recipient,now=None):
             """),{"start":recipient["enabled_at"]})).mappings().all()
             for m in expired:
                 events.append(("attention",f"expired:{m['telegram_id']}:{m['ended'].isoformat()}",
-                    f"⚠️ Доступ закончился\\n{m['first_name'] or m['username'] or m['telegram_id']}"
-                    f" · ID {m['telegram_id']}\\n"
-                    f"Дата окончания: {m['ended'].astimezone(TZ).strftime('%d.%m.%Y')}\\n"
+                    f"⚠️ Доступ закончился\n{m['first_name'] or m['username'] or m['telegram_id']}"
+                    f" · ID {m['telegram_id']}\n"
+                    f"Дата окончания: {m['ended'].astimezone(TZ).strftime('%d.%m.%Y')}\n"
                     "Действующих прав или подписок больше нет."))
             # Reversals are genuine payment attention events; never re-notify past
             # transactions on activation. Payment records have no updated_at:
@@ -211,18 +211,18 @@ async def candidate_events(recipient,now=None):
             """),{"start":recipient["enabled_at"]})).mappings().all()
             for p in reversals:
                 events.append(("attention",f"reversal:{p['id']}:{p['payment_status']}",
-                    f"⚠️ Платёж требует внимания\\nID участника: {p['telegram_id']}\\n"
-                    f"Система: {p['provider']}\\nСтатус: {p['payment_status']}"))
+                    f"⚠️ Платёж требует внимания\nID участника: {p['telegram_id']}\n"
+                    f"Система: {p['provider']}\nСтатус: {p['payment_status']}"))
         if recipient["digest"] and now.astimezone(TZ).hour>=10:
             from db.miniapp_analytics import TOTALS_SQL,PAYMENT_COUNTS_SQL
             total=(await db.execute(text(TOTALS_SQL))).mappings().one()
             pay=(await db.execute(text(PAYMENT_COUNTS_SQL),{"period":"30d"})).mappings().one()
             events.append(("digest",f"digest:{day}",
-                "📊 Ежедневная сводка · Круг Души\\n"
-                f"Активный доступ: {total['active']}\\nБессрочный: {total['lifetime']}\\n"
-                f"Активные подписки: {total['active_subscription_users']}\\n"
-                f"Истекает за 7 дней: {total['expiring_7d']}\\n"
-                f"Подтверждённых оплат за 30 дней: {pay['paid_events']}\\n"
+                "📊 Ежедневная сводка · Круг Души\n"
+                f"Активный доступ: {total['active']}\nБессрочный: {total['lifetime']}\n"
+                f"Активные подписки: {total['active_subscription_users']}\n"
+                f"Истекает за 7 дней: {total['expiring_7d']}\n"
+                f"Подтверждённых оплат за 30 дней: {pay['paid_events']}\n"
                 "Подробнее — Telegram Mini App → Аналитика."))
     return events
 
