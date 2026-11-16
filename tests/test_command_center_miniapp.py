@@ -28,7 +28,7 @@ class CommandCenterTests(unittest.TestCase):
         self.assertTrue(any(isinstance(d,ast.Call) and getattr(d.func,"id",None)=="Depends"
                             and d.args and getattr(d.args[0],"id",None)=="require_staff"
                             for d in deps))
-        self.assertIn('staff["role"] in ("owner","admin")',ast.unparse(fn))
+        self.assertIn("staff['role'] in ('owner', 'admin')",ast.unparse(fn))
         self.assertIn("return await command_overview",ast.unparse(fn))
 
     def test_queries_read_only_and_no_payments_as_subscriptions(self):
