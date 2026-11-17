@@ -112,6 +112,11 @@ async def staff_change(target,role,enabled,actor,new_username=None,password_hash
         raise ValueError("Логин: 3–60 букв, цифр или подчёркиваний")
     async with SessionLocal() as s:
         async with s.begin():
+            duplicate=(await s.execute(text("""
+              SELECT 1 FROM admins WHERE username=:new_username AND username<>:target
+            """),{"new_username":new_username,"target":target})).first()
+            if duplicate:
+                raise ValueError("Этот логин уже занят")
             updated=(await s.execute(text("""
               UPDATE admins SET username=:new_username,password=COALESCE(:password,password),
                 role=:role,enabled=:enabled,session_version=session_version+1
