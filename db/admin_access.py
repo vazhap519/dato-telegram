@@ -102,23 +102,49 @@ async def staff_create(username,password_hash,role,actor):
               VALUES (:actor,'staff_created',:target,:role)
             """),{"actor":actor,"target":username,"role":role})
 
-async def staff_change(target,role,enabled,actor):
+async def staff_change(target,role,enabled,actor,new_username=None,password_hash=None):
     if role not in ROLES or role=="owner":
         raise ValueError("Роль владельца нельзя назначать здесь")
     if target==actor:
         raise ValueError("Нельзя изменить собственные права")
+    new_username=(new_username or target).strip()
+    if len(new_username)<3 or len(new_username)>60 or not new_username.replace("_","").isalnum():
+        raise ValueError("Логин: 3–60 букв, цифр или подчёркиваний")
     async with SessionLocal() as s:
         async with s.begin():
             updated=(await s.execute(text("""
-              UPDATE admins SET role=:role,enabled=:enabled,
-                session_version=session_version+1
+              UPDATE admins SET username=:new_username,password=COALESCE(:password,password),
+                role=:role,enabled=:enabled,session_version=session_version+1
               WHERE username=:target AND role<>'owner' RETURNING id
-            """),{"target":target,"role":role,"enabled":enabled})).first()
+            """),{"target":target,"new_username":new_username,"password":password_hash,
+                 "role":role,"enabled":enabled})).first()
             if not updated:raise ValueError("Сотрудник не найден или владелец защищён")
             await s.execute(text("""
               INSERT INTO admin_operation_audit(actor,action,target,details)
-              VALUES (:actor,'staff_access_changed',:target,:details)
-            """),{"actor":actor,"target":target,"details":role+" / "+("enabled" if enabled else "disabled")})
+              VALUES (:actor,'staff_account_changed',:target,:details)
+            """),{"actor":actor,"target":target,
+                  "details":"username="+new_username+"; role="+role+"; "+
+                            ("enabled" if enabled else "disabled")+
+                            ("; password_reset=true" if password_hash else "")})
+
+
+async def staff_delete(target,actor):
+    if target==actor:
+        raise ValueError("Нельзя удалить собственную учётную запись")
+    async with SessionLocal() as s:
+        async with s.begin():
+            deleted=(await s.execute(text("""
+              DELETE FROM admins WHERE username=:target AND role<>'owner'
+              RETURNING id
+            """),{"target":target})).first()
+            if not deleted:
+                raise ValueError("Сотрудник не найден или владелец защищён")
+            # support_telegram_links and its notification rows are removed by
+            # their ON DELETE CASCADE constraints, immediately revoking Mini App access.
+            await s.execute(text("""
+              INSERT INTO admin_operation_audit(actor,action,target,details)
+              VALUES (:actor,'staff_deleted',:target,'account and Telegram support access revoked')
+            """),{"actor":actor,"target":target})
 
 async def record_login(username,outcome,ip):
     async with SessionLocal() as s:
