@@ -27,6 +27,9 @@ EXPECTED={
  "db/admin_access.py",
  "tests/test_support_permissions.py",
  "scripts/rollout_staff_accounts.py",
+ # Existing lifecycle rollout hardening carried forward from the deployed base.
+ "scripts/rollout_lifecycle.py",
+ "tests/test_lifecycle_followups.py",
 }
 MARK='id="lifecycle-rules"'
 
