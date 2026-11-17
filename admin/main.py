@@ -17,7 +17,7 @@ from sqlalchemy import text
 from db.database import SessionLocal
 from db.operations_dashboard import automation_overview, reminder_delivery_attention
 from db.lifecycle_followups import initialize_lifecycle
-from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, record_login, login_throttled, mark_logged_in, recent_login_events, support_permissions_change
+from db.admin_access import initialize_staff, allowed as staff_allowed, read_staff, staff_list, staff_create, staff_change, staff_delete, record_login, login_throttled, mark_logged_in, recent_login_events, support_permissions_change
 from db.admin_analytics import report as analytics_report, export_subscribers, export_verified_payments
 from db.admin_extensions import initialize_extensions, create_task, tasks as crm_tasks, update_task, task_notification_settings, update_task_notification_settings, global_search, failure_queue, operations, bulk_update_tag, mark_issue_review, webhook_attention, audit as admin_action_audit
 from db.dashboard import dashboard_data, event_journal, EVENT_TYPES, initialize_health_snapshots, last_health_snapshot
@@ -141,6 +141,7 @@ async def protect_admin_forms(request: Request, call_next):
         "/issues/review",
         "/staff/add",
         "/staff/update",
+        "/staff/delete",
         "/staff/support",
         "/subscriptions/message",
         "/subscriptions/message/delete",
@@ -593,18 +594,38 @@ async def add_staff_account(
 
 @app.post("/staff/update")
 async def change_staff_account(
-    target:str=Form(...),role:str=Form(...),enabled:bool=Form(False),
+    target:str=Form(...),username:str=Form(...),role:str=Form(...),
+    password:str=Form(""),enabled:bool=Form(False),
     confirm:str=Form(""),csrf_check=Depends(verify_csrf),
     user=Depends(get_current_user)
 ):
     if user["role"]!="owner":raise HTTPException(403,detail="Только владелец")
     if confirm!="CHANGE_STAFF":
         raise HTTPException(400,detail="Подтвердите изменение")
+    if password and (len(password)<12 or len(password)>200):
+        raise HTTPException(400,detail="Новый пароль должен содержать от 12 до 200 символов")
     try:
-        await staff_change(target,role,enabled,user["user"])
+        await staff_change(target,role,enabled,user["user"],username,
+                           hash_password(password) if password else None)
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
     return RedirectResponse("/staff?updated=1",303)
+
+
+@app.post("/staff/delete")
+async def delete_staff_account(
+    target:str=Form(...),confirm:str=Form(""),
+    csrf_check=Depends(verify_csrf),user=Depends(get_current_user)
+):
+    if user["role"]!="owner":raise HTTPException(403,detail="Только владелец")
+    if confirm!="DELETE_STAFF":
+        raise HTTPException(400,detail="Подтвердите удаление сотрудника")
+    try:
+        await staff_delete(target,user["user"])
+    except ValueError as exc:
+        raise HTTPException(400,detail=str(exc))
+    return RedirectResponse("/staff?deleted=1",303)
+
 
 @app.post("/staff/support")
 async def change_staff_support_permissions(
