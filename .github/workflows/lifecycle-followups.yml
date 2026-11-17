@@ -1,0 +1,42 @@
+name: Lifecycle followups checks
+on:
+  pull_request:
+    paths:
+      - 'db/lifecycle_followups.py'
+      - 'db/miniapp_automation_center.py'
+      - 'admin/main.py'
+      - 'admin/members_miniapp.py'
+      - 'admin/templates/automation_center_miniapp.html'
+      - 'scripts/lifecycle_scheduler.py'
+      - 'tests/test_lifecycle_followups.py'
+      - '.github/workflows/lifecycle-followups.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Regressions
+        run: |
+          python -m unittest discover -s tests -p 'test_lifecycle_followups.py' -v
+          python -m unittest discover -s tests -p 'test_automation_center_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_member_crm_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_members_miniapp.py' -v
+          python -m unittest discover -s tests -p 'test_command_center_miniapp.py' -v
+      - name: JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          page=Path('admin/templates/automation_center_miniapp.html').read_text()
+          scripts=[x for x in re.findall(r'<script>(.*?)</script>',page,re.S) if x.strip()]
+          assert len(scripts)==1
+          Path('/tmp/lifecycle_ui.js').write_text(scripts[0])
+          PY
+          node --check /tmp/lifecycle_ui.js
