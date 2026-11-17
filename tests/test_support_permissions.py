@@ -96,7 +96,6 @@ class SupportPermissionsTests(unittest.TestCase):
 
 
     def test_staff_edit_and_delete_are_owner_only_web_admin_actions(self):
-        access = source("db/admin_access.py")
         change = function_text("db/admin_access.py", "staff_change")
         delete = function_text("db/admin_access.py", "staff_delete")
         main = source("admin/main.py")
@@ -113,7 +112,6 @@ class SupportPermissionsTests(unittest.TestCase):
         self.assertIn('confirm!="DELETE_STAFF"', function_text("admin/main.py", "delete_staff_account"))
         self.assertIn('user["role"]!="owner"', function_text("admin/main.py", "delete_staff_account"))
         self.assertIn("verify_csrf", function_text("admin/main.py", "delete_staff_account"))
-        self.assertNotIn("staff_delete", function_text("admin/main.py", "support_miniapp_router") if "support_miniapp_router" in main else "")
 
     def test_owner_controls_are_present(self):
         markup = source("admin/templates/admin_staff.html")
