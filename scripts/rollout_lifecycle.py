@@ -200,6 +200,20 @@ def verify_public(yes):
         time.sleep(.5)
     raise RuntimeError("Public route did not converge")
 
+def verify_public_lifecycle_api():
+    # Nginx reload is graceful: a request immediately after cutover can still
+    # be served by an old worker/upstream. Retry, but accept ONLY the app's
+    # expected unauthenticated response; 404/5xx never count as success.
+    url="https://bot.arutyun.me/tg-support/api/automations/lifecycle"
+    last=None
+    for attempt in range(24):
+        last=req(url)[0]
+        if last==401:
+            print("PUBLIC LIFECYCLE API AUTH VERIFIED: HTTP 401; check",attempt+1,flush=True)
+            return
+        time.sleep(.5)
+    raise RuntimeError("Unsigned public lifecycle API not rejected; last HTTP "+str(last))
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("operation",choices=("prepare","stage","check","cutover"))
@@ -219,8 +233,7 @@ def main():
             if deploy.routing(deploy.nginx_path().read_text())!=8082:
                 raise RuntimeError("Nginx did not switch")
             verify_public(True)
-            if req("https://bot.arutyun.me/tg-support/api/automations/lifecycle")[0]!=401:
-                raise RuntimeError("Unsigned public lifecycle API not rejected")
+            verify_public_lifecycle_api()
             if bot_state()!=pid:raise RuntimeError("Bot changed")
             print("LIFECYCLE PUBLIC CUTOVER VERIFIED: 8082; rollback 8081; sender timer NOT installed.",flush=True)
         except Exception:
