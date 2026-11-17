@@ -102,6 +102,10 @@ def prepare(bg,target):
     probe=r"""
 from jinja2 import Environment,FileSystemLoader
 env=Environment(loader=FileSystemLoader('admin/templates'))
+# The production app registers this custom filter during startup. Template
+# compilation only needs the filter to exist; its runtime behavior is tested
+# by the application, not by this isolated syntax check.
+env.filters['tbilisi_time'] = lambda value, pattern='%d.%m.%Y %H:%M': value
 env.get_template('admin_staff.html')
 print('STAFF ADMIN TEMPLATE PARSE OK')
 """
