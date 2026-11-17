@@ -94,6 +94,27 @@ class SupportPermissionsTests(unittest.TestCase):
         self.assertIn("--grep=Run polling for bot|Start polling", release)
         self.assertIn("_PID=", release)
 
+
+    def test_staff_edit_and_delete_are_owner_only_web_admin_actions(self):
+        access = source("db/admin_access.py")
+        change = function_text("db/admin_access.py", "staff_change")
+        delete = function_text("db/admin_access.py", "staff_delete")
+        main = source("admin/main.py")
+        markup = source("admin/templates/admin_staff.html")
+        self.assertIn("session_version=session_version+1", change)
+        self.assertIn("password=COALESCE(:password,password)", change)
+        self.assertIn("role<>'owner'", change)
+        self.assertIn("role<>'owner'", delete)
+        self.assertIn("ON DELETE CASCADE", source("db/support_telegram.py"))
+        self.assertIn('action="/staff/delete"', markup)
+        self.assertIn('name="username"', markup)
+        self.assertIn('name="password"', markup)
+        self.assertIn('"/staff/delete"', main)
+        self.assertIn('confirm!="DELETE_STAFF"', function_text("admin/main.py", "delete_staff_account"))
+        self.assertIn('user["role"]!="owner"', function_text("admin/main.py", "delete_staff_account"))
+        self.assertIn("verify_csrf", function_text("admin/main.py", "delete_staff_account"))
+        self.assertNotIn("staff_delete", function_text("admin/main.py", "support_miniapp_router") if "support_miniapp_router" in main else "")
+
     def test_owner_controls_are_present(self):
         markup = source("admin/templates/admin_staff.html")
         self.assertIn('action="/staff/support"', markup)
