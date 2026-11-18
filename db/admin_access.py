@@ -117,13 +117,18 @@ async def staff_change(target,role,enabled,actor,new_username=None,password_hash
             """),{"new_username":new_username,"target":target})).first()
             if duplicate:
                 raise ValueError("Этот логин уже занят")
-            updated=(await s.execute(text("""
+            existing=(await s.execute(text("""
+              SELECT a.id,l.telegram_id FROM admins a
+              LEFT JOIN support_telegram_links l ON l.admin_id=a.id
+              WHERE a.username=:target AND a.role<>'owner' FOR UPDATE OF a
+            """),{"target":target})).mappings().first()
+            if not existing:raise ValueError("Сотрудник не найден или владелец защищён")
+            await s.execute(text("""
               UPDATE admins SET username=:new_username,password=COALESCE(:password,password),
                 role=:role,enabled=:enabled,session_version=session_version+1
-              WHERE username=:target AND role<>'owner' RETURNING id
-            """),{"target":target,"new_username":new_username,"password":password_hash,
-                 "role":role,"enabled":enabled})).first()
-            if not updated:raise ValueError("Сотрудник не найден или владелец защищён")
+              WHERE id=:id
+            """),{"id":existing["id"],"new_username":new_username,"password":password_hash,
+                 "role":role,"enabled":enabled})
             await s.execute(text("""
               INSERT INTO admin_operation_audit(actor,action,target,details)
               VALUES (:actor,'staff_account_changed',:target,:details)
@@ -131,6 +136,7 @@ async def staff_change(target,role,enabled,actor,new_username=None,password_hash
                   "details":"username="+new_username+"; role="+role+"; "+
                             ("enabled" if enabled else "disabled")+
                             ("; password_reset=true" if password_hash else "")})
+            return existing["telegram_id"] if not enabled else None
 
 
 async def staff_delete(target,actor):
@@ -138,18 +144,21 @@ async def staff_delete(target,actor):
         raise ValueError("Нельзя удалить собственную учётную запись")
     async with SessionLocal() as s:
         async with s.begin():
-            deleted=(await s.execute(text("""
-              DELETE FROM admins WHERE username=:target AND role<>'owner'
-              RETURNING id
-            """),{"target":target})).first()
-            if not deleted:
+            existing=(await s.execute(text("""
+              SELECT a.id,l.telegram_id FROM admins a
+              LEFT JOIN support_telegram_links l ON l.admin_id=a.id
+              WHERE a.username=:target AND a.role<>'owner' FOR UPDATE OF a
+            """),{"target":target})).mappings().first()
+            if not existing:
                 raise ValueError("Сотрудник не найден или владелец защищён")
+            await s.execute(text("DELETE FROM admins WHERE id=:id"),{"id":existing["id"]})
             # support_telegram_links and its notification rows are removed by
             # their ON DELETE CASCADE constraints, immediately revoking Mini App access.
             await s.execute(text("""
               INSERT INTO admin_operation_audit(actor,action,target,details)
               VALUES (:actor,'staff_deleted',:target,'account and Telegram support access revoked')
             """),{"actor":actor,"target":target})
+            return existing["telegram_id"]
 
 async def record_login(username,outcome,ip):
     async with SessionLocal() as s:
@@ -205,7 +214,9 @@ async def support_permissions_change(target, actor, *, access=False, can_reply=F
     async with SessionLocal() as s:
         async with s.begin():
             account=(await s.execute(text("""
-                SELECT id,role,enabled FROM admins WHERE username=:name FOR UPDATE
+                SELECT a.id,a.role,a.enabled,l.telegram_id
+                FROM admins a LEFT JOIN support_telegram_links l ON l.admin_id=a.id
+                WHERE a.username=:name FOR UPDATE OF a
             """),{"name":target})).mappings().first()
             if not account or account["role"]=="owner":
                 raise ValueError("Сотрудник не найден или аккаунт владельца защищён")
@@ -256,3 +267,4 @@ async def support_permissions_change(target, actor, *, access=False, can_reply=F
                 VALUES (:actor,'support_permissions_changed',:target,:details)
             """),{"actor":actor,"target":target,
                   "details":"access="+str(access)+", notify="+str(bool(notify))})
+            return account["telegram_id"] if not access else None
