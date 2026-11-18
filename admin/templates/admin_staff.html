@@ -29,7 +29,7 @@
 <form method="post" action="/staff/support" class="mt-4 space-y-3" onsubmit="return confirm('Сохранить права техподдержки для {{ account.username }}?')">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="target" value="{{ account.username }}"><input type="hidden" name="confirm" value="CHANGE_SUPPORT">
 <label class="block text-sm">Telegram ID сотрудника<input type="text" inputmode="numeric" pattern="[0-9]*" name="telegram_id" value="{{ account.telegram_id or '' }}" placeholder="Например, 123456789" class="bg-gray-700 rounded-lg p-3 block w-full mt-1"></label>
-<p class="text-xs text-gray-400">Telegram ID можно получить через /supportadmin в чате бота или другим надёжным способом. Для первого подключения достаточно назначить ID здесь, затем сотрудник отправляет боту /supportadmin, чтобы появилась кнопка Mini App. Пустое поле не удаляет уже существующую привязку.</p>
+<p class="text-xs text-gray-400">{% if account.role=='analyst' %}Для аналитика после сохранения Telegram ID автоматически появится отдельная кнопка «Панель аналитика». Она открывает самостоятельный кабинет с доступом только на чтение. {% else %}Для сотрудника поддержки Telegram ID можно получить через /supportadmin в чате бота. После сохранения прав ему станет доступна кнопка техподдержки. {% endif %}Пустое поле не удаляет уже существующую привязку.</p>
 <div class="grid sm:grid-cols-2 gap-3 text-sm">
 <label><input type="checkbox" name="support_access" value="true" {% if account.support_access %}checked{% endif %}> Доступ к поддержке</label>
 <label><input type="checkbox" name="support_can_reply" value="true" {% if account.support_can_reply %}checked{% endif %}> Отвечать участникам</label>
