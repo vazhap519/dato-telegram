@@ -118,7 +118,7 @@ async def staff_change(target,role,enabled,actor,new_username=None,password_hash
             if duplicate:
                 raise ValueError("Этот логин уже занят")
             existing=(await s.execute(text("""
-              SELECT a.id,l.telegram_id FROM admins a
+              SELECT a.id,l.telegram_id,a.support_access FROM admins a
               LEFT JOIN support_telegram_links l ON l.admin_id=a.id
               WHERE a.username=:target AND a.role<>'owner' FOR UPDATE OF a
             """),{"target":target})).mappings().first()
@@ -136,7 +136,11 @@ async def staff_change(target,role,enabled,actor,new_username=None,password_hash
                   "details":"username="+new_username+"; role="+role+"; "+
                             ("enabled" if enabled else "disabled")+
                             ("; password_reset=true" if password_hash else "")})
-            return existing["telegram_id"] if not enabled else None
+            return {
+                "telegram_id": existing["telegram_id"],
+                "enabled": bool(enabled and existing["support_access"]
+                                and role in ("admin", "support")),
+            }
 
 
 async def staff_delete(target,actor):
@@ -267,4 +271,16 @@ async def support_permissions_change(target, actor, *, access=False, can_reply=F
                 VALUES (:actor,'support_permissions_changed',:target,:details)
             """),{"actor":actor,"target":target,
                   "details":"access="+str(access)+", notify="+str(bool(notify))})
-            return account["telegram_id"] if not access else None
+            effective_telegram_id = (
+                telegram_id if telegram_id is not None else account["telegram_id"]
+            )
+            clear_telegram_ids = (
+                [account["telegram_id"]]
+                if account["telegram_id"] and telegram_id is not None
+                and account["telegram_id"] != telegram_id else []
+            )
+            return {
+                "telegram_id": effective_telegram_id,
+                "enabled": bool(access and account["enabled"]),
+                "clear_telegram_ids": clear_telegram_ids,
+            }
