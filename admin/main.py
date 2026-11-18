@@ -705,7 +705,8 @@ async def analyst_dashboard_page(request:Request,period:int=30,user=Depends(get_
     data=await analytics_report(period)
     return templates.TemplateResponse(
         request=request,name="analyst_dashboard.html",
-        context={"data":data,"period":period},
+        context={"data":data,"period":period,
+                  "max_registration_count":max((int(row["count"]) for row in data["registrations_by_day"]),default=1)},
         headers={"Cache-Control":"no-store"}
     )
 
