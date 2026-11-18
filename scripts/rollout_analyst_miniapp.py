@@ -183,7 +183,7 @@ def stage(bg, target):
 
 def check(bg, target):
     active, idle = topology(bg)
-    if active != 8081 or idle != 8082:
+    if active != 8082 or idle != 8081:
         raise RuntimeError("Public routing changed before cutover (expected active 8082)")
     if bg.release_sha_for_port(active) != CURRENT or bg.release_sha_for_port(idle) != target:
         raise RuntimeError("Active/standby release SHA mismatch")
