@@ -18,18 +18,14 @@ from urllib.request import urlopen
 
 ROOT=Path("/opt/dato-telegram")
 RELEASES=Path("/opt/dato-admin-releases")
-CURRENT="2d080120e014c8393b31aa1c9eb6b6b57e1898a6"
-OLD_STANDBY="f4e8a10a74bb1894854106b5700394f8853dc566"
+CURRENT="bc223971ddc139d19c5a5bcc7ef296c82cb3c637"
+OLD_STANDBY="2d080120e014c8393b31aa1c9eb6b6b57e1898a6"
 BOT="2d609a3267261e2370e01e02596916d1bdc044c6"
 EXPECTED={
  "admin/main.py",
- "admin/templates/admin_staff.html",
  "db/admin_access.py",
  "tests/test_support_permissions.py",
  "scripts/rollout_staff_accounts.py",
- # Existing lifecycle rollout hardening carried forward from the deployed base.
- "scripts/rollout_lifecycle.py",
- "tests/test_lifecycle_followups.py",
 }
 MARK='id="lifecycle-rules"'
 
@@ -64,9 +60,9 @@ def bot_state():
     return pid
 
 def prereqs(bg):
-    if bg.routing(bg.nginx_path().read_text())!=8082:
-        raise RuntimeError("Expected current public admin on 8082")
-    if bg.release_sha_for_port(8082)!=CURRENT or bg.release_sha_for_port(8081)!=OLD_STANDBY:
+    if bg.routing(bg.nginx_path().read_text())!=8081:
+        raise RuntimeError("Expected current public admin on 8081")
+    if bg.release_sha_for_port(8081)!=CURRENT or bg.release_sha_for_port(8082)!=OLD_STANDBY:
         raise RuntimeError("Public or rollback admin release differs from pinned state")
     for port in (8081,8082):
         if cmd("systemctl","is-active",bg.UNITS[port])!="active" or not bg.health(port):
@@ -111,55 +107,55 @@ print('STAFF ADMIN TEMPLATE PARSE OK')
 """
     subprocess.run([str(python),"-c",probe],cwd=release,timeout=20,check=True)
     print("STAFF ACCOUNT RELEASE PREPARED:",target,flush=True)
-    print("PUBLIC REMAINS 8082; BOT PID:",pid,"OWNER ALERTS ACTIVE; LIFECYCLE SENDER OFF",flush=True)
+    print("PUBLIC REMAINS 8081; BOT PID:",pid,"OWNER ALERTS ACTIVE; LIFECYCLE SENDER OFF",flush=True)
 
 def stage(bg,target):
     release=RELEASES/target
     if not (release/".venv/.install-ok").is_file():
         raise RuntimeError("Run prepare first")
     pid=prereqs(bg)
-    unit=Path("/etc/systemd/system")/bg.UNITS[8081]
+    unit=Path("/etc/systemd/system")/bg.UNITS[8082]
     previous=unit.read_text()
     stopped=False
     print("STAGING STAFF ADMIN ON INACTIVE 8081",flush=True)
     try:
-        bg.command("systemctl","stop",bg.UNITS[8081])
+        bg.command("systemctl","stop",bg.UNITS[8082])
         stopped=True
-        if bg.health(8081):
+        if bg.health(8082):
             raise RuntimeError("Inactive port 8081 still responds after stop")
-        unit.write_text(bg.unit_content(release,8081))
+        unit.write_text(bg.unit_content(release,8082))
         unit.chmod(0o644)
         bg.command("systemctl","daemon-reload")
-        bg.command("systemctl","start",bg.UNITS[8081])
+        bg.command("systemctl","start",bg.UNITS[8082])
         for _ in range(75):
-            if bg.health(8081):break
+            if bg.health(8082):break
             if bg.command("systemctl","is-active",bg.UNITS[8081],check=False)!="active":
                 raise RuntimeError("Staged admin process exited")
             time.sleep(1)
         else:raise RuntimeError("Staged admin startup timeout")
-        status,html=response("http://127.0.0.1:8081/tg-support/automations")
+        status,html=response("http://127.0.0.1:8082/tg-support/automations")
         if status!=200 or MARK not in html:
             raise RuntimeError("Staged admin lost existing lifecycle interface")
         for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
-            if response("http://127.0.0.1:8081"+path)[0]!=401:
+            if response("http://127.0.0.1:8082"+path)[0]!=401:
                 raise RuntimeError("Staged Telegram API auth failure: "+path)
-        if bg.routing(bg.nginx_path().read_text())!=8082 or not bg.health(8082) or bot_state()!=pid:
+        if bg.routing(bg.nginx_path().read_text())!=8081 or not bg.health(8081) or bot_state()!=pid:
             raise RuntimeError("Public admin, bot or timer state changed during stage")
     except BaseException:
         if stopped:
             print("RESTORING PREVIOUS INACTIVE 8081",flush=True)
-            bg.command("systemctl","stop",bg.UNITS[8081],check=False)
+            bg.command("systemctl","stop",bg.UNITS[8082],check=False)
             unit.write_text(previous)
             bg.command("systemctl","daemon-reload",check=False)
-            bg.command("systemctl","start",bg.UNITS[8081],check=False)
+            bg.command("systemctl","start",bg.UNITS[8082],check=False)
         raise
-    print("STAFF ADMIN STAGED ON 8081:",target,flush=True)
-    print("PUBLIC UNCHANGED ON 8082; BOT PID UNCHANGED:",pid,flush=True)
+    print("STAFF ADMIN STAGED ON 8082:",target,flush=True)
+    print("PUBLIC UNCHANGED ON 8081; BOT PID UNCHANGED:",pid,flush=True)
 
 def check(bg,target):
-    if bg.routing(bg.nginx_path().read_text())!=8082:
-        raise RuntimeError("Expected public 8082 before cutover")
-    if bg.release_sha_for_port(8082)!=CURRENT or bg.release_sha_for_port(8081)!=target:
+    if bg.routing(bg.nginx_path().read_text())!=8081:
+        raise RuntimeError("Expected public 8081 before cutover")
+    if bg.release_sha_for_port(8081)!=CURRENT or bg.release_sha_for_port(8082)!=target:
         raise RuntimeError("Staged/active release SHA mismatch")
     if not bg.health(8081) or not bg.health(8082):
         raise RuntimeError("Admin slot unhealthy")
@@ -168,10 +164,10 @@ def check(bg,target):
         if status!=200 or MARK not in html:
             raise RuntimeError("Existing lifecycle UI missing on port "+str(port))
     for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
-        if response("http://127.0.0.1:8081"+path)[0]!=401:
+        if response("http://127.0.0.1:8082"+path)[0]!=401:
             raise RuntimeError("Staged API authorization failed: "+path)
     pid=bot_state()
-    print("STAFF ACCOUNT CUTOVER PRECHECK OK: 8082 -> 8081; bot",pid,flush=True)
+    print("STAFF ACCOUNT CUTOVER PRECHECK OK: 8081 -> 8082; bot",pid,flush=True)
     return pid
 
 def verify_public():
@@ -203,19 +199,19 @@ def main():
             return
         bg.cutover()
         try:
-            if bg.routing(bg.nginx_path().read_text())!=8081:
-                raise RuntimeError("Nginx did not switch to 8081")
+            if bg.routing(bg.nginx_path().read_text())!=8082:
+                raise RuntimeError("Nginx did not switch to 8082")
             verify_public()
             for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
                 if response("https://bot.arutyun.me"+path)[0]!=401:
                     raise RuntimeError("Public API authorization failed: "+path)
             if bot_state()!=pid:raise RuntimeError("Telegram bot/timer state changed")
-            print("STAFF ACCOUNT PUBLIC CUTOVER VERIFIED: 8081; rollback 8082 remains running",flush=True)
+            print("STAFF ACCOUNT PUBLIC CUTOVER VERIFIED: 8082; rollback 8081 remains running",flush=True)
             print("No bot restart, no .env changes, no lifecycle sender activation.",flush=True)
         except Exception:
-            print("STAFF ACCOUNT CUTOVER FAILED; ROLLING BACK TO 8082",file=sys.stderr,flush=True)
+            print("STAFF ACCOUNT CUTOVER FAILED; ROLLING BACK TO 8081",file=sys.stderr,flush=True)
             bg.cutover()
-            if bg.routing(bg.nginx_path().read_text())!=8082:
+            if bg.routing(bg.nginx_path().read_text())!=8081:
                 raise RuntimeError("CRITICAL: Nginx rollback failed")
             raise
 
