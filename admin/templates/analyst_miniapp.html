@@ -7,17 +7,26 @@
 header{padding:22px 18px;border-bottom:1px solid #263449;background:#111c2d}main{max-width:900px;margin:auto;padding:18px}
 h1{font-size:22px;margin:4px 0}h2{font-size:17px;margin:0 0 14px}.muted{color:#9aabc1;font-size:13px}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.toolbar button,.export{border:1px solid #34465f;background:#17263b;color:#eaf1fb;border-radius:9px;padding:10px 14px;font:inherit;text-decoration:none}
-.toolbar button.active{background:#4256a5;border-color:#657be0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.toolbar button.active{background:#4256a5;border-color:#657be0}.toolbar .export[aria-disabled="true"]{opacity:.65;pointer-events:none}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .card,section{background:#111c2d;border:1px solid #263449;border-radius:14px;padding:16px;margin-bottom:14px}
 .metric{font-size:27px;font-weight:700;margin-top:8px}.label{font-size:13px;color:#a9b8cc}
 .bar-row{display:grid;grid-template-columns:60px 1fr 30px;gap:8px;align-items:center;margin:11px 0;font-size:13px}
 .bar{height:9px;background:#25364e;border-radius:9px;overflow:hidden}.fill{height:100%;background:#7188ef}
+.export-progress{display:none;margin:-7px 0 18px;padding:12px 14px;background:#111c2d;border:1px solid #263449;border-radius:10px}
+.export-progress.visible{display:block}.export-progress-label{font-size:13px;color:#c8d5e7;margin-bottom:9px}
+.export-track{height:7px;background:#25364e;border-radius:10px;overflow:hidden}
+.export-fill{height:100%;width:35%;background:#8297ff;border-radius:10px;animation:export-moving 1.15s ease-in-out infinite}
+.export-progress.done .export-fill{width:100%;animation:none;background:#55c99a}
+.export-progress.failed .export-fill{width:100%;animation:none;background:#e07878}
+@keyframes export-moving{0%{transform:translateX(-115%)}100%{transform:translateX(300%)}}
+@media(prefers-reduced-motion:reduce){.export-fill{animation:none;width:65%}}
 table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;padding:10px 7px;border-bottom:1px solid #263449}
 .table-wrap{overflow:auto}.error{color:#ffb6a9;padding:12px 0}.empty{color:#9aabc1;padding:20px;text-align:center}
 </style></head><body>
 <header><div class="muted">КРУГ ДУШИ</div><h1>Панель аналитика</h1><div class="muted">Отчёты и показатели · только просмотр</div></header>
 <main><div id="error" class="error" role="alert"></div>
 <div class="toolbar" id="periods"><button data-period="7">7 дней</button><button data-period="30" class="active">30 дней</button><button data-period="90">90 дней</button><button data-period="180">180 дней</button><a id="export" class="export" href="#">Экспорт CSV</a></div>
+<div id="export-progress" class="export-progress" role="status" aria-live="polite" aria-hidden="true"><div id="export-progress-label" class="export-progress-label">Подготавливаем CSV…</div><div class="export-track" role="progressbar" aria-label="Загрузка CSV" aria-valuetext="Выполняется загрузка"><div class="export-fill"></div></div></div>
 <div class="grid" id="metrics"></div>
 <section><h2>Динамика регистраций</h2><div id="registrations"></div><div class="muted">Регистрации сгруппированы по календарным дням Тбилиси.</div></section>
 <section><h2>Воронка интереса и покупок</h2><div class="grid" id="funnel"></div><p class="muted">Накопительные счётчики за всё время, не сквозная воронка одного периода.</p></section>
@@ -29,6 +38,7 @@ const tg=window.Telegram?.WebApp,init=tg?.initData||"", $=id=>document.getElemen
 const fmt=v=>Number(v||0).toLocaleString("ru-RU");
 function node(tag,cls,txt){const n=document.createElement(tag);n.className=cls||"";if(txt!==undefined)n.textContent=String(txt);return n}
 function metric(label,value,sub){const c=node("div","card");c.append(node("div","label",label),node("div","metric",fmt(value)),node("div","muted",sub));return c}
+function exportState(state,label){const panel=$("export-progress"),link=$("export");panel.className="export-progress"+(state==="loading"?" visible":state==="done"?" visible done":state==="failed"?" visible failed":"");panel.setAttribute("aria-hidden",state==="idle"?"true":"false");$("export-progress-label").textContent=label;link.setAttribute("aria-disabled",state==="loading"?"true":"false");link.textContent=state==="loading"?"Скачивание…":"Экспорт CSV"}
 async function api(path){const r=await fetch("/tg-support/analyst/api/"+path,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||"Ошибка "+r.status);return d}
 async function load(){if(busy)return;busy=true;$("error").textContent="";try{
 const d=await api("report?period="+period),m=d.totals;
@@ -48,7 +58,7 @@ const body=$("payments");body.replaceChildren();for(const r of d.by_currency||[]
 const ret=d.retention||{};$("retention").replaceChildren(metric("Повторная оплата ≥30 дней",ret.repeat_30d, "из "+fmt(ret.eligible_30d)+" подходящих"),metric("≥90 дней",ret.repeat_90d,"из "+fmt(ret.eligible_90d)),metric("≥180 дней",ret.repeat_180d,"из "+fmt(ret.eligible_180d)));
 $("export").href="/tg-support/analyst/api/export?period="+period;
 }catch(e){$("error").textContent=e.message}finally{busy=false}}
-$("export").addEventListener("click",async e=>{e.preventDefault();const link=$("export");if(link.dataset.busy==="1")return;link.dataset.busy="1";link.textContent="Формирую CSV…";$("error").textContent="";try{const response=await fetch("/tg-support/analyst/api/export?period="+period,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});if(!response.ok){const problem=await response.json().catch(()=>({}));throw Error(problem.detail||"Ошибка экспорта "+response.status)}const blob=await response.blob();const disposition=response.headers.get("Content-Disposition")||"";const match=disposition.match(/filename="([^"]+)"/i);const filename=match?.[1]||("analyst-report-"+period+"d.csv");const url=URL.createObjectURL(blob);const download=node("a");download.href=url;download.download=filename;download.style.display="none";document.body.append(download);download.click();download.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}catch(error){$("error").textContent=error.message}finally{link.dataset.busy="0";link.textContent="Экспорт CSV"}});
+$("export").addEventListener("click",async e=>{e.preventDefault();const link=$("export");if(link.getAttribute("aria-disabled")==="true")return;exportState("loading","Подготавливаем отчёт и загружаем CSV…");$("error").textContent="";try{const response=await fetch("/tg-support/analyst/api/export?period="+period,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});if(!response.ok){const problem=await response.json().catch(()=>({}));throw Error(problem.detail||"Ошибка экспорта "+response.status)}const blob=await response.blob();const disposition=response.headers.get("Content-Disposition")||"";const match=disposition.match(/filename="([^"]+)"/i);const filename=match?.[1]||("analyst-report-"+period+"d.csv");const url=URL.createObjectURL(blob);const download=node("a");download.href=url;download.download=filename;download.style.display="none";document.body.append(download);download.click();download.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);exportState("done","Файл подготовлен. Скачивание запущено.");setTimeout(()=>exportState("idle",""),5000)}catch(error){exportState("failed","Не удалось скачать CSV. "+error.message);$("error").textContent=error.message;setTimeout(()=>exportState("idle",""),8000)}});
 $("periods").addEventListener("click",e=>{const b=e.target.closest("button[data-period]");if(!b)return;period=Number(b.dataset.period);document.querySelectorAll("[data-period]").forEach(x=>x.classList.toggle("active",x===b));load()});
 (async()=>{try{if(!tg||!init)throw Error("Откройте панель через Telegram-бота.");tg.ready();tg.expand();await api("me");await load()}catch(e){$("error").textContent=e.message}})();
 })();
