@@ -2,7 +2,7 @@
 """Guarded rollout of the Telegram-native analyst Mini App CSV fix.
 
 This version is pinned to the live layout verified on 2026-11-18:
-public 8081 = acc408f..., standby 8082 = 9e1837b...
+public 8082 = c963512..., standby 8081 = acc408f...
 It stages only the inactive admin slot and never touches the polling bot,
 .env, owner-alert timer, or lifecycle sender.
 """
@@ -19,8 +19,8 @@ from urllib.request import urlopen
 
 ROOT = Path("/opt/dato-telegram")
 RELEASES = Path("/opt/dato-admin-releases")
-CURRENT = "acc408febaee2a836f9297c98b9facdc86c37fb8"
-OLD_STANDBY = "9e1837bc74dce9f31b425e6a48bb4b58f4496abf"
+CURRENT = "c963512ce30993a468139200ab30526022275a5b"
+OLD_STANDBY = "acc408febaee2a836f9297c98b9facdc86c37fb8"
 BOT = "2d609a3267261e2370e01e02596916d1bdc044c6"
 EXPECTED = {
     "admin/templates/analyst_miniapp.html",
@@ -71,12 +71,12 @@ def topology(bg):
 
 def prereqs(bg):
     active, idle = topology(bg)
-    if active != 8081 or idle != 8082:
+    if active != 8082 or idle != 8081:
         raise RuntimeError(f"Unexpected live routing: public={active}, inactive={idle}")
     if bg.release_sha_for_port(active) != CURRENT:
-        raise RuntimeError("Public admin release differs from pinned acc408f release")
+        raise RuntimeError("Public admin release differs from pinned c963512 release")
     if bg.release_sha_for_port(idle) != OLD_STANDBY:
-        raise RuntimeError("Standby admin release differs from pinned 9e1837b release")
+        raise RuntimeError("Standby admin release differs from pinned acc408f release")
     for port in (active, idle):
         if cmd("systemctl", "is-active", bg.UNITS[port]) != "active" or not bg.health(port):
             raise RuntimeError("Admin slot unhealthy on " + str(port))
@@ -129,7 +129,7 @@ print('STAFF AND ANALYST TEMPLATES PARSE OK')
 """
     subprocess.run([str(python), "-c", probe], cwd=release, timeout=20, check=True)
     print("ANALYST CSV FIX PREPARED:", target, flush=True)
-    print("PUBLIC REMAINS 8081; BOT PID:", pid,
+    print("PUBLIC REMAINS 8082; BOT PID:", pid,
           "OWNER ALERTS ACTIVE; LIFECYCLE SENDER OFF", flush=True)
 
 
@@ -184,7 +184,7 @@ def stage(bg, target):
 def check(bg, target):
     active, idle = topology(bg)
     if active != 8081 or idle != 8082:
-        raise RuntimeError("Public routing changed before cutover")
+        raise RuntimeError("Public routing changed before cutover (expected active 8082)")
     if bg.release_sha_for_port(active) != CURRENT or bg.release_sha_for_port(idle) != target:
         raise RuntimeError("Active/standby release SHA mismatch")
     if not bg.health(active) or not bg.health(idle):
