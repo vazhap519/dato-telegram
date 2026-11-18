@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script>
+<title>Панель аналитика — Круг Души</title>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+<header class="border-b border-slate-800 bg-slate-900/90">
+  <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-5">
+    <div><div class="text-xs uppercase tracking-[.22em] text-slate-400">Круг Души</div><h1 class="mt-1 text-2xl font-semibold">Панель аналитика</h1><p class="mt-1 text-sm text-slate-400">Отчёты и показатели · режим просмотра</p></div>
+    <a href="/login" class="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Выйти</a>
+  </div>
+</header>
+<main class="mx-auto max-w-7xl space-y-6 px-5 py-7">
+  <section class="flex flex-wrap items-center justify-between gap-3">
+    <div><h2 class="font-medium">Обзор за выбранный период</h2><p class="mt-1 text-sm text-slate-400">Период влияет на регистрации и оплаты. Исторические показатели отмечены отдельно.</p></div>
+    <div class="flex flex-wrap gap-2">
+      {% for days,label in [(7,'7 дней'),(30,'30 дней'),(90,'90 дней'),(180,'180 дней')] %}
+      <a href="/analyst?period={{ days }}" class="rounded-lg px-4 py-2 text-sm font-medium {% if period==days %}bg-indigo-500 text-white{% else %}border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800{% endif %}">{{ label }}</a>
+      {% endfor %}
+      <a href="/analyst/export?period={{ period }}" class="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-950">Экспорт CSV</a>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    {% for label,value,sub in [
+      ('Всего пользователей',data.totals.total_users,'За всё время'),
+      ('Новые регистрации',data.totals.registered_period,'За выбранный период'),
+      ('Покупатели',data.totals.buyers,'Есть подтверждённая оплата'),
+      ('Оплаты',data.totals.payments_period,'Подтверждённые за период'),
+      ('Суммарные оплаты',data.totals.paid_events,'Подтверждённые операции за всё время'),
+      ('Повторные покупатели',data.totals.repeat_buyers,'Две и более подтверждённые оплаты'),
+      ('Возвраты / оспаривания',data.totals.reversals,'За всё время')
+    ] %}
+    <article class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <p class="text-sm text-slate-400">{{ label }}</p><p class="mt-3 text-3xl font-semibold tracking-tight">{{ value }}</p><p class="mt-2 text-xs text-slate-500">{{ sub }}</p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="grid gap-5 lg:grid-cols-2">
+    <article class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <div class="flex items-center justify-between gap-3"><h2 class="text-lg font-semibold">Динамика регистраций</h2><span class="text-xs text-slate-500">{{ period }} дней</span></div>
+      {% set max_reg = ([row.count for row in data.registrations_by_day]|max if data.registrations_by_day else 1) %}
+      <div class="mt-5 space-y-3">
+        {% for row in data.registrations_by_day %}
+        <div class="grid grid-cols-[92px_1fr_36px] items-center gap-3 text-sm">
+          <span class="text-slate-400">{{ row.day.strftime('%d.%m') }}</span>
+          <div class="h-3 overflow-hidden rounded-full bg-slate-800"><div class="h-full rounded-full bg-indigo-500" style="width:{{ (row.count / max_reg * 100)|round(1) }}%"></div></div>
+          <span class="text-right tabular-nums text-slate-300">{{ row.count }}</span>
+        </div>
+        {% else %}<p class="py-8 text-center text-sm text-slate-500">За этот период регистраций нет.</p>{% endfor %}
+      </div>
+      <p class="mt-4 text-xs text-slate-500">Регистрации сгруппированы по календарным дням Тбилиси.</p>
+    </article>
+
+    <article class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+      <h2 class="text-lg font-semibold">Воронка интереса и покупок</h2>
+      <div class="mt-5 grid grid-cols-2 gap-3">
+        {% for label,value in [('Запустили бота',data.funnel.started),('Приняли оферту',data.funnel.accepted),('Нажали оформление',data.funnel.clicked),('Подтверждённые покупатели',data.funnel.buyers)] %}
+        <div class="rounded-xl bg-slate-800/80 p-4"><p class="text-xs leading-5 text-slate-400">{{ label }}</p><p class="mt-2 text-2xl font-semibold">{{ value }}</p></div>
+        {% endfor %}
+      </div>
+      <p class="mt-4 text-xs leading-5 text-amber-200/80">Это накопительные счётчики за всё время, а не сквозная воронка одного периода. Сайт и рекламные источники пока не связаны с этой аналитикой.</p>
+    </article>
+  </section>
+
+  <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-lg font-semibold">Оплаты по системам и валютам</h2><span class="text-xs text-slate-500">Последние 12 месяцев</span></div>
+    <div class="mt-4 overflow-x-auto">
+      <table class="w-full min-w-[620px] text-left text-sm">
+        <thead class="text-xs uppercase tracking-wide text-slate-500"><tr><th class="py-3 pr-3">Месяц</th><th class="py-3 pr-3">Платёжная система</th><th class="py-3 pr-3">Валюта</th><th class="py-3 pr-3">Оплаты</th><th class="py-3 pr-3">Сумма</th><th class="py-3">Возвраты</th></tr></thead>
+        <tbody>{% for row in data.by_currency %}
+          <tr class="border-t border-slate-800"><td class="py-3 pr-3">{{ row.period.strftime('%m.%Y') }}</td><td class="py-3 pr-3">{{ row.provider }}</td><td class="py-3 pr-3">{{ row.currency or 'Не указана' }}</td><td class="py-3 pr-3">{{ row.payments }}</td><td class="py-3 pr-3 font-medium">{{ row.gross_amount }}</td><td class="py-3">{{ row.reversals }}</td></tr>
+        {% else %}<tr><td colspan="6" class="py-8 text-center text-slate-500">Подтверждённых операций пока нет.</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    <p class="mt-3 text-xs leading-5 text-slate-500">Суммы не объединяются между валютами. Это сумма успешных операций до вычета комиссий; чистая выручка и бухгалтерский баланс здесь не рассчитываются.</p>
+  </section>
+
+  <section class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+    <h2 class="text-lg font-semibold">Повторные оплаты и удержание</h2>
+    <div class="mt-4 grid gap-3 md:grid-cols-3">
+      {% for days,repeat,eligible in [(30,data.retention.repeat_30d,data.retention.eligible_30d),(90,data.retention.repeat_90d,data.retention.eligible_90d),(180,data.retention.repeat_180d,data.retention.eligible_180d)] %}
+      <div class="rounded-xl bg-slate-800/80 p-4"><p class="text-sm text-slate-400">Повторная оплата через ≥{{ days }} дней</p><p class="mt-2 text-2xl font-semibold">{{ repeat }} <span class="text-base font-normal text-slate-500">/ {{ eligible }}</span></p><p class="mt-2 text-xs text-slate-500">Покупатели, у которых с первой оплаты прошло не менее {{ days }} дней</p></div>
+      {% endfor %}
+    </div>
+    <p class="mt-4 text-xs leading-5 text-slate-500">Показатель отражает повторную подтверждённую оплату, а не факт непрерывного участия в сообществе. Платежи, отсутствующие в реестре подтверждений, не учитываются.</p>
+  </section>
+  <footer class="border-t border-slate-800 pt-4 text-xs text-slate-600">Доступ аналитика: только чтение. Персональные данные участников и инструменты управления системой недоступны.</footer>
+</main>
+</body></html>
