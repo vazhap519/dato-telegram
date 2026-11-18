@@ -117,19 +117,19 @@ def stage(bg,target):
     unit=Path("/etc/systemd/system")/bg.UNITS[8082]
     previous=unit.read_text()
     stopped=False
-    print("STAGING STAFF ADMIN ON INACTIVE 8081",flush=True)
+    print("STAGING STAFF ADMIN ON INACTIVE 8082",flush=True)
     try:
         bg.command("systemctl","stop",bg.UNITS[8082])
         stopped=True
         if bg.health(8082):
-            raise RuntimeError("Inactive port 8081 still responds after stop")
+            raise RuntimeError("Inactive port 8082 still responds after stop")
         unit.write_text(bg.unit_content(release,8082))
         unit.chmod(0o644)
         bg.command("systemctl","daemon-reload")
         bg.command("systemctl","start",bg.UNITS[8082])
         for _ in range(75):
             if bg.health(8082):break
-            if bg.command("systemctl","is-active",bg.UNITS[8081],check=False)!="active":
+            if bg.command("systemctl","is-active",bg.UNITS[8082],check=False)!="active":
                 raise RuntimeError("Staged admin process exited")
             time.sleep(1)
         else:raise RuntimeError("Staged admin startup timeout")
@@ -143,7 +143,7 @@ def stage(bg,target):
             raise RuntimeError("Public admin, bot or timer state changed during stage")
     except BaseException:
         if stopped:
-            print("RESTORING PREVIOUS INACTIVE 8081",flush=True)
+            print("RESTORING PREVIOUS INACTIVE 8082",flush=True)
             bg.command("systemctl","stop",bg.UNITS[8082],check=False)
             unit.write_text(previous)
             bg.command("systemctl","daemon-reload",check=False)
