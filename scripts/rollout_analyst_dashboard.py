@@ -23,6 +23,8 @@ OLD_STANDBY="5d022f9ff176ba55dded189f2a2f1dfb11ce95df"
 BOT="2d609a3267261e2370e01e02596916d1bdc044c6"
 EXPECTED={
  "admin/main.py",
+ "admin/analyst_miniapp.py",
+ "admin/templates/analyst_miniapp.html",
  "db/admin_access.py",
  "db/admin_analytics.py",
  "admin/templates/_sidebar.html",
@@ -144,7 +146,7 @@ def stage(bg,target):
         status,html=response("http://127.0.0.1:8082/tg-support/automations")
         if status!=200 or MARK not in html:
             raise RuntimeError("Staged admin lost existing lifecycle interface")
-        for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/analyst/export"):
+        for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/tg-support/analyst/api/me"):
             if response("http://127.0.0.1:8082"+path)[0]!=401:
                 raise RuntimeError("Staged Telegram API auth failure: "+path)
         if bg.routing(bg.nginx_path().read_text())!=8081 or not bg.health(8081) or bot_state()!=pid:
@@ -178,8 +180,11 @@ def check(bg,target):
         for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
             if response("http://127.0.0.1:"+str(port)+path)[0]!=401:
                 raise RuntimeError("Admin API authorization failed on "+str(port)+": "+path)
-    if response("http://127.0.0.1:8082/analyst/export")[0]!=401:
-        raise RuntimeError("Analyst export authorization failed on staged port 8082")
+    if response("http://127.0.0.1:8082/tg-support/analyst/api/me")[0]!=401:
+        raise RuntimeError("Analyst Telegram API authorization failed on staged port 8082")
+    page_status,page_html=response("http://127.0.0.1:8082/tg-support/analyst")
+    if page_status!=200 or "Панель аналитика" not in page_html:
+        raise RuntimeError("Analyst Mini App page missing on staged port 8082")
     pid=bot_state()
     print("ANALYST DASHBOARD CUTOVER PRECHECK OK: 8081 -> 8082; bot",pid,flush=True)
     return pid
@@ -216,7 +221,7 @@ def main():
             if bg.routing(bg.nginx_path().read_text())!=8082:
                 raise RuntimeError("Nginx did not switch to 8082")
             verify_public()
-            for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/analyst/export"):
+            for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/tg-support/analyst/api/me"):
                 if response("https://bot.arutyun.me"+path)[0]!=401:
                     raise RuntimeError("Public API authorization failed: "+path)
             if bot_state()!=pid:raise RuntimeError("Telegram bot/timer state changed")
