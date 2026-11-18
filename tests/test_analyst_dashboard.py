@@ -36,12 +36,14 @@ class AnalystDashboardTests(unittest.TestCase):
 
     def test_dedicated_panel_and_aggregate_export_exist(self):
         main = read("admin/main.py")
-        self.assertIn('@app.get("/analyst")', main)
-        self.assertIn('@app.get("/analyst/export")', main)
-        export = fn("admin/main.py", "analyst_export")
-        self.assertIn("analytics_report(period)", export)
-        self.assertNotIn("export_subscribers()", export)
-        self.assertNotIn("export_verified_payments()", export)
+        self.assertIn("analyst_miniapp_router", main)
+        miniapp = read("admin/analyst_miniapp.py")
+        self.assertIn('prefix="/tg-support/analyst"', miniapp)
+        self.assertIn("require_analyst", miniapp)
+        self.assertIn("a.role='analyst'", miniapp)
+        self.assertIn("a.enabled=TRUE", miniapp)
+        self.assertIn('"/api/export"', miniapp)
+        self.assertIn('"/api/report"', miniapp)
 
     def test_analyst_template_is_standalone_and_read_only(self):
         template = read("admin/templates/analyst_dashboard.html")
@@ -58,7 +60,7 @@ class AnalystDashboardTests(unittest.TestCase):
         menu = fn("admin/main.py", "update_staff_telegram_menu")
         self.assertIn('role == "analyst"', menu)
         self.assertIn("Панель аналитика", menu)
-        self.assertIn("https://bot.arutyun.me/analyst", menu)
+        self.assertIn("https://bot.arutyun.me/tg-support/analyst", menu)
         self.assertIn("MenuButtonDefault()", menu)
 
         change = fn("db/admin_access.py", "staff_change")
@@ -82,3 +84,4 @@ class AnalystDashboardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
