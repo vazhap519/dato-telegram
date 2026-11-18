@@ -75,7 +75,7 @@ async def update_staff_telegram_menu(telegram_id, enabled, role="support"):
     if enabled and role == "analyst":
         menu_button = MenuButtonWebApp(
             text="Панель аналитика",
-            web_app=WebAppInfo(url="https://bot.arutyun.me/analyst")
+            web_app=WebAppInfo(url="https://bot.arutyun.me/tg-support/analyst")
         )
     elif enabled and role in ("admin", "support", "owner"):
         menu_button = MenuButtonWebApp(
