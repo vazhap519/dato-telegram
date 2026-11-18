@@ -55,7 +55,7 @@ def allowed(role,path,method):
     if role=="support":
         return path=="/support" or path.startswith("/support/")
     if role=="analyst":
-        return method=="GET" and path in ("/dashboard","/analytics","/events","/search")
+        return method=="GET" and path in ("/analyst","/analyst/export")
     return False
 
 async def read_staff(username):
@@ -138,8 +138,13 @@ async def staff_change(target,role,enabled,actor,new_username=None,password_hash
                             ("; password_reset=true" if password_hash else "")})
             return {
                 "telegram_id": existing["telegram_id"],
-                "enabled": bool(enabled and existing["support_access"]
-                                and role in ("admin", "support")),
+                "enabled": bool(
+                    enabled and (
+                        role == "analyst"
+                        or (existing["support_access"] and role in ("admin", "support"))
+                    )
+                ),
+                "role": role,
             }
 
 
@@ -281,6 +286,11 @@ async def support_permissions_change(target, actor, *, access=False, can_reply=F
             )
             return {
                 "telegram_id": effective_telegram_id,
-                "enabled": bool(access and account["enabled"]),
+                "enabled": bool(
+                    account["enabled"] and (
+                        account["role"] == "analyst" or access
+                    )
+                ),
+                "role": account["role"],
                 "clear_telegram_ids": clear_telegram_ids,
             }
