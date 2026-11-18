@@ -7,14 +7,14 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import text
 
 from db.database import SessionLocal
 from db.admin_analytics import report as analytics_report
 
-router=APIRouter(prefix="/analyst",tags=["analyst-miniapp"])
+router=APIRouter(prefix="/tg-support/analyst",tags=["analyst-miniapp"])
 
 async def require_analyst(x_telegram_init_data: str = Header(default="")):
     if not x_telegram_init_data or len(x_telegram_init_data)>8192:
@@ -61,7 +61,7 @@ async def analyst_page():
     })
 
 @router.get("/api/me")
-async def analyst_me(staff=__import__("fastapi").Depends(require_analyst)):
+async def analyst_me(staff=Depends(require_analyst)):
     return {"username":staff["username"],"role":staff["role"]}
 
 @router.get("/api/report")
