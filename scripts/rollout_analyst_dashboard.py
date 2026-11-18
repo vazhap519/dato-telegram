@@ -171,10 +171,15 @@ def check(bg,target):
         status,html=response(f"http://127.0.0.1:{port}/tg-support/automations")
         if status!=200 or MARK not in html:
             raise RuntimeError("Existing lifecycle UI missing on port "+str(port))
+    # The currently serving release predates /analyst/export, so a 404
+    # there is expected on 8081. Verify the analyst route only on the staged
+    # candidate; legacy support API authorization is checked on both slots.
     for port in (8081,8082):
-        for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/analyst/export"):
+        for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
             if response("http://127.0.0.1:"+str(port)+path)[0]!=401:
                 raise RuntimeError("Admin API authorization failed on "+str(port)+": "+path)
+    if response("http://127.0.0.1:8082/analyst/export")[0]!=401:
+        raise RuntimeError("Analyst export authorization failed on staged port 8082")
     pid=bot_state()
     print("ANALYST DASHBOARD CUTOVER PRECHECK OK: 8081 -> 8082; bot",pid,flush=True)
     return pid
