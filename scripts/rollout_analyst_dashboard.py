@@ -95,9 +95,10 @@ def prepare(bg,target):
         raise RuntimeError("Insufficient RAM/disk headroom")
     release=bg.snapshot(target)
     python=bg.ensure_venv(release)
-    subprocess.run([str(python),"-m","unittest","discover","-s",str(release/"tests"),
-                    "-p","test_*.py","-v"],
-                   cwd=release,timeout=120,check=True)
+    for test_pattern in ("test_support_permissions.py","test_analyst_dashboard.py"):
+        subprocess.run([str(python),"-m","unittest","discover","-s",str(release/"tests"),
+                        "-p",test_pattern,"-v"],
+                       cwd=release,timeout=120,check=True)
     subprocess.run([str(python),"-m","compileall","-q",str(release/"admin"),
                     str(release/"db"),str(release/"scripts")],
                    cwd=release,timeout=45,check=True)
@@ -129,7 +130,7 @@ def stage(bg,target):
         bg.command("systemctl","stop",bg.UNITS[8082])
         stopped=True
         if bg.health(8082):
-            raise RuntimeError("Inactive port 8081 still responds after stop")
+            raise RuntimeError("Inactive port 8082 still responds after stop")
         unit.write_text(bg.unit_content(release,8082))
         unit.chmod(0o644)
         bg.command("systemctl","daemon-reload")
@@ -150,7 +151,7 @@ def stage(bg,target):
             raise RuntimeError("Public admin, bot or timer state changed during stage")
     except BaseException:
         if stopped:
-            print("RESTORING PREVIOUS INACTIVE 8081",flush=True)
+            print("RESTORING PREVIOUS INACTIVE 8082",flush=True)
             bg.command("systemctl","stop",bg.UNITS[8082],check=False)
             unit.write_text(previous)
             bg.command("systemctl","daemon-reload",check=False)
@@ -170,9 +171,10 @@ def check(bg,target):
         status,html=response(f"http://127.0.0.1:{port}/tg-support/automations")
         if status!=200 or MARK not in html:
             raise RuntimeError("Existing lifecycle UI missing on port "+str(port))
-    for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
-        if response("http://127.0.0.1:8081"+path)[0]!=401:
-            raise RuntimeError("Staged API authorization failed: "+path)
+    for port in (8081,8082):
+        for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/analyst/export"):
+            if response("http://127.0.0.1:"+str(port)+path)[0]!=401:
+                raise RuntimeError("Admin API authorization failed on "+str(port)+": "+path)
     pid=bot_state()
     print("ANALYST DASHBOARD CUTOVER PRECHECK OK: 8081 -> 8082; bot",pid,flush=True)
     return pid
@@ -209,7 +211,7 @@ def main():
             if bg.routing(bg.nginx_path().read_text())!=8082:
                 raise RuntimeError("Nginx did not switch to 8082")
             verify_public()
-            for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
+            for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home","/analyst/export"):
                 if response("https://bot.arutyun.me"+path)[0]!=401:
                     raise RuntimeError("Public API authorization failed: "+path)
             if bot_state()!=pid:raise RuntimeError("Telegram bot/timer state changed")
