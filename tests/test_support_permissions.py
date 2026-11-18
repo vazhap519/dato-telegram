@@ -113,6 +113,27 @@ class SupportPermissionsTests(unittest.TestCase):
         self.assertIn('user["role"]!="owner"', function_text("admin/main.py", "delete_staff_account"))
         self.assertIn("verify_csrf", function_text("admin/main.py", "delete_staff_account"))
 
+
+    def test_revoked_staff_menu_button_is_cleared(self):
+        db = source("db/admin_access.py")
+        main = source("admin/main.py")
+        change = function_text("db/admin_access.py", "staff_change")
+        delete = function_text("db/admin_access.py", "staff_delete")
+        permissions = function_text("db/admin_access.py", "support_permissions_change")
+        clear = function_text("admin/main.py", "clear_staff_telegram_menu_button")
+        update_route = function_text("admin/main.py", "change_staff_account")
+        delete_route = function_text("admin/main.py", "delete_staff_account")
+        support_route = function_text("admin/main.py", "change_staff_support_permissions")
+        self.assertIn("l.telegram_id", change)
+        self.assertIn('return existing["telegram_id"] if not enabled else None', change)
+        self.assertIn('return existing["telegram_id"]', delete)
+        self.assertIn('return account["telegram_id"] if not access else None', permissions)
+        self.assertIn("MenuButtonDefault()", clear)
+        self.assertIn("set_chat_menu_button", clear)
+        self.assertIn("clear_staff_telegram_menu(revoked_telegram_id)", update_route)
+        self.assertIn("clear_staff_telegram_menu(revoked_telegram_id)", delete_route)
+        self.assertIn("clear_staff_telegram_menu(revoked_telegram_id)", support_route)
+
     def test_owner_controls_are_present(self):
         markup = source("admin/templates/admin_staff.html")
         self.assertIn('action="/staff/support"', markup)
