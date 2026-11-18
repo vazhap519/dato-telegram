@@ -698,57 +698,8 @@ async def change_staff_support_permissions(
     return RedirectResponse("/staff?support_updated=1",status_code=303)
 
 
-@app.get("/analyst")
-async def analyst_dashboard_page(request:Request,period:int=30,user=Depends(get_current_user)):
-    if period not in (7,30,90,180):
-        period=30
-    data=await analytics_report(period)
-    return templates.TemplateResponse(
-        request=request,name="analyst_dashboard.html",
-        context={"data":data,"period":period,
-                  "max_registration_count":max((int(row["count"]) for row in data["registrations_by_day"]),default=1)},
-        headers={"Cache-Control":"no-store"}
-    )
-
-
-@app.get("/analyst/export")
-async def analyst_export(period:int=30,user=Depends(get_current_user)):
-    if period not in (7,30,90,180):
-        period=30
-    import csv,io
-    from datetime import datetime
-    from fastapi.responses import StreamingResponse
-    data=await analytics_report(period)
-    output=io.StringIO()
-    writer=csv.writer(output)
-    writer.writerow(["Раздел","Показатель","Значение","Период"])
-    labels={
-        "total_users":"Всего пользователей",
-        "buyers":"Подтверждённые покупатели",
-        "paid_events":"Подтверждённые оплаты за всё время",
-        "repeat_buyers":"Повторные покупатели",
-        "reversals":"Возвраты и оспаривания за всё время",
-        "registered_period":f"Регистрации за {period} дней",
-        "payments_period":f"Подтверждённые оплаты за {period} дней",
-    }
-    for key,label in labels.items():
-        writer.writerow(["Сводка",label,data["totals"].get(key,0),f"{period} дней" if key.endswith("_period") else "Всё время"])
-    writer.writerow([])
-    writer.writerow(["Регистрации по дням","Дата","Количество",f"Период {period} дней"])
-    for row in data["registrations_by_day"]:
-        writer.writerow(["Регистрации",row["day"],row["count"],f"{period} дней"])
-    writer.writerow([])
-    writer.writerow(["Оплаты","Провайдер","Валюта","Количество","Сумма","Возвраты"])
-    for row in data["by_currency"]:
-        writer.writerow(["Оплаты",row["provider"],row["currency"] or "Не указана",
-                         row["payments"],row["gross_amount"],row["reversals"]])
-    filename=f"analyst-report-{period}d-{datetime.utcnow():%Y%m%d}.csv"
-    return StreamingResponse(
-        iter(["\ufeff"+output.getvalue()]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition":f'attachment; filename="{filename}"',
-                 "Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}
-    )
+from .analyst_miniapp import router as analyst_miniapp_router
+app.include_router(analyst_miniapp_router)
 
 
 @app.get("/analytics")
