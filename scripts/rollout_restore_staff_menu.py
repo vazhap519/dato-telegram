@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Guarded blue/green rollout for web-admin staff account management.
+"""Guarded blue/green rollout for Telegram staff menu restoration.
 
 Usage: python3 rollout_restore_staff_menu.py prepare|stage|check|cutover --target <full-sha>
-Only the web-admin slot and Nginx routing are changed. The Telegram polling bot,
+Only the inactive web-admin slot and Nginx routing are changed. The Telegram polling bot,
 owner-alert timer and lifecycle sender remain untouched.
 """
 import argparse
@@ -139,7 +139,7 @@ def stage(bg,target):
         for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
             if response("http://127.0.0.1:8081"+path)[0]!=401:
                 raise RuntimeError("Staged Telegram API auth failure: "+path)
-        if bg.routing(bg.nginx_path().read_text())!=8081 or not bg.health(8081) or bot_state()!=pid:
+        if bg.routing(bg.nginx_path().read_text())!=8082 or not bg.health(8082) or bot_state()!=pid:
             raise RuntimeError("Public admin, bot or timer state changed during stage")
     except BaseException:
         if stopped:
