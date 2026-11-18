@@ -2,7 +2,8 @@
 from sqlalchemy import text
 from db.database import SessionLocal
 
-async def report():
+async def report(period_days=30):
+    period_days = int(period_days) if int(period_days) in (7, 30, 90, 180) else 30
     async with SessionLocal() as s:
         totals=(await s.execute(text("""
           SELECT
@@ -13,8 +14,12 @@ async def report():
                (SELECT telegram_id FROM verified_payment_receipts WHERE payment_status='paid'
                 GROUP BY telegram_id HAVING COUNT(*)>=2) b) repeat_buyers,
             (SELECT COUNT(*) FROM verified_payment_receipts WHERE payment_status IN ('refunded','chargeback')) reversals,
-            (SELECT COUNT(*) FROM users WHERE created_at>NOW()-INTERVAL '30 days') registered_30d
-        """))).mappings().one()
+            (SELECT COUNT(*) FROM users WHERE created_at>NOW()-(:period_days * INTERVAL '1 day')) registered_30d,
+            (SELECT COUNT(*) FROM users WHERE created_at>NOW()-(:period_days * INTERVAL '1 day')) registered_period,
+            (SELECT COUNT(*) FROM verified_payment_receipts
+              WHERE payment_status='paid'
+                AND verified_at>NOW()-(:period_days * INTERVAL '1 day')) payments_period
+        """),{"period_days":period_days})).mappings().one()
         by_currency=(await s.execute(text("""
           SELECT currency,provider,date_trunc('month',verified_at AT TIME ZONE 'Asia/Tbilisi') period,
             COUNT(*) FILTER(WHERE payment_status='paid') payments,
@@ -33,6 +38,13 @@ async def report():
           (SELECT COUNT(DISTINCT telegram_id) FROM verified_payment_receipts
             WHERE payment_status='paid') buyers
         """))).mappings().one()
+        registrations_by_day=(await s.execute(text("""
+          SELECT (created_at AT TIME ZONE 'Asia/Tbilisi')::date AS day,COUNT(*) AS count
+          FROM users
+          WHERE created_at>NOW()-(:period_days * INTERVAL '1 day')
+          GROUP BY (created_at AT TIME ZONE 'Asia/Tbilisi')::date
+          ORDER BY day
+        """),{"period_days":period_days})).mappings().all()
         retention=(await s.execute(text("""
           WITH per_buyer AS (
             SELECT telegram_id,MIN(verified_at) first_paid,
@@ -52,7 +64,9 @@ async def report():
           FROM per_buyer
         """))).mappings().one()
         return {"totals":dict(totals),"by_currency":[dict(x) for x in by_currency],
-                "funnel":dict(funnels),"retention":dict(retention)}
+                "funnel":dict(funnels),"retention":dict(retention),
+                "registrations_by_day":[dict(x) for x in registrations_by_day],
+                "period_days":period_days}
 
 async def export_subscribers():
     async with SessionLocal() as s:
