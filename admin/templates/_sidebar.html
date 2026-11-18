@@ -22,7 +22,7 @@
     {% if role=='support' %}
       {% set navlinks=[('/support','☏','Поддержка')] %}
     {% elif role=='analyst' %}
-      {% set navlinks=[('/dashboard','⌂','Главная'),('/events','▤','Журнал событий'),('/analytics','▥','Аналитика'),('/search','⌕','Поиск')] %}
+      {% set navlinks=[('/analyst','▥','Панель аналитика')] %}
     {% else %}
       {% set navlinks=[
       ('/dashboard','⌂','Главная'),
