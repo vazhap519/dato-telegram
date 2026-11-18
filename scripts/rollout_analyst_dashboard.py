@@ -113,6 +113,7 @@ env=Environment(loader=FileSystemLoader('admin/templates'))
 env.filters['tbilisi_time'] = lambda value, pattern='%d.%m.%Y %H:%M': value
 env.get_template('admin_staff.html')
 env.get_template('analyst_dashboard.html')
+env.get_template('analyst_miniapp.html')
 print('STAFF AND ANALYST TEMPLATES PARSE OK')
 """
     subprocess.run([str(python),"-c",probe],cwd=release,timeout=20,check=True)
@@ -173,9 +174,9 @@ def check(bg,target):
         status,html=response(f"http://127.0.0.1:{port}/tg-support/automations")
         if status!=200 or MARK not in html:
             raise RuntimeError("Existing lifecycle UI missing on port "+str(port))
-    # The currently serving release predates /analyst/export, so a 404
-    # there is expected on 8081. Verify the analyst route only on the staged
-    # candidate; legacy support API authorization is checked on both slots.
+    # The analyst Mini App is mounted under the existing /tg-support/ Nginx
+    # exception; its page is public shell only and every data route verifies
+    # Telegram initData and the currently enabled analyst role.
     for port in (8081,8082):
         for path in ("/tg-support/api/automations/lifecycle","/tg-support/api/home"):
             if response("http://127.0.0.1:"+str(port)+path)[0]!=401:
