@@ -125,7 +125,8 @@ class SupportPermissionsTests(unittest.TestCase):
         self.assertIn("l.telegram_id", change)
         self.assertIn('"enabled": bool(enabled and existing["support_access"]', change)
         self.assertIn('return existing["telegram_id"]', delete)
-        self.assertIn('"enabled": bool(access and account["enabled"])', permissions)
+        self.assertIn('"enabled": bool(', permissions)
+        self.assertIn('account["role"] == "analyst" or access', permissions)
         self.assertIn("MenuButtonDefault()", menu)
         self.assertIn("MenuButtonWebApp(", menu)
         self.assertIn("set_chat_menu_button", menu)
@@ -142,7 +143,8 @@ class SupportPermissionsTests(unittest.TestCase):
         self.assertIn('role in ("admin", "support")', change)
         self.assertIn('"enabled": bool(access and account["enabled"])', permissions)
         self.assertIn("MenuButtonWebApp(", menu)
-        self.assertIn("if enabled else MenuButtonDefault()", menu)
+        self.assertIn("MenuButtonDefault()", menu)
+        self.assertIn('role == "analyst"', menu)
 
     def test_owner_controls_are_present(self):
         markup = source("admin/templates/admin_staff.html")
