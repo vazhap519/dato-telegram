@@ -133,7 +133,7 @@ def stage(bg,target):
         bg.command("systemctl","daemon-reload")
         bg.command("systemctl","start",bg.UNITS[8081])
         for _ in range(75):
-            if bg.health(8082):break
+            if bg.health(8081):break
             if bg.command("systemctl","is-active",bg.UNITS[8081],check=False)!="active":
                 raise RuntimeError("Staged analyst admin process exited")
             time.sleep(1)
@@ -223,7 +223,7 @@ def main():
             print("ANALYST MINI APP PUBLIC CUTOVER VERIFIED: 8081; rollback 8082 remains running",flush=True)
             print("No bot restart, no .env changes, no lifecycle sender activation.",flush=True)
         except Exception:
-            print("ANALYST DASHBOARD CUTOVER FAILED; ROLLING BACK TO 8082",file=sys.stderr,flush=True)
+            print("ANALYST MINI APP CUTOVER FAILED; ROLLING BACK TO 8082",file=sys.stderr,flush=True)
             bg.cutover()
             if bg.routing(bg.nginx_path().read_text())!=8082:
                 raise RuntimeError("CRITICAL: Nginx rollback failed")
@@ -232,6 +232,6 @@ def main():
 if __name__=="__main__":
     try:main()
     except Exception as exc:
-        print("ANALYST DASHBOARD ROLLOUT STOPPED:",type(exc).__name__,
+        print("ANALYST MINI APP ROLLOUT STOPPED:",type(exc).__name__,
               str(exc).splitlines()[0][:350],file=sys.stderr)
         sys.exit(1)
