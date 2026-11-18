@@ -63,6 +63,26 @@ def make_csrf_token(session_token: str) -> str:
 
 
 app = FastAPI()
+
+
+async def clear_staff_telegram_menu(telegram_id):
+    """Remove the persistent Telegram chat-menu Web App button after revocation."""
+    if not telegram_id:
+        return
+    import logging
+    from aiogram import Bot
+    from aiogram.types import MenuButtonDefault
+    try:
+        async with Bot(token=os.environ["BOT_TOKEN"]) as telegram:
+            await telegram.set_chat_menu_button(
+                chat_id=int(telegram_id), menu_button=MenuButtonDefault()
+            )
+    except Exception as exc:
+        logging.getLogger(__name__).error(
+            "Could not clear revoked staff menu button telegram_id=%s error=%s",
+            telegram_id, type(exc).__name__
+        )
+
 from .support_miniapp import router as support_miniapp_router
 app.include_router(support_miniapp_router)
 from .members_miniapp import router as members_miniapp_router
@@ -605,10 +625,13 @@ async def change_staff_account(
     if password and (len(password)<12 or len(password)>200):
         raise HTTPException(400,detail="Новый пароль должен содержать от 12 до 200 символов")
     try:
-        await staff_change(target,role,enabled,user["user"],username,
-                           hash_password(password) if password else None)
+        revoked_telegram_id = await staff_change(
+            target,role,enabled,user["user"],username,
+            hash_password(password) if password else None
+        )
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
+    await clear_staff_telegram_menu(revoked_telegram_id)
     return RedirectResponse("/staff?updated=1",303)
 
 
@@ -621,9 +644,10 @@ async def delete_staff_account(
     if confirm!="DELETE_STAFF":
         raise HTTPException(400,detail="Подтвердите удаление сотрудника")
     try:
-        await staff_delete(target,user["user"])
+        revoked_telegram_id = await staff_delete(target,user["user"])
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
+    await clear_staff_telegram_menu(revoked_telegram_id)
     return RedirectResponse("/staff?deleted=1",303)
 
 
@@ -641,7 +665,7 @@ async def change_staff_support_permissions(
     if confirm!="CHANGE_SUPPORT":
         raise HTTPException(400,detail="Подтвердите права техподдержки")
     try:
-        await support_permissions_change(
+        revoked_telegram_id = await support_permissions_change(
             target,user["user"],access=support_access,
             can_reply=support_can_reply,
             can_change_status=support_can_change_status,
@@ -652,6 +676,7 @@ async def change_staff_support_permissions(
         )
     except ValueError as exc:
         raise HTTPException(400,detail=str(exc))
+    await clear_staff_telegram_menu(revoked_telegram_id)
     return RedirectResponse("/staff?support_updated=1",status_code=303)
 
 
