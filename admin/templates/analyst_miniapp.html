@@ -29,7 +29,7 @@ const tg=window.Telegram?.WebApp,init=tg?.initData||"", $=id=>document.getElemen
 const fmt=v=>Number(v||0).toLocaleString("ru-RU");
 function node(tag,cls,txt){const n=document.createElement(tag);n.className=cls||"";if(txt!==undefined)n.textContent=String(txt);return n}
 function metric(label,value,sub){const c=node("div","card");c.append(node("div","label",label),node("div","metric",fmt(value)),node("div","muted",sub));return c}
-async function api(path){const r=await fetch("/analyst/api/"+path,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||"Ошибка "+r.status);return d}
+async function api(path){const r=await fetch("/tg-support/analyst/api/"+path,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||"Ошибка "+r.status);return d}
 async function load(){if(busy)return;busy=true;$("error").textContent="";try{
 const d=await api("report?period="+period),m=d.totals;
 $("metrics").replaceChildren(
@@ -46,7 +46,7 @@ for(const r of rows){const line=node("div","bar-row"),date=node("span","muted",r
 const f=d.funnel||{};$("funnel").replaceChildren(metric("Запустили бота",f.started),metric("Приняли оферту",f.accepted),metric("Нажали оформление",f.clicked),metric("Покупатели",f.buyers));
 const body=$("payments");body.replaceChildren();for(const r of d.by_currency||[]){const tr=node("tr");for(const v of [r.period?.slice(0,7)||"—",r.provider,r.currency||"Не указана",r.payments,r.gross_amount,r.reversals])tr.append(node("td","",v));body.append(tr)}if(!body.children.length){const tr=node("tr");const td=node("td","empty","Подтверждённых операций пока нет.");td.colSpan=6;tr.append(td);body.append(tr)}
 const ret=d.retention||{};$("retention").replaceChildren(metric("Повторная оплата ≥30 дней",ret.repeat_30d, "из "+fmt(ret.eligible_30d)+" подходящих"),metric("≥90 дней",ret.repeat_90d,"из "+fmt(ret.eligible_90d)),metric("≥180 дней",ret.repeat_180d,"из "+fmt(ret.eligible_180d)));
-$("export").href="/analyst/api/export?period="+period;
+$("export").href="/tg-support/analyst/api/export?period="+period;
 }catch(e){$("error").textContent=e.message}finally{busy=false}}
 $("periods").addEventListener("click",e=>{const b=e.target.closest("button[data-period]");if(!b)return;period=Number(b.dataset.period);document.querySelectorAll("[data-period]").forEach(x=>x.classList.toggle("active",x===b));load()});
 (async()=>{try{if(!tg||!init)throw Error("Откройте панель через Telegram-бота.");tg.ready();tg.expand();await api("me");await load()}catch(e){$("error").textContent=e.message}})();
