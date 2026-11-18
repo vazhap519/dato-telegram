@@ -22,10 +22,13 @@ def fn(path, name):
 class AnalystDashboardTests(unittest.TestCase):
     def test_analyst_has_only_dedicated_read_routes(self):
         allowed = fn("db/admin_access.py", "allowed")
-        self.assertIn('path in ("/analyst","/analyst/export")', allowed)
-        self.assertIn('method=="GET"', allowed)
-        self.assertNotIn('"/dashboard"', allowed)
-        self.assertNotIn('"/support"', allowed)
+        analyst_branch = allowed.split('if role=="analyst":', 1)[1].split("return False", 1)[0]
+        self.assertIn('method=="GET"', analyst_branch)
+        self.assertIn('path in ("/analyst","/analyst/export")', analyst_branch)
+        self.assertNotIn('"/dashboard"', analyst_branch)
+        self.assertNotIn('"/support"', analyst_branch)
+        self.assertNotIn('"/events"', analyst_branch)
+        self.assertNotIn('"/search"', analyst_branch)
 
     def test_login_redirects_analyst_to_own_panel(self):
         login = fn("admin/main.py", "login")
