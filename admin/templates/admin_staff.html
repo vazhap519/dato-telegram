@@ -30,6 +30,7 @@
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="target" value="{{ account.username }}"><input type="hidden" name="confirm" value="CHANGE_SUPPORT">
 <label class="block text-sm">Telegram ID сотрудника<input type="text" inputmode="numeric" pattern="[0-9]*" name="telegram_id" value="{{ account.telegram_id or '' }}" placeholder="Например, 123456789" class="bg-gray-700 rounded-lg p-3 block w-full mt-1"></label>
 <p class="text-xs text-gray-400">{% if account.role=='analyst' %}Для аналитика после сохранения Telegram ID автоматически появится отдельная кнопка «Панель аналитика». Она открывает самостоятельный кабинет с доступом только на чтение. {% else %}Для сотрудника поддержки Telegram ID можно получить через /supportadmin в чате бота. После сохранения прав ему станет доступна кнопка техподдержки. {% endif %}Пустое поле не удаляет уже существующую привязку.</p>
+{% if account.role!='analyst' %}
 <div class="grid sm:grid-cols-2 gap-3 text-sm">
 <label><input type="checkbox" name="support_access" value="true" {% if account.support_access %}checked{% endif %}> Доступ к поддержке</label>
 <label><input type="checkbox" name="support_can_reply" value="true" {% if account.support_can_reply %}checked{% endif %}> Отвечать участникам</label>
@@ -39,7 +40,10 @@
 <label><input type="checkbox" name="support_notify_telegram" value="true" {% if account.support_notify_telegram %}checked{% endif %}> Уведомления в Telegram</label>
 </div>
 <button class="bg-indigo-600 rounded-lg px-4 py-3">Сохранить права поддержки</button>
-</form></details>
+{% else %}
+<p class="text-sm text-emerald-200">Для аналитика права техподдержки не применяются. Достаточно привязать Telegram ID — отдельная кнопка аналитической панели появится автоматически.</p>
+<button class="bg-indigo-600 rounded-lg px-4 py-3">Сохранить Telegram-привязку аналитика</button>
+{% endif %}</form></details>
 {% endif %}
 </div>{% endfor %}</section>
 <details class="bg-gray-800 rounded-xl p-5"><summary class="cursor-pointer font-semibold">🔐 Последние попытки входа</summary>
