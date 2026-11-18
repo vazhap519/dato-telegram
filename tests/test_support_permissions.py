@@ -120,7 +120,7 @@ class SupportPermissionsTests(unittest.TestCase):
         change = function_text("db/admin_access.py", "staff_change")
         delete = function_text("db/admin_access.py", "staff_delete")
         permissions = function_text("db/admin_access.py", "support_permissions_change")
-        clear = function_text("admin/main.py", "clear_staff_telegram_menu_button")
+        clear = function_text("admin/main.py", "clear_staff_telegram_menu")
         update_route = function_text("admin/main.py", "change_staff_account")
         delete_route = function_text("admin/main.py", "delete_staff_account")
         support_route = function_text("admin/main.py", "change_staff_support_permissions")
