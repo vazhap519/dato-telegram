@@ -133,7 +133,7 @@ print('STAFF AND ANALYST TEMPLATES PARSE OK')
 """
     subprocess.run([str(python), "-c", probe], cwd=release, timeout=20, check=True)
     print("ANALYST XLSX EXPORT PREPARED:", target, flush=True)
-    print("PUBLIC REMAINS 8081; BOT PID:", pid,
+    print("PUBLIC REMAINS 8082; BOT PID:", pid,
           "OWNER ALERTS ACTIVE; LIFECYCLE SENDER OFF", flush=True)
 
 
@@ -146,7 +146,7 @@ def stage(bg, target):
     unit = Path("/etc/systemd/system") / bg.UNITS[idle]
     previous = unit.read_text()
     stopped = False
-    print("STAGING ANALYST CSV FIX ON INACTIVE", idle, flush=True)
+    print("STAGING ANALYST XLSX EXPORT ON INACTIVE", idle, flush=True)
     try:
         bg.command("systemctl", "stop", bg.UNITS[idle])
         stopped = True
@@ -185,7 +185,7 @@ def stage(bg, target):
             bg.command("systemctl", "daemon-reload", check=False)
             bg.command("systemctl", "start", bg.UNITS[idle], check=False)
         raise
-    print("SIGNED ANALYST CSV FIX STAGED ON", idle, ":", target, flush=True)
+    print("ANALYST XLSX EXPORT STAGED ON", idle, ":", target, flush=True)
     print("PUBLIC UNCHANGED ON", active, "; BOT PID UNCHANGED:", pid, flush=True)
 
 
@@ -216,7 +216,7 @@ def check(bg, target):
     if "tg.downloadFile" not in page_html or 'data-export-format="xlsx"' not in page_html or 'data-export-format="csv"' not in page_html:
         raise RuntimeError("Telegram-native XLSX/CSV export UI missing on staged port")
     pid = bot_state()
-    print(f"SIGNED ANALYST CSV FIX CUTOVER PRECHECK OK: {active} -> {idle}; bot {pid}", flush=True)
+    print(f"ANALYST XLSX EXPORT CUTOVER PRECHECK OK: {active} -> {idle}; bot {pid}", flush=True)
     return pid
 
 
@@ -269,7 +269,7 @@ def main():
                 raise RuntimeError("Public analyst XLSX export UI did not converge")
             if bot_state() != pid:
                 raise RuntimeError("Telegram bot/timer state changed")
-            print(f"SIGNED ANALYST CSV FIX PUBLIC CUTOVER VERIFIED: {active} -> {idle}; rollback {active} remains running",
+            print(f"ANALYST XLSX EXPORT PUBLIC CUTOVER VERIFIED: {active} -> {idle}; rollback {active} remains running",
                   flush=True)
             print("No bot restart, no .env changes, no lifecycle sender activation.", flush=True)
         except Exception:
