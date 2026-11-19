@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Guarded rollout of signed Telegram-native analyst CSV downloads.
+"""Guarded rollout of the formatted analyst XLSX export.
 
-Pinned to the currently verified layout after the previous CSV UI cutover:
-public 8081 = 1d33bb2..., standby 8082 = c963512...
+Pinned to the verified layout after the signed CSV cutover:
+public 8082 = b31373d..., standby 8081 = 1d33bb2...
 Only the inactive admin slot is changed. The polling bot and timers are read-only.
 """
 import argparse
@@ -18,14 +18,15 @@ from urllib.request import urlopen
 
 ROOT = Path("/opt/dato-telegram")
 RELEASES = Path("/opt/dato-admin-releases")
-CURRENT = "1d33bb2d312ded6cd17abbfbea22a0ae48dc58b5"
-OLD_STANDBY = "c963512ce30993a468139200ab30526022275a5b"
+CURRENT = "b31373da0cfabb3168d4d900635f6afe5c21bb28"
+OLD_STANDBY = "1d33bb2d312ded6cd17abbfbea22a0ae48dc58b5"
 BOT_PID = "1127764"
 EXPECTED = {
     "admin/analyst_miniapp.py",
     "admin/templates/analyst_miniapp.html",
     "tests/test_analyst_dashboard.py",
     "scripts/rollout_analyst_miniapp.py",
+    "requirements.txt",
 }
 MARK = 'id="lifecycle-rules"'
 
@@ -74,12 +75,12 @@ def topology(bg):
 
 def prereqs(bg):
     active, idle = topology(bg)
-    if active != 8081 or idle != 8082:
+    if active != 8082 or idle != 8081:
         raise RuntimeError(f"Unexpected live routing: public={active}, inactive={idle}")
     if bg.release_sha_for_port(active) != CURRENT:
-        raise RuntimeError("Public admin release differs from pinned 1d33bb2 release")
+        raise RuntimeError("Public admin release differs from pinned b31373d release")
     if bg.release_sha_for_port(idle) != OLD_STANDBY:
-        raise RuntimeError("Standby admin release differs from pinned c963512 release")
+        raise RuntimeError("Standby admin release differs from pinned 1d33bb2 release")
     for port in (active, idle):
         if cmd("systemctl", "is-active", bg.UNITS[port]) != "active" or not bg.health(port):
             raise RuntimeError("Admin slot unhealthy on " + str(port))
@@ -131,7 +132,7 @@ env.get_template('analyst_miniapp.html')
 print('STAFF AND ANALYST TEMPLATES PARSE OK')
 """
     subprocess.run([str(python), "-c", probe], cwd=release, timeout=20, check=True)
-    print("SIGNED ANALYST CSV FIX PREPARED:", target, flush=True)
+    print("ANALYST XLSX EXPORT PREPARED:", target, flush=True)
     print("PUBLIC REMAINS 8081; BOT PID:", pid,
           "OWNER ALERTS ACTIVE; LIFECYCLE SENDER OFF", flush=True)
 
@@ -190,8 +191,8 @@ def stage(bg, target):
 
 def check(bg, target):
     active, idle = topology(bg)
-    if active != 8081 or idle != 8082:
-        raise RuntimeError("Public routing changed before cutover (expected active 8081)")
+    if active != 8082 or idle != 8081:
+        raise RuntimeError("Public routing changed before cutover (expected active 8082)")
     if bg.release_sha_for_port(active) != CURRENT or bg.release_sha_for_port(idle) != target:
         raise RuntimeError("Active/standby release SHA mismatch")
     if not bg.health(active) or not bg.health(idle):
@@ -212,8 +213,8 @@ def check(bg, target):
     page_status, page_html = response(f"http://127.0.0.1:{idle}/tg-support/analyst")
     if page_status != 200 or "Панель аналитика" not in page_html:
         raise RuntimeError("Analyst Mini App page missing on staged port")
-    if "tg.downloadFile" not in page_html or "/api/export-link?period=" not in page_html:
-        raise RuntimeError("Telegram-native signed CSV download UI missing on staged port")
+    if "tg.downloadFile" not in page_html or 'data-export-format="xlsx"' not in page_html or 'data-export-format="csv"' not in page_html:
+        raise RuntimeError("Telegram-native XLSX/CSV export UI missing on staged port")
     pid = bot_state()
     print(f"SIGNED ANALYST CSV FIX CUTOVER PRECHECK OK: {active} -> {idle}; bot {pid}", flush=True)
     return pid
@@ -264,8 +265,8 @@ def main():
                 if response("https://bot.arutyun.me" + path)[0] != 401:
                     raise RuntimeError("Public API authorization failed: " + path)
             public_status, public_html = response("https://bot.arutyun.me/tg-support/analyst")
-            if public_status != 200 or "tg.downloadFile" not in public_html:
-                raise RuntimeError("Public analyst CSV download UI did not converge")
+            if public_status != 200 or "tg.downloadFile" not in public_html or 'data-export-format="xlsx"' not in public_html:
+                raise RuntimeError("Public analyst XLSX export UI did not converge")
             if bot_state() != pid:
                 raise RuntimeError("Telegram bot/timer state changed")
             print(f"SIGNED ANALYST CSV FIX PUBLIC CUTOVER VERIFIED: {active} -> {idle}; rollback {active} remains running",
