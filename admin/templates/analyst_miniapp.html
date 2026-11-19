@@ -7,7 +7,7 @@
 header{padding:22px 18px;border-bottom:1px solid #263449;background:#111c2d}main{max-width:900px;margin:auto;padding:18px}
 h1{font-size:22px;margin:4px 0}h2{font-size:17px;margin:0 0 14px}.muted{color:#9aabc1;font-size:13px}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.toolbar button,.export{border:1px solid #34465f;background:#17263b;color:#eaf1fb;border-radius:9px;padding:10px 14px;font:inherit;text-decoration:none}
-.toolbar button.active{background:#4256a5;border-color:#657be0}.toolbar .export[aria-disabled="true"]{opacity:.65;pointer-events:none}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.toolbar button.active{background:#4256a5;border-color:#657be0}.toolbar .export{background:#5267b8;border-color:#7188df;font-weight:650}.toolbar .export.secondary{background:#17263b;border-color:#34465f;font-weight:400}.toolbar .export:disabled{opacity:.55;cursor:wait}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .card,section{background:#111c2d;border:1px solid #263449;border-radius:14px;padding:16px;margin-bottom:14px}
 .metric{font-size:27px;font-weight:700;margin-top:8px}.label{font-size:13px;color:#a9b8cc}
 .bar-row{display:grid;grid-template-columns:60px 1fr 30px;gap:8px;align-items:center;margin:11px 0;font-size:13px}
@@ -25,8 +25,8 @@ table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;p
 </style></head><body>
 <header><div class="muted">КРУГ ДУШИ</div><h1>Панель аналитика</h1><div class="muted">Отчёты и показатели · только просмотр</div></header>
 <main><div id="error" class="error" role="alert"></div>
-<div class="toolbar" id="periods"><button data-period="7">7 дней</button><button data-period="30" class="active">30 дней</button><button data-period="90">90 дней</button><button data-period="180">180 дней</button><a id="export" class="export" href="#">Экспорт CSV</a></div>
-<div id="export-progress" class="export-progress" role="status" aria-live="polite" aria-hidden="true"><div id="export-progress-label" class="export-progress-label">Подготавливаем CSV…</div><div class="export-track" role="progressbar" aria-label="Загрузка CSV" aria-valuetext="Выполняется загрузка"><div class="export-fill"></div></div></div>
+<div class="toolbar" id="periods"><button data-period="7">7 дней</button><button data-period="30" class="active">30 дней</button><button data-period="90">90 дней</button><button data-period="180">180 дней</button><button id="export" class="export" type="button" data-export-format="xlsx">Скачать Excel</button><button id="export-csv" class="export secondary" type="button" data-export-format="csv">Скачать CSV</button></div>
+<div id="export-progress" class="export-progress" role="status" aria-live="polite" aria-hidden="true"><div id="export-progress-label" class="export-progress-label">Подготавливаем Excel…</div><div class="export-track" role="progressbar" aria-label="Подготовка отчёта" aria-valuetext="Выполняется загрузка"><div class="export-fill"></div></div></div>
 <div class="grid" id="metrics"></div>
 <section><h2>Динамика регистраций</h2><div id="registrations"></div><div class="muted">Регистрации сгруппированы по календарным дням Тбилиси.</div></section>
 <section><h2>Воронка интереса и покупок</h2><div class="grid" id="funnel"></div><p class="muted">Накопительные счётчики за всё время, не сквозная воронка одного периода.</p></section>
@@ -38,7 +38,7 @@ const tg=window.Telegram?.WebApp,init=tg?.initData||"", $=id=>document.getElemen
 const fmt=v=>Number(v||0).toLocaleString("ru-RU");
 function node(tag,cls,txt){const n=document.createElement(tag);n.className=cls||"";if(txt!==undefined)n.textContent=String(txt);return n}
 function metric(label,value,sub){const c=node("div","card");c.append(node("div","label",label),node("div","metric",fmt(value)),node("div","muted",sub));return c}
-function exportState(state,label){const panel=$("export-progress"),link=$("export");panel.className="export-progress"+(state==="loading"?" visible":state==="done"?" visible done":state==="failed"?" visible failed":"");panel.setAttribute("aria-hidden",state==="idle"?"true":"false");$("export-progress-label").textContent=label;link.setAttribute("aria-disabled",state==="loading"?"true":"false");link.textContent=state==="loading"?"Скачивание…":"Экспорт CSV"}
+function exportState(state,label){const panel=$("export-progress"),buttons=document.querySelectorAll("[data-export-format]");panel.className="export-progress"+(state==="loading"?" visible":state==="done"?" visible done":state==="failed"?" visible failed":"");panel.setAttribute("aria-hidden",state==="idle"?"true":"false");$("export-progress-label").textContent=label;buttons.forEach(b=>{b.disabled=state==="loading";b.textContent=state==="loading"&&b.dataset.exportFormat===window.exportingFormat?"Подготовка…":(b.dataset.exportFormat==="xlsx"?"Скачать Excel":"Скачать CSV")})}
 async function api(path){const r=await fetch("/tg-support/analyst/api/"+path,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.detail||"Ошибка "+r.status);return d}
 async function load(){if(busy)return;busy=true;$("error").textContent="";try{
 const d=await api("report?period="+period),m=d.totals;
@@ -56,18 +56,19 @@ for(const r of rows){const line=node("div","bar-row"),date=node("span","muted",r
 const f=d.funnel||{};$("funnel").replaceChildren(metric("Запустили бота",f.started),metric("Приняли оферту",f.accepted),metric("Нажали оформление",f.clicked),metric("Покупатели",f.buyers));
 const body=$("payments");body.replaceChildren();for(const r of d.by_currency||[]){const tr=node("tr");for(const v of [r.period?.slice(0,7)||"—",r.provider,r.currency||"Не указана",r.payments,r.gross_amount,r.reversals])tr.append(node("td","",v));body.append(tr)}if(!body.children.length){const tr=node("tr");const td=node("td","empty","Подтверждённых операций пока нет.");td.colSpan=6;tr.append(td);body.append(tr)}
 const ret=d.retention||{};$("retention").replaceChildren(metric("Повторная оплата ≥30 дней",ret.repeat_30d, "из "+fmt(ret.eligible_30d)+" подходящих"),metric("≥90 дней",ret.repeat_90d,"из "+fmt(ret.eligible_90d)),metric("≥180 дней",ret.repeat_180d,"из "+fmt(ret.eligible_180d)));
-$("export").href="/tg-support/analyst/api/export?period="+period;
+
 }catch(e){$("error").textContent=e.message}finally{busy=false}}
-$("export").addEventListener("click",async e=>{
-e.preventDefault();const link=$("export");if(link.getAttribute("aria-disabled")==="true")return;
-exportState("loading","Подготавливаем отчёт и создаём защищённую ссылку…");$("error").textContent="";
+document.querySelectorAll("button[data-export-format]").forEach(button=>button.addEventListener("click",async e=>{
+const format=e.currentTarget.dataset.exportFormat;if(e.currentTarget.disabled)return;
+window.exportingFormat=format;
+exportState("loading","Подготавливаем "+(format==="xlsx"?"Excel":"CSV")+" и создаём защищённую ссылку…");$("error").textContent="";
 try{
-const linkResponse=await fetch("/tg-support/analyst/api/export-link?period="+period,{
+const linkResponse=await fetch("/tg-support/analyst/api/export-link?period="+period+"&format="+format,{
 method:"POST",headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"
 });
 const linkData=await linkResponse.json().catch(()=>({}));
 if(!linkResponse.ok)throw Error(linkData.detail||"Ошибка подготовки экспорта "+linkResponse.status);
-const filename=linkData.filename||("analyst-report-"+period+"d.csv");
+const filename=linkData.filename||("analyst-report-"+period+"d."+format);
 if(typeof tg?.downloadFile==="function"&&(!tg.isVersionAtLeast||tg.isVersionAtLeast("8.0"))){
 await new Promise((resolve,reject)=>{
 let settled=false;
@@ -77,7 +78,7 @@ if(settled)return;settled=true;clearTimeout(timeout);
 if(accepted)resolve();else reject(Error("Скачивание отменено"));
 });
 });
-exportState("done","Telegram принял запрос на скачивание файла.");
+exportState("done","Telegram принял запрос на скачивание "+filename);
 }else{
 const response=await fetch(linkData.url,{credentials:"omit",cache:"no-store"});
 if(!response.ok)throw Error("Ошибка скачивания файла "+response.status);
@@ -85,15 +86,15 @@ const blob=await response.blob(),url=URL.createObjectURL(blob),download=node("a"
 download.href=url;download.download=filename;download.style.display="none";
 document.body.append(download);download.click();download.remove();
 setTimeout(()=>URL.revokeObjectURL(url),60000);
-exportState("done","Файл подготовлен. Скачивание запущено.");
+exportState("done","Файл "+filename+" подготовлен. Скачивание запущено.");
 }
 setTimeout(()=>exportState("idle",""),6000);
 }catch(error){
-exportState("failed","Не удалось скачать CSV. "+error.message);
+exportState("failed","Не удалось скачать файл. "+error.message);
 $("error").textContent=error.message;
 setTimeout(()=>exportState("idle",""),8000);
 }
-});
+}));
 $("periods").addEventListener("click",e=>{const b=e.target.closest("button[data-period]");if(!b)return;period=Number(b.dataset.period);document.querySelectorAll("[data-period]").forEach(x=>x.classList.toggle("active",x===b));load()});
 (async()=>{try{if(!tg||!init)throw Error("Откройте панель через Telegram-бота.");tg.ready();tg.expand();await api("me");await load()}catch(e){$("error").textContent=e.message}})();
 })();
