@@ -105,7 +105,7 @@ def _build_analyst_csv(data,period):
         writer.writerow(["Оплаты",row["provider"],row["currency"] or "Не указана",
                          row["payments"],row["gross_amount"],row["reversals"]])
     filename=f"analyst-report-{period}d-{datetime.utcnow():%Y%m%d}.csv"
-    return "\\ufeff"+output.getvalue(),filename
+    return "\ufeff"+output.getvalue(),filename
 
 
 def _sign_analyst_export_payload(payload):
