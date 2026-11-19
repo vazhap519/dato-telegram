@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, Header, HTTPException, Depends, Request
+from fastapi import APIRouter, Header, HTTPException, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import text
 
@@ -144,14 +144,14 @@ async def analyst_export(period:int=30,staff=__import__("fastapi").Depends(requi
 
 
 @router.post("/api/export-link")
-async def analyst_export_link(request:Request,period:int=30,staff=__import__("fastapi").Depends(require_analyst)):
+async def analyst_export_link(period:int=30,staff=__import__("fastapi").Depends(require_analyst)):
     if period not in (7,30,90,180):
         raise HTTPException(400,"Недопустимый период")
     payload={"admin_id":int(staff["id"]),"telegram_id":int(staff["telegram_id"]),
              "period":period,"exp":int(time.time())+120,"nonce":secrets.token_urlsafe(12)}
     token=_sign_analyst_export_payload(payload)
     filename=f"analyst-report-{period}d.csv"
-    return {"url":str(request.url_for("analyst_export_file",token=token)),"filename":filename}
+    return {"url":"https://bot.arutyun.me/tg-support/analyst/api/export-file/"+token,"filename":filename}
 
 
 @router.get("/api/export-file/{token}",name="analyst_export_file")
