@@ -77,9 +77,9 @@ def prereqs(bg):
     if active != 8081 or idle != 8082:
         raise RuntimeError(f"Unexpected live routing: public={active}, inactive={idle}")
     if bg.release_sha_for_port(active) != CURRENT:
-        raise RuntimeError("Public admin release differs from pinned c963512 release")
+        raise RuntimeError("Public admin release differs from pinned 1d33bb2 release")
     if bg.release_sha_for_port(idle) != OLD_STANDBY:
-        raise RuntimeError("Standby admin release differs from pinned acc408f release")
+        raise RuntimeError("Standby admin release differs from pinned c963512 release")
     for port in (active, idle):
         if cmd("systemctl", "is-active", bg.UNITS[port]) != "active" or not bg.health(port):
             raise RuntimeError("Admin slot unhealthy on " + str(port))
@@ -170,6 +170,10 @@ def stage(bg, target):
                      "/tg-support/api/home", "/tg-support/analyst/api/me"):
             if response(f"http://127.0.0.1:{idle}" + path)[0] != 401:
                 raise RuntimeError("Staged Telegram API auth failure: " + path)
+        if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/export-link?period=30", "POST")[0] != 401:
+            raise RuntimeError("Staged signed export-link endpoint did not enforce Telegram auth")
+        if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/export-file/invalid.invalid")[0] != 403:
+            raise RuntimeError("Staged signed export-file endpoint did not reject an invalid token")
         if bg.routing(bg.nginx_path().read_text()) != active or not bg.health(active) or bot_state() != pid:
             raise RuntimeError("Public admin, bot or timer state changed during stage")
     except BaseException:
