@@ -60,6 +60,10 @@ class AnalystDashboardTests(unittest.TestCase):
         self.assertIn("90 дней", template)
         self.assertIn("180 дней", template)
         self.assertIn("режим просмотра", template)
+        miniapp_template = read("admin/templates/analyst_miniapp.html")
+        self.assertIn("/api/export-link?period=", miniapp_template)
+        self.assertIn("tg.downloadFile", miniapp_template)
+        self.assertIn("file_name:filename", miniapp_template)
 
     def test_role_specific_telegram_menu(self):
         menu = fn("admin/main.py", "update_staff_telegram_menu")
