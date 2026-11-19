@@ -58,7 +58,42 @@ const body=$("payments");body.replaceChildren();for(const r of d.by_currency||[]
 const ret=d.retention||{};$("retention").replaceChildren(metric("Повторная оплата ≥30 дней",ret.repeat_30d, "из "+fmt(ret.eligible_30d)+" подходящих"),metric("≥90 дней",ret.repeat_90d,"из "+fmt(ret.eligible_90d)),metric("≥180 дней",ret.repeat_180d,"из "+fmt(ret.eligible_180d)));
 $("export").href="/tg-support/analyst/api/export?period="+period;
 }catch(e){$("error").textContent=e.message}finally{busy=false}}
-$("export").addEventListener("click",async e=>{e.preventDefault();const link=$("export");if(link.getAttribute("aria-disabled")==="true")return;exportState("loading","Подготавливаем отчёт и загружаем CSV…");$("error").textContent="";try{const response=await fetch("/tg-support/analyst/api/export?period="+period,{headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"});if(!response.ok){const problem=await response.json().catch(()=>({}));throw Error(problem.detail||"Ошибка экспорта "+response.status)}const blob=await response.blob();const disposition=response.headers.get("Content-Disposition")||"";const match=disposition.match(/filename="([^"]+)"/i);const filename=match?.[1]||("analyst-report-"+period+"d.csv");const url=URL.createObjectURL(blob);const download=node("a");download.href=url;download.download=filename;download.style.display="none";document.body.append(download);download.click();download.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);exportState("done","Файл подготовлен. Скачивание запущено.");setTimeout(()=>exportState("idle",""),5000)}catch(error){exportState("failed","Не удалось скачать CSV. "+error.message);$("error").textContent=error.message;setTimeout(()=>exportState("idle",""),8000)}});
+$("export").addEventListener("click",async e=>{
+e.preventDefault();const link=$("export");if(link.getAttribute("aria-disabled")==="true")return;
+exportState("loading","Подготавливаем отчёт и создаём защищённую ссылку…");$("error").textContent="";
+try{
+const linkResponse=await fetch("/tg-support/analyst/api/export-link?period="+period,{
+method:"POST",headers:{"X-Telegram-Init-Data":init},credentials:"omit",cache:"no-store"
+});
+const linkData=await linkResponse.json().catch(()=>({}));
+if(!linkResponse.ok)throw Error(linkData.detail||"Ошибка подготовки экспорта "+linkResponse.status);
+const filename=linkData.filename||("analyst-report-"+period+"d.csv");
+if(typeof tg?.downloadFile==="function"&&(!tg.isVersionAtLeast||tg.isVersionAtLeast("8.0"))){
+await new Promise((resolve,reject)=>{
+let settled=false;
+const timeout=setTimeout(()=>{if(!settled){settled=true;reject(Error("Telegram не подтвердил запрос на скачивание"))}},60000);
+tg.downloadFile({url:linkData.url,file_name:filename},accepted=>{
+if(settled)return;settled=true;clearTimeout(timeout);
+if(accepted)resolve();else reject(Error("Скачивание отменено"));
+});
+});
+exportState("done","Telegram принял запрос на скачивание файла.");
+}else{
+const response=await fetch(linkData.url,{credentials:"omit",cache:"no-store"});
+if(!response.ok)throw Error("Ошибка скачивания файла "+response.status);
+const blob=await response.blob(),url=URL.createObjectURL(blob),download=node("a");
+download.href=url;download.download=filename;download.style.display="none";
+document.body.append(download);download.click();download.remove();
+setTimeout(()=>URL.revokeObjectURL(url),60000);
+exportState("done","Файл подготовлен. Скачивание запущено.");
+}
+setTimeout(()=>exportState("idle",""),6000);
+}catch(error){
+exportState("failed","Не удалось скачать CSV. "+error.message);
+$("error").textContent=error.message;
+setTimeout(()=>exportState("idle",""),8000);
+}
+});
 $("periods").addEventListener("click",e=>{const b=e.target.closest("button[data-period]");if(!b)return;period=Number(b.dataset.period);document.querySelectorAll("[data-period]").forEach(x=>x.classList.toggle("active",x===b));load()});
 (async()=>{try{if(!tg||!init)throw Error("Откройте панель через Telegram-бота.");tg.ready();tg.expand();await api("me");await load()}catch(e){$("error").textContent=e.message}})();
 })();

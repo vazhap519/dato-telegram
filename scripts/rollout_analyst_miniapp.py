@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Guarded rollout of the Telegram-native analyst Mini App CSV fix.
+"""Guarded rollout of signed Telegram-native analyst CSV downloads.
 
-This version is pinned to the live layout verified on 2026-11-18:
-public 8082 = c963512..., standby 8081 = acc408f...
-It stages only the inactive admin slot and never touches the polling bot,
-.env, owner-alert timer, or lifecycle sender.
+Pinned to the currently verified layout after the previous CSV UI cutover:
+public 8081 = 1d33bb2..., standby 8082 = c963512...
+Only the inactive admin slot is changed. The polling bot and timers are read-only.
 """
 import argparse
 import fcntl
@@ -19,11 +18,13 @@ from urllib.request import urlopen
 
 ROOT = Path("/opt/dato-telegram")
 RELEASES = Path("/opt/dato-admin-releases")
-CURRENT = "c963512ce30993a468139200ab30526022275a5b"
-OLD_STANDBY = "acc408febaee2a836f9297c98b9facdc86c37fb8"
-BOT = "2d609a3267261e2370e01e02596916d1bdc044c6"
+CURRENT = "1d33bb2d312ded6cd17abbfbea22a0ae48dc58b5"
+OLD_STANDBY = "c963512ce30993a468139200ab30526022275a5b"
+BOT_PID = "1127764"
 EXPECTED = {
+    "admin/analyst_miniapp.py",
     "admin/templates/analyst_miniapp.html",
+    "tests/test_analyst_dashboard.py",
     "scripts/rollout_analyst_miniapp.py",
 }
 MARK = 'id="lifecycle-rules"'
@@ -33,9 +34,11 @@ def cmd(*args):
     return subprocess.check_output(args, text=True, timeout=30).strip()
 
 
-def response(url):
+def response(url, method="GET"):
     try:
-        with urlopen(url, timeout=7) as r:
+        from urllib.request import Request
+        request = Request(url, method=method)
+        with urlopen(request, timeout=7) as r:
             return r.status, r.read(180000).decode("utf-8", errors="replace")
     except HTTPError as e:
         return e.code, ""
@@ -50,7 +53,7 @@ def bg_module():
 def bot_state():
     pid = cmd("systemctl", "show", "dato-telegram-bot.service", "-p", "MainPID", "--value")
     wd = cmd("systemctl", "show", "dato-telegram-bot.service", "-p", "WorkingDirectory", "--value")
-    if not pid.isdigit() or int(pid) < 1 or wd != str(RELEASES / BOT):
+    if pid != BOT_PID or not wd.startswith(str(RELEASES) + "/"):
         raise RuntimeError("Telegram polling bot PID/release differs from pinned state")
     if cmd("systemctl", "is-active", "dato-owner-alerts.timer") != "active":
         raise RuntimeError("Owner alerts timer is not active")
@@ -71,12 +74,12 @@ def topology(bg):
 
 def prereqs(bg):
     active, idle = topology(bg)
-    if active != 8082 or idle != 8081:
+    if active != 8081 or idle != 8082:
         raise RuntimeError(f"Unexpected live routing: public={active}, inactive={idle}")
     if bg.release_sha_for_port(active) != CURRENT:
-        raise RuntimeError("Public admin release differs from pinned c963512 release")
+        raise RuntimeError("Public admin release differs from pinned 1d33bb2 release")
     if bg.release_sha_for_port(idle) != OLD_STANDBY:
-        raise RuntimeError("Standby admin release differs from pinned acc408f release")
+        raise RuntimeError("Standby admin release differs from pinned c963512 release")
     for port in (active, idle):
         if cmd("systemctl", "is-active", bg.UNITS[port]) != "active" or not bg.health(port):
             raise RuntimeError("Admin slot unhealthy on " + str(port))
@@ -128,8 +131,8 @@ env.get_template('analyst_miniapp.html')
 print('STAFF AND ANALYST TEMPLATES PARSE OK')
 """
     subprocess.run([str(python), "-c", probe], cwd=release, timeout=20, check=True)
-    print("ANALYST CSV FIX PREPARED:", target, flush=True)
-    print("PUBLIC REMAINS 8082; BOT PID:", pid,
+    print("SIGNED ANALYST CSV FIX PREPARED:", target, flush=True)
+    print("PUBLIC REMAINS 8081; BOT PID:", pid,
           "OWNER ALERTS ACTIVE; LIFECYCLE SENDER OFF", flush=True)
 
 
@@ -167,6 +170,10 @@ def stage(bg, target):
                      "/tg-support/api/home", "/tg-support/analyst/api/me"):
             if response(f"http://127.0.0.1:{idle}" + path)[0] != 401:
                 raise RuntimeError("Staged Telegram API auth failure: " + path)
+        if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/export-link?period=30", "POST")[0] != 401:
+            raise RuntimeError("Staged signed export-link endpoint did not enforce Telegram auth")
+        if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/export-file/invalid.invalid")[0] != 403:
+            raise RuntimeError("Staged signed export-file endpoint did not reject an invalid token")
         if bg.routing(bg.nginx_path().read_text()) != active or not bg.health(active) or bot_state() != pid:
             raise RuntimeError("Public admin, bot or timer state changed during stage")
     except BaseException:
@@ -177,14 +184,14 @@ def stage(bg, target):
             bg.command("systemctl", "daemon-reload", check=False)
             bg.command("systemctl", "start", bg.UNITS[idle], check=False)
         raise
-    print("ANALYST CSV FIX STAGED ON", idle, ":", target, flush=True)
+    print("SIGNED ANALYST CSV FIX STAGED ON", idle, ":", target, flush=True)
     print("PUBLIC UNCHANGED ON", active, "; BOT PID UNCHANGED:", pid, flush=True)
 
 
 def check(bg, target):
     active, idle = topology(bg)
-    if active != 8082 or idle != 8081:
-        raise RuntimeError("Public routing changed before cutover (expected active 8082)")
+    if active != 8081 or idle != 8082:
+        raise RuntimeError("Public routing changed before cutover (expected active 8081)")
     if bg.release_sha_for_port(active) != CURRENT or bg.release_sha_for_port(idle) != target:
         raise RuntimeError("Active/standby release SHA mismatch")
     if not bg.health(active) or not bg.health(idle):
@@ -198,11 +205,17 @@ def check(bg, target):
                 raise RuntimeError("Admin API authorization failed on " + str(port) + ": " + path)
     if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/me")[0] != 401:
         raise RuntimeError("Analyst Telegram API authorization failed on staged port")
+    if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/export-link?period=30", "POST")[0] != 401:
+        raise RuntimeError("Signed export-link endpoint did not enforce Telegram auth")
+    if response(f"http://127.0.0.1:{idle}/tg-support/analyst/api/export-file/invalid.invalid")[0] != 403:
+        raise RuntimeError("Signed export-file endpoint did not reject an invalid token")
     page_status, page_html = response(f"http://127.0.0.1:{idle}/tg-support/analyst")
     if page_status != 200 or "Панель аналитика" not in page_html:
         raise RuntimeError("Analyst Mini App page missing on staged port")
+    if "tg.downloadFile" not in page_html or "/api/export-link?period=" not in page_html:
+        raise RuntimeError("Telegram-native signed CSV download UI missing on staged port")
     pid = bot_state()
-    print(f"ANALYST CSV FIX CUTOVER PRECHECK OK: {active} -> {idle}; bot {pid}", flush=True)
+    print(f"SIGNED ANALYST CSV FIX CUTOVER PRECHECK OK: {active} -> {idle}; bot {pid}", flush=True)
     return pid
 
 
@@ -250,9 +263,12 @@ def main():
                          "/tg-support/api/home", "/tg-support/analyst/api/me"):
                 if response("https://bot.arutyun.me" + path)[0] != 401:
                     raise RuntimeError("Public API authorization failed: " + path)
+            public_status, public_html = response("https://bot.arutyun.me/tg-support/analyst")
+            if public_status != 200 or "tg.downloadFile" not in public_html:
+                raise RuntimeError("Public analyst CSV download UI did not converge")
             if bot_state() != pid:
                 raise RuntimeError("Telegram bot/timer state changed")
-            print(f"ANALYST CSV FIX PUBLIC CUTOVER VERIFIED: {active} -> {idle}; rollback {active} remains running",
+            print(f"SIGNED ANALYST CSV FIX PUBLIC CUTOVER VERIFIED: {active} -> {idle}; rollback {active} remains running",
                   flush=True)
             print("No bot restart, no .env changes, no lifecycle sender activation.", flush=True)
         except Exception:
