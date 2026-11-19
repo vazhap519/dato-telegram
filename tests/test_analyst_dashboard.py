@@ -44,6 +44,11 @@ class AnalystDashboardTests(unittest.TestCase):
         self.assertIn("a.enabled=TRUE", miniapp)
         self.assertIn('"/api/export"', miniapp)
         self.assertIn('"/api/report"', miniapp)
+        self.assertIn('"/api/export-link"', miniapp)
+        self.assertIn('"/api/export-file/{token}"', miniapp)
+        self.assertIn('_sign_analyst_export_payload', miniapp)
+        self.assertIn('_read_analyst_export_token', miniapp)
+        self.assertIn('Access-Control-Allow-Origin', miniapp)
 
     def test_analyst_template_is_standalone_and_read_only(self):
         template = read("admin/templates/analyst_dashboard.html")
